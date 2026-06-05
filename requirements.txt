@@ -4,3 +4,6 @@ chromadb
 sentence-transformers
 requests
 protobuf==3.20.3
+pypdf
+python-docx
+openpyxl

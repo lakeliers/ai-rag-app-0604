@@ -180,7 +180,14 @@ def seed_local_note(file_path="my_note.md"):
     )
 
 
-def search_chroma(question, top_k=3):
+def source_priority_score(source, preferred_sources):
+    if not preferred_sources:
+        return 0
+
+    return 1 if source in preferred_sources else 0
+
+
+def search_chroma(question, top_k=3, preferred_sources=None):
     query_embedding = embed_texts([question])
     results = collection.query(
         query_embeddings=query_embedding,
@@ -192,20 +199,24 @@ def search_chroma(question, top_k=3):
     metadatas = results.get("metadatas", [[]])[0]
     distances = results.get("distances", [[]])[0]
     question_keywords = extract_query_keywords(question)
+    preferred_sources = set(preferred_sources or [])
 
     for document, metadata, distance in zip(documents, metadatas, distances):
+        source = metadata.get("source", "未知来源")
         search_results.append({
             "document": document,
-            "source": metadata.get("source", "未知来源"),
+            "source": source,
             "source_type": metadata.get("source_type", "unknown"),
             "url": metadata.get("url", ""),
             "chunk_index": metadata.get("chunk_index", 0),
             "distance": distance,
             "keyword_score": keyword_score(document, question_keywords),
+            "source_priority": source_priority_score(source, preferred_sources),
         })
 
     search_results.sort(
         key=lambda item: (
+            -item["source_priority"],
             -item["keyword_score"],
             item["distance"],
         )
@@ -574,11 +585,21 @@ def describe_image_bytes(image_bytes, mime_type, question):
     return response.choices[0].message.content
 
 
-def answer_with_rag(question, use_web=False, top_k=3, web_max_results=3):
+def answer_with_rag(
+    question,
+    use_web=False,
+    top_k=3,
+    web_max_results=3,
+    preferred_sources=None,
+):
     if use_web:
         web_collect(question, max_results=web_max_results)
 
-    search_results = search_chroma(question, top_k=top_k)
+    search_results = search_chroma(
+        question,
+        top_k=top_k,
+        preferred_sources=preferred_sources,
+    )
     answer = ask_deepseek(question, search_results)
 
     if answer is None:
