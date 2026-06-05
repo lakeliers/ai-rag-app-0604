@@ -164,6 +164,21 @@ def ingest_uploaded_files(uploaded_files, question):
     return ingested_sources
 
 
+def source_label(source):
+    source_type = source.get("source_type", "unknown")
+    title = source.get("source", "")
+
+    if source_type == "upload" and title.startswith("图片："):
+        return "上传图片｜优先"
+    if source_type == "upload":
+        return "上传资料｜优先"
+    if source_type == "web":
+        return "网络资料｜补充"
+    if source_type == "local":
+        return "基础资料｜兜底"
+    return "其他资料｜参考"
+
+
 with st.sidebar:
     st.header("资料")
     uploaded_files = st.file_uploader(
@@ -255,7 +270,9 @@ if prompt:
                     title = source["source"]
                     url = source.get("url", "")
                     source_type = source.get("source_type", "unknown")
+                    label = source_label(source)
                     st.markdown(f"**{index}. {title}**")
+                    st.markdown(f"`{label}`")
                     st.caption(f"类型：{source_type}")
                     if url:
                         st.write(url)

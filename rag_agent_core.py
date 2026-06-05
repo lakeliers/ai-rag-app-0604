@@ -187,6 +187,21 @@ def source_priority_score(source, preferred_sources):
     return 1 if source in preferred_sources else 0
 
 
+def source_label(item):
+    source_type = item.get("source_type", "unknown")
+    source = item.get("source", "")
+
+    if source_type == "upload" and source.startswith("图片："):
+        return "上传图片｜优先"
+    if source_type == "upload":
+        return "上传资料｜优先"
+    if source_type == "web":
+        return "网络资料｜补充"
+    if source_type == "local":
+        return "基础资料｜兜底"
+    return "其他资料｜参考"
+
+
 def search_chroma(question, top_k=3, preferred_sources=None):
     query_embedding = embed_texts([question])
     results = collection.query(
@@ -238,6 +253,7 @@ def build_context(search_results):
         part = f"""资料 {index}：
 来源：{source_line}
 类型：{item['source_type']}
+优先级：{source_label(item)}
 块编号：{item['chunk_index']}
 内容：{item['document']}
 """
@@ -267,7 +283,11 @@ def build_answer_prompt(question, search_results):
 
 请根据【资料】回答【用户问题】。
 如果资料不足，请明确说资料不足，不要编造。
-如果资料来自网页，请提醒用户网页信息可能会变化。
+资料使用规则：
+1. 上传资料和上传图片属于用户主动提供的信息，可信优先级最高。
+2. 网络资料只作为补充；当网络资料和上传资料冲突时，优先采用上传资料。
+3. 基础资料只作为兜底，不能压过用户上传资料和当前联网资料。
+4. 如果资料来自网页，请提醒用户网页信息可能会变化。
 
 【最近对话】
 {history_text}
