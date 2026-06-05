@@ -22,7 +22,11 @@ QWEN_VL_MODEL = os.getenv("QWEN_VL_MODEL", "qwen-vl-plus")
 
 
 print("正在加载本地向量模型...")
-embedding_model = SentenceTransformer(EMBEDDING_MODEL_NAME, local_files_only=True)
+LOCAL_FILES_ONLY = os.getenv("LOCAL_FILES_ONLY", "0") == "1"
+embedding_model = SentenceTransformer(
+    EMBEDDING_MODEL_NAME,
+    local_files_only=LOCAL_FILES_ONLY,
+)
 
 chroma_client = chromadb.PersistentClient(path=CHROMA_PATH)
 collection = chroma_client.get_or_create_collection(name=COLLECTION_NAME)
