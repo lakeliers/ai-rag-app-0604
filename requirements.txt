@@ -1,6 +1,5 @@
-openai
 streamlit
+openai
+chromadb
 sentence-transformers
-numpy
-pypdf
-python-docx
+requests
