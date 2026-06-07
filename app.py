@@ -274,6 +274,12 @@ if prompt:
                     st.markdown(f"**{index}. {title}**")
                     st.markdown(f"`{label}`")
                     st.caption(f"类型：{source_type}")
+                    st.caption(
+                        "融合分："
+                        f"{source.get('final_score', 0):.4f} | "
+                        f"向量排名：{source.get('vector_rank', '未召回')} | "
+                        f"关键词排名：{source.get('bm25_rank', '未召回')}"
+                    )
                     if url:
                         st.write(url)
                     st.write(source["document"][:300])

@@ -4,7 +4,9 @@ import mimetypes
 import os
 import re
 import shlex
+import math
 import time
+from collections import Counter, defaultdict
 from html.parser import HTMLParser
 from urllib.parse import quote_plus, unquote, urlparse, parse_qs
 
@@ -19,6 +21,19 @@ CHROMA_PATH = "./chroma_db"
 COLLECTION_NAME = "file_docs"
 DEEPSEEK_MODEL = os.getenv("DEEPSEEK_MODEL", "deepseek-v4-flash")
 QWEN_VL_MODEL = os.getenv("QWEN_VL_MODEL", "qwen-vl-plus")
+RRF_K = 60
+SOURCE_WEIGHTS = {
+    "upload": 1.35,
+    "web": 1.0,
+    "local": 0.75,
+    "unknown": 0.65,
+}
+SOURCE_QUOTAS = {
+    "upload": 3,
+    "web": 2,
+    "local": 1,
+    "unknown": 1,
+}
 
 
 print("正在加载本地向量模型...")
@@ -126,6 +141,87 @@ def keyword_score(document, question_keywords):
     return score
 
 
+def tokenize_text(text):
+    lowered = text.lower()
+    tokens = re.findall(r"[a-z0-9_+\-.]{2,}", lowered)
+    chinese_spans = re.findall(r"[\u4e00-\u9fff]+", lowered)
+
+    for span in chinese_spans:
+        if len(span) == 1:
+            tokens.append(span)
+        else:
+            tokens.extend(span[index:index + 2] for index in range(len(span) - 1))
+
+    return tokens
+
+
+def bm25_retrieve(question, limit=20):
+    data = collection.get(include=["documents", "metadatas"])
+    ids = data.get("ids", [])
+    documents = data.get("documents", [])
+    metadatas = data.get("metadatas", [])
+
+    if not documents:
+        return []
+
+    query_tokens = tokenize_text(question)
+    if not query_tokens:
+        return []
+
+    corpus_tokens = [tokenize_text(document) for document in documents]
+    doc_count = len(corpus_tokens)
+    avg_doc_len = sum(len(tokens) for tokens in corpus_tokens) / max(doc_count, 1)
+    doc_freq = Counter()
+
+    for tokens in corpus_tokens:
+        doc_freq.update(set(tokens))
+
+    k1 = 1.5
+    b = 0.75
+    rows = []
+
+    for item_id, document, metadata, tokens in zip(ids, documents, metadatas, corpus_tokens):
+        token_counts = Counter(tokens)
+        doc_len = len(tokens)
+        score = 0.0
+
+        for token in query_tokens:
+            tf = token_counts.get(token, 0)
+            if tf == 0:
+                continue
+
+            idf = math.log((doc_count - doc_freq[token] + 0.5) / (doc_freq[token] + 0.5) + 1)
+            denominator = tf + k1 * (1 - b + b * doc_len / max(avg_doc_len, 1))
+            score += idf * (tf * (k1 + 1)) / denominator
+
+        if score <= 0:
+            continue
+
+        rows.append(make_search_item(
+            item_id=item_id,
+            document=document,
+            metadata=metadata,
+            bm25_score=score,
+        ))
+
+    rows.sort(key=lambda item: item["bm25_score"], reverse=True)
+    return rows[:limit]
+
+
+def make_search_item(item_id, document, metadata, distance=None, bm25_score=0.0):
+    source = metadata.get("source", "未知来源")
+    return {
+        "id": item_id,
+        "document": document,
+        "source": source,
+        "source_type": metadata.get("source_type", "unknown"),
+        "url": metadata.get("url", ""),
+        "chunk_index": metadata.get("chunk_index", 0),
+        "distance": distance,
+        "bm25_score": bm25_score,
+    }
+
+
 def safe_id(text):
     text = re.sub(r"[^a-zA-Z0-9_\-.]+", "_", text)
     return text[:120]
@@ -202,42 +298,106 @@ def source_label(item):
     return "其他资料｜参考"
 
 
-def search_chroma(question, top_k=3, preferred_sources=None):
+def vector_retrieve(question, limit=20):
     query_embedding = embed_texts([question])
     results = collection.query(
         query_embeddings=query_embedding,
-        n_results=max(top_k * 4, 20),
+        n_results=limit,
     )
 
-    search_results = []
+    rows = []
+    ids = results.get("ids", [[]])[0]
     documents = results.get("documents", [[]])[0]
     metadatas = results.get("metadatas", [[]])[0]
     distances = results.get("distances", [[]])[0]
+
+    for item_id, document, metadata, distance in zip(ids, documents, metadatas, distances):
+        rows.append(make_search_item(
+            item_id=item_id,
+            document=document,
+            metadata=metadata,
+            distance=distance,
+        ))
+
+    return rows
+
+
+def source_weight(source_type):
+    return SOURCE_WEIGHTS.get(source_type, SOURCE_WEIGHTS["unknown"])
+
+
+def apply_source_quotas(rows, top_k):
+    selected = []
+    quota_counts = defaultdict(int)
+
+    for row in rows:
+        source_type = row.get("source_type", "unknown")
+        quota = SOURCE_QUOTAS.get(source_type, SOURCE_QUOTAS["unknown"])
+
+        if quota_counts[source_type] >= quota:
+            continue
+
+        selected.append(row)
+        quota_counts[source_type] += 1
+
+        if len(selected) >= top_k:
+            return selected
+
+    if len(selected) < top_k:
+        selected_ids = {row["id"] for row in selected}
+        for row in rows:
+            if row["id"] in selected_ids:
+                continue
+            selected.append(row)
+            if len(selected) >= top_k:
+                break
+
+    return selected
+
+
+def search_chroma(question, top_k=3, preferred_sources=None):
+    recall_limit = max(top_k * 8, 24)
+    vector_rows = vector_retrieve(question, limit=recall_limit)
+    bm25_rows = bm25_retrieve(question, limit=recall_limit)
     question_keywords = extract_query_keywords(question)
     preferred_sources = set(preferred_sources or [])
 
-    for document, metadata, distance in zip(documents, metadatas, distances):
-        source = metadata.get("source", "未知来源")
-        search_results.append({
-            "document": document,
-            "source": source,
-            "source_type": metadata.get("source_type", "unknown"),
-            "url": metadata.get("url", ""),
-            "chunk_index": metadata.get("chunk_index", 0),
-            "distance": distance,
-            "keyword_score": keyword_score(document, question_keywords),
-            "source_priority": source_priority_score(source, preferred_sources),
-        })
+    fused = {}
 
-    search_results.sort(
-        key=lambda item: (
-            -item["source_priority"],
-            -item["keyword_score"],
-            item["distance"],
+    for rank, row in enumerate(vector_rows, start=1):
+        item_id = row["id"]
+        fused.setdefault(item_id, row.copy())
+        fused[item_id]["vector_rank"] = rank
+        fused[item_id]["rrf_score"] = fused[item_id].get("rrf_score", 0) + 1 / (RRF_K + rank)
+
+    for rank, row in enumerate(bm25_rows, start=1):
+        item_id = row["id"]
+        fused.setdefault(item_id, row.copy())
+        fused[item_id]["bm25_rank"] = rank
+        fused[item_id]["bm25_score"] = row.get("bm25_score", 0)
+        fused[item_id]["rrf_score"] = fused[item_id].get("rrf_score", 0) + 1 / (RRF_K + rank)
+
+    search_results = []
+
+    for row in fused.values():
+        source_type = row.get("source_type", "unknown")
+        source_priority = source_priority_score(row["source"], preferred_sources)
+        keyword_hits = keyword_score(row["document"], question_keywords)
+        final_score = (
+            row.get("rrf_score", 0)
+            * source_weight(source_type)
+            * (1.2 if source_priority else 1.0)
+            + keyword_hits * 0.01
         )
-    )
+        row["keyword_score"] = keyword_hits
+        row["source_priority"] = source_priority
+        row["source_weight"] = source_weight(source_type)
+        row["final_score"] = final_score
+        search_results.append(row)
 
-    return search_results[:top_k]
+    search_results.sort(key=lambda item: item["final_score"], reverse=True)
+
+    return apply_source_quotas(search_results, top_k)
 
 
 def build_context(search_results):
@@ -254,6 +414,9 @@ def build_context(search_results):
 来源：{source_line}
 类型：{item['source_type']}
 优先级：{source_label(item)}
+融合分：{item.get('final_score', 0):.4f}
+向量排名：{item.get('vector_rank', '未召回')}
+关键词排名：{item.get('bm25_rank', '未召回')}
 块编号：{item['chunk_index']}
 内容：{item['document']}
 """
