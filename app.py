@@ -17,6 +17,8 @@ enable_reranker = get_secret("ENABLE_RERANKER")
 reranker_model_name = get_secret("RERANKER_MODEL_NAME")
 rerank_limit = get_secret("RERANK_LIMIT")
 hf_token = get_secret("HF_TOKEN")
+enable_summary_chunks = get_secret("ENABLE_SUMMARY_CHUNKS")
+summary_min_chars = get_secret("SUMMARY_MIN_CHARS")
 
 if deepseek_key:
     os.environ["DEEPSEEK_API_KEY"] = deepseek_key
@@ -30,6 +32,10 @@ if rerank_limit:
     os.environ["RERANK_LIMIT"] = rerank_limit
 if hf_token:
     os.environ["HF_TOKEN"] = hf_token
+if enable_summary_chunks:
+    os.environ["ENABLE_SUMMARY_CHUNKS"] = enable_summary_chunks
+if summary_min_chars:
+    os.environ["SUMMARY_MIN_CHARS"] = summary_min_chars
 
 import rag_agent_core as agent
 import parsing_layer
@@ -215,7 +221,7 @@ if prompt:
                     label = source_label(source)
                     st.markdown(f"**{index}. {title}**")
                     st.markdown(f"`{label}`")
-                    st.caption(f"类型：{source_type}")
+                    st.caption(f"类型：{source_type} | 块类型：{source.get('chunk_type', 'child')}")
                     location_parts = []
                     if source.get("section_title"):
                         location_parts.append(f"小节：{source['section_title']}")

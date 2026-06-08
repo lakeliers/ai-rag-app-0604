@@ -15,10 +15,11 @@ import requests
 from openai import OpenAI
 from sentence_transformers import CrossEncoder, SentenceTransformer
 from parsing_layer import ParsedSection
+from chunking_layer import ChunkCandidate, chunk_section, split_text_fixed, split_text_recursive
 
 
 EMBEDDING_MODEL_NAME = "shibing624/text2vec-base-chinese"
-CHROMA_PATH = "./chroma_db"
+CHROMA_PATH = os.getenv("CHROMA_PATH", "./chroma_db")
 COLLECTION_NAME = "file_docs"
 DEEPSEEK_MODEL = os.getenv("DEEPSEEK_MODEL", "deepseek-v4-flash")
 QWEN_VL_MODEL = os.getenv("QWEN_VL_MODEL", "qwen-vl-plus")
@@ -27,6 +28,9 @@ ENABLE_RERANKER = os.getenv("ENABLE_RERANKER", "1") == "1"
 RERANK_LIMIT = int(os.getenv("RERANK_LIMIT", "12"))
 MAX_CHUNKS_PER_SOURCE = int(os.getenv("MAX_CHUNKS_PER_SOURCE", "2"))
 CONTEXT_CHAR_BUDGET = int(os.getenv("CONTEXT_CHAR_BUDGET", "4500"))
+ENABLE_SUMMARY_CHUNKS = os.getenv("ENABLE_SUMMARY_CHUNKS", "0") == "1"
+SUMMARY_MIN_CHARS = int(os.getenv("SUMMARY_MIN_CHARS", "1200"))
+PARENT_TEXT_CHAR_LIMIT = int(os.getenv("PARENT_TEXT_CHAR_LIMIT", "1800"))
 RRF_K = 60
 SOURCE_WEIGHTS = {
     "upload": 1.35,
@@ -127,47 +131,54 @@ def get_qwen_client():
 
 
 def split_text(text, chunk_size=500, chunk_overlap=80):
-    text = text.strip()
-    if not text:
-        return []
-
-    chunks = []
-    start = 0
-
-    while start < len(text):
-        end = start + chunk_size
-        chunk = text[start:end].strip()
-        if chunk:
-            chunks.append(chunk)
-        start = start + chunk_size - chunk_overlap
-
-    return chunks
+    return split_text_fixed(text, chunk_size=chunk_size, chunk_overlap=chunk_overlap)
 
 
 def split_section(section, chunk_size=500, chunk_overlap=80):
-    prefix_parts = []
-    if section.section_title:
-        prefix_parts.append(f"标题：{section.section_title}")
-    if section.page:
-        prefix_parts.append(f"页码：{section.page}")
-    if section.sheet:
-        prefix_parts.append(f"工作表：{section.sheet}")
-    if section.row_start is not None:
-        if section.row_end is not None and section.row_end != section.row_start:
-            prefix_parts.append(f"行号：{section.row_start}-{section.row_end}")
-        else:
-            prefix_parts.append(f"行号：{section.row_start}")
-
-    prefix = "\n".join(prefix_parts)
-    text = section.text.strip()
-    if prefix:
-        text = f"{prefix}\n{text}"
-
-    return split_text(text, chunk_size=chunk_size, chunk_overlap=chunk_overlap)
+    return [
+        chunk.text
+        for chunk in chunk_section(section, chunk_size=chunk_size, chunk_overlap=chunk_overlap)
+    ]
 
 
 def embed_texts(texts):
     return embedding_model.encode(texts).tolist()
+
+
+def summarize_section_for_retrieval(section):
+    if not ENABLE_SUMMARY_CHUNKS:
+        return ""
+
+    text = section.text.strip()
+    if len(text) < SUMMARY_MIN_CHARS:
+        return ""
+
+    client = get_deepseek_client()
+    if client is None:
+        return ""
+
+    prompt = f"""请把下面资料压缩成适合知识库检索的摘要。
+要求：
+1. 保留关键实体、数字、时间、规则、限制条件
+2. 不要加入原文没有的信息
+3. 控制在 180 字以内
+4. 用陈述句输出
+
+资料：
+{text[:4000]}
+"""
+
+    try:
+        response = client.chat.completions.create(
+            model=DEEPSEEK_MODEL,
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0,
+            max_tokens=220,
+        )
+        return response.choices[0].message.content.strip()
+    except Exception as e:
+        print(f"摘要 chunk 生成失败，跳过：{e}")
+        return ""
 
 
 def analyze_query(question):
@@ -336,6 +347,9 @@ def make_search_item(item_id, document, metadata, distance=None, bm25_score=0.0)
         "sheet": metadata.get("sheet", ""),
         "row_start": metadata.get("row_start", 0),
         "row_end": metadata.get("row_end", 0),
+        "chunk_type": metadata.get("chunk_type", "child"),
+        "parent_id": metadata.get("parent_id", ""),
+        "parent_text": metadata.get("parent_text", ""),
         "distance": distance,
         "bm25_score": bm25_score,
     }
@@ -361,8 +375,19 @@ def add_sections_to_chroma(sections, source, source_type="local", url="", create
     chunk_rows = []
 
     for section_index, section in enumerate(sections):
-        chunks = split_section(section)
-        for chunk_index, chunk in enumerate(chunks):
+        chunk_candidates = chunk_section(section, source=source, section_index=section_index)
+        summary = summarize_section_for_retrieval(section)
+        if summary:
+            parent_id = chunk_candidates[0].parent_id if chunk_candidates else f"{source}:{section_index}:summary"
+            parent_text = chunk_candidates[0].parent_text if chunk_candidates else section.text.strip()
+            chunk_candidates.insert(0, ChunkCandidate(
+                text=f"摘要：{summary}",
+                chunk_type="summary",
+                parent_id=parent_id,
+                parent_text=parent_text,
+            ))
+
+        for chunk_index, chunk in enumerate(chunk_candidates):
             chunk_rows.append((section_index, chunk_index, section, chunk))
 
     if not chunk_rows:
@@ -377,7 +402,7 @@ def add_sections_to_chroma(sections, source, source_type="local", url="", create
     for index, (section_index, chunk_index, section, chunk) in enumerate(chunk_rows):
         item_id = f"{source_type}_{safe_id(source)}_{now}_{section_index}_{chunk_index}"
         ids.append(item_id)
-        chunks.append(chunk)
+        chunks.append(chunk.text)
         metadatas.append({
             "source": source,
             "source_type": source_type,
@@ -392,6 +417,9 @@ def add_sections_to_chroma(sections, source, source_type="local", url="", create
             "sheet": section.sheet,
             "row_start": section.row_start or 0,
             "row_end": section.row_end or 0,
+            "chunk_type": chunk.chunk_type,
+            "parent_id": chunk.parent_id,
+            "parent_text": chunk.parent_text[:PARENT_TEXT_CHAR_LIMIT],
         })
 
     embeddings = embed_texts(chunks)
@@ -793,6 +821,9 @@ def build_context(search_results):
         source_line = item["source"]
         if item.get("url"):
             source_line += f" | {item['url']}"
+        content = item["document"]
+        if item.get("chunk_type") == "summary" and item.get("parent_text"):
+            content = f"{item['document']}\n\n原文依据：\n{item['parent_text']}"
 
         part = f"""资料 {index}：
 来源：{source_line}
@@ -809,11 +840,12 @@ Rerank分：{item.get('rerank_score', '无')}
 关键词排名：{item.get('bm25_rank', '未召回')}
 上下文顺序：{item.get('context_order', index)}
 块编号：{item['chunk_index']}
+块类型：{item.get('chunk_type', 'child')}
 小节：{item.get('section_title', '')}
 页码：{item.get('page', 0)}
 工作表：{item.get('sheet', '')}
 行号：{item.get('row_start', 0)}-{item.get('row_end', 0)}
-内容：{item['document']}
+内容：{content}
 """
         parts.append(part)
 
