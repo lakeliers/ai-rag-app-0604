@@ -14,6 +14,7 @@ import chromadb
 import requests
 from openai import OpenAI
 from sentence_transformers import CrossEncoder, SentenceTransformer
+from parsing_layer import ParsedSection
 
 
 EMBEDDING_MODEL_NAME = "shibing624/text2vec-base-chinese"
@@ -141,6 +142,28 @@ def split_text(text, chunk_size=500, chunk_overlap=80):
         start = start + chunk_size - chunk_overlap
 
     return chunks
+
+
+def split_section(section, chunk_size=500, chunk_overlap=80):
+    prefix_parts = []
+    if section.section_title:
+        prefix_parts.append(f"标题：{section.section_title}")
+    if section.page:
+        prefix_parts.append(f"页码：{section.page}")
+    if section.sheet:
+        prefix_parts.append(f"工作表：{section.sheet}")
+    if section.row_start is not None:
+        if section.row_end is not None and section.row_end != section.row_start:
+            prefix_parts.append(f"行号：{section.row_start}-{section.row_end}")
+        else:
+            prefix_parts.append(f"行号：{section.row_start}")
+
+    prefix = "\n".join(prefix_parts)
+    text = section.text.strip()
+    if prefix:
+        text = f"{prefix}\n{text}"
+
+    return split_text(text, chunk_size=chunk_size, chunk_overlap=chunk_overlap)
 
 
 def embed_texts(texts):
@@ -308,6 +331,11 @@ def make_search_item(item_id, document, metadata, distance=None, bm25_score=0.0)
         "created_at": metadata.get("created_at", 0),
         "content_type": metadata.get("content_type", "text"),
         "document_key": metadata.get("document_key", source),
+        "section_title": metadata.get("section_title", ""),
+        "page": metadata.get("page", 0),
+        "sheet": metadata.get("sheet", ""),
+        "row_start": metadata.get("row_start", 0),
+        "row_end": metadata.get("row_end", 0),
         "distance": distance,
         "bm25_score": bm25_score,
     }
@@ -319,26 +347,51 @@ def safe_id(text):
 
 
 def add_text_to_chroma(text, source, source_type="local", url="", content_type="text", created_at=None):
-    chunks = split_text(text)
-    if not chunks:
+    section = ParsedSection(text=text, content_type=content_type)
+    return add_sections_to_chroma(
+        [section],
+        source=source,
+        source_type=source_type,
+        url=url,
+        created_at=created_at,
+    )
+
+
+def add_sections_to_chroma(sections, source, source_type="local", url="", created_at=None):
+    chunk_rows = []
+
+    for section_index, section in enumerate(sections):
+        chunks = split_section(section)
+        for chunk_index, chunk in enumerate(chunks):
+            chunk_rows.append((section_index, chunk_index, section, chunk))
+
+    if not chunk_rows:
         return 0
 
     now = int(created_at or time.time())
     ids = []
     metadatas = []
+    chunks = []
     document_key = f"{source_type}:{source}:{url or source}"
 
-    for index, chunk in enumerate(chunks):
-        item_id = f"{source_type}_{safe_id(source)}_{now}_{index}"
+    for index, (section_index, chunk_index, section, chunk) in enumerate(chunk_rows):
+        item_id = f"{source_type}_{safe_id(source)}_{now}_{section_index}_{chunk_index}"
         ids.append(item_id)
+        chunks.append(chunk)
         metadatas.append({
             "source": source,
             "source_type": source_type,
             "url": url,
             "chunk_index": index,
             "created_at": now,
-            "content_type": content_type,
+            "content_type": section.content_type,
             "document_key": document_key,
+            "section_title": section.section_title,
+            "section_index": section_index,
+            "page": section.page or 0,
+            "sheet": section.sheet,
+            "row_start": section.row_start or 0,
+            "row_end": section.row_end or 0,
         })
 
     embeddings = embed_texts(chunks)
@@ -756,6 +809,10 @@ Rerank分：{item.get('rerank_score', '无')}
 关键词排名：{item.get('bm25_rank', '未召回')}
 上下文顺序：{item.get('context_order', index)}
 块编号：{item['chunk_index']}
+小节：{item.get('section_title', '')}
+页码：{item.get('page', 0)}
+工作表：{item.get('sheet', '')}
+行号：{item.get('row_start', 0)}-{item.get('row_end', 0)}
 内容：{item['document']}
 """
         parts.append(part)

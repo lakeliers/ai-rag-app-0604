@@ -1,7 +1,4 @@
-import csv
-import json
 import os
-from io import BytesIO, StringIO
 
 import streamlit as st
 
@@ -35,6 +32,7 @@ if hf_token:
     os.environ["HF_TOKEN"] = hf_token
 
 import rag_agent_core as agent
+import parsing_layer
 
 agent.seed_local_note()
 
@@ -48,79 +46,9 @@ st.set_page_config(
 st.title("RAG Agent Pro")
 
 
-def decode_bytes(file_bytes):
-    for encoding in ["utf-8", "utf-8-sig", "gb18030"]:
-        try:
-            return file_bytes.decode(encoding)
-        except UnicodeDecodeError:
-            continue
-    return file_bytes.decode("utf-8", errors="ignore")
 
-
-def read_pdf(file_bytes):
-    import pypdf
-
-    reader = pypdf.PdfReader(BytesIO(file_bytes))
-    pages = []
-    for page in reader.pages:
-        text = page.extract_text()
-        if text:
-            pages.append(text)
-    return "\n\n".join(pages)
-
-
-def read_docx(file_bytes):
-    from docx import Document
-
-    doc = Document(BytesIO(file_bytes))
-    return "\n\n".join(p.text for p in doc.paragraphs if p.text.strip())
-
-
-def read_csv(file_bytes):
-    text = decode_bytes(file_bytes)
-    rows = csv.reader(StringIO(text))
-    return "\n".join(" | ".join(row) for row in rows)
-
-
-def read_xlsx(file_bytes):
-    from openpyxl import load_workbook
-
-    workbook = load_workbook(BytesIO(file_bytes), read_only=True, data_only=True)
-    parts = []
-    for sheet in workbook.worksheets:
-        parts.append(f"工作表：{sheet.title}")
-        for row in sheet.iter_rows(values_only=True):
-            values = ["" if value is None else str(value) for value in row]
-            if any(values):
-                parts.append(" | ".join(values))
-    return "\n".join(parts)
-
-
-def read_json(file_bytes):
-    text = decode_bytes(file_bytes)
-    data = json.loads(text)
-    return json.dumps(data, ensure_ascii=False, indent=2)
-
-
-def read_upload_as_text(uploaded_file):
-    file_bytes = uploaded_file.getvalue()
-    file_name = uploaded_file.name.lower()
-
-    if file_name.endswith((".txt", ".md", ".log")):
-        return decode_bytes(file_bytes)
-    if file_name.endswith(".pdf"):
-        return read_pdf(file_bytes)
-    if file_name.endswith(".docx"):
-        return read_docx(file_bytes)
-    if file_name.endswith(".csv"):
-        return read_csv(file_bytes)
-    if file_name.endswith(".xlsx"):
-        return read_xlsx(file_bytes)
-    if file_name.endswith(".json"):
-        return read_json(file_bytes)
-
-    raise ValueError("暂不支持这个文件格式")
-
+def read_upload_as_sections(uploaded_file):
+    return parsing_layer.read_upload_as_sections(uploaded_file)
 
 def is_image(uploaded_file):
     return uploaded_file.type.startswith("image/")
@@ -161,14 +89,13 @@ def ingest_uploaded_files(uploaded_files, question):
                 content_type="image",
             )
         else:
-            text = read_upload_as_text(uploaded_file)
+            sections = read_upload_as_sections(uploaded_file)
             source = f"上传：{uploaded_file.name}"
-            chunk_count = agent.add_text_to_chroma(
-                text,
+            chunk_count = agent.add_sections_to_chroma(
+                sections,
                 source=source,
                 source_type="upload",
                 url=uploaded_file.name,
-                content_type="file",
             )
 
         st.session_state.ingested_uploads[key] = source
@@ -289,6 +216,17 @@ if prompt:
                     st.markdown(f"**{index}. {title}**")
                     st.markdown(f"`{label}`")
                     st.caption(f"类型：{source_type}")
+                    location_parts = []
+                    if source.get("section_title"):
+                        location_parts.append(f"小节：{source['section_title']}")
+                    if source.get("page"):
+                        location_parts.append(f"页码：{source['page']}")
+                    if source.get("sheet"):
+                        location_parts.append(f"工作表：{source['sheet']}")
+                    if source.get("row_start"):
+                        location_parts.append(f"行：{source.get('row_start')}-{source.get('row_end')}")
+                    if location_parts:
+                        st.caption(" | ".join(location_parts))
                     st.caption(
                         "融合分："
                         f"{source.get('final_score', 0):.4f} | "
