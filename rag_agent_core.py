@@ -13,7 +13,7 @@ from urllib.parse import quote_plus, unquote, urlparse, parse_qs
 import chromadb
 import requests
 from openai import OpenAI
-from sentence_transformers import SentenceTransformer
+from sentence_transformers import CrossEncoder, SentenceTransformer
 
 
 EMBEDDING_MODEL_NAME = "shibing624/text2vec-base-chinese"
@@ -21,6 +21,11 @@ CHROMA_PATH = "./chroma_db"
 COLLECTION_NAME = "file_docs"
 DEEPSEEK_MODEL = os.getenv("DEEPSEEK_MODEL", "deepseek-v4-flash")
 QWEN_VL_MODEL = os.getenv("QWEN_VL_MODEL", "qwen-vl-plus")
+RERANKER_MODEL_NAME = os.getenv("RERANKER_MODEL_NAME", "BAAI/bge-reranker-base")
+ENABLE_RERANKER = os.getenv("ENABLE_RERANKER", "1") == "1"
+RERANK_LIMIT = int(os.getenv("RERANK_LIMIT", "12"))
+MAX_CHUNKS_PER_SOURCE = int(os.getenv("MAX_CHUNKS_PER_SOURCE", "2"))
+CONTEXT_CHAR_BUDGET = int(os.getenv("CONTEXT_CHAR_BUDGET", "4500"))
 RRF_K = 60
 SOURCE_WEIGHTS = {
     "upload": 1.35,
@@ -33,6 +38,32 @@ SOURCE_QUOTAS = {
     "web": 2,
     "local": 1,
     "unknown": 1,
+}
+INTENT_WEIGHTS = {
+    "latest_news": {
+        "rerank": 0.45,
+        "rrf": 0.10,
+        "source": 0.15,
+        "freshness": 0.30,
+    },
+    "definition": {
+        "rerank": 0.75,
+        "rrf": 0.15,
+        "source": 0.10,
+        "freshness": 0.00,
+    },
+    "policy_or_prd": {
+        "rerank": 0.55,
+        "rrf": 0.10,
+        "source": 0.25,
+        "freshness": 0.10,
+    },
+    "general": {
+        "rerank": 0.65,
+        "rrf": 0.15,
+        "source": 0.10,
+        "freshness": 0.10,
+    },
 }
 
 
@@ -48,6 +79,8 @@ collection = chroma_client.get_or_create_collection(name=COLLECTION_NAME)
 
 conversation_history = []
 last_sources = []
+reranker_model = None
+reranker_load_failed = False
 
 
 class SimpleTextExtractor(HTMLParser):
@@ -114,6 +147,58 @@ def embed_texts(texts):
     return embedding_model.encode(texts).tolist()
 
 
+def analyze_query(question):
+    lowered = question.lower()
+    latest_words = ["最近", "最新", "今天", "新闻", "动态", "趋势", "刚刚", "现在"]
+    definition_words = ["是什么", "定义", "概念", "解释一下", "介绍一下", "什么意思"]
+    policy_words = ["prd", "需求", "规则", "政策", "制度", "上线时间", "价格", "方案", "口径"]
+
+    if any(word in question for word in latest_words):
+        intent = "latest_news"
+    elif any(word in lowered for word in policy_words):
+        intent = "policy_or_prd"
+    elif any(word in question for word in definition_words):
+        intent = "definition"
+    else:
+        intent = "general"
+
+    return {
+        "intent": intent,
+        "weights": INTENT_WEIGHTS[intent],
+        "time_sensitive": intent == "latest_news" or any(word in question for word in ["最近", "最新", "今天"]),
+        "needs_exact_terms": bool(re.search(r"[A-Za-z0-9_+\-.]{3,}", question)),
+    }
+
+
+def get_ranking_weights(query_profile):
+    return query_profile.get("weights", INTENT_WEIGHTS["general"])
+
+
+def get_reranker_model():
+    global reranker_model, reranker_load_failed
+
+    if not ENABLE_RERANKER:
+        return None
+
+    if reranker_model is not None:
+        return reranker_model
+
+    if reranker_load_failed:
+        return None
+
+    try:
+        print("正在加载 Reranker 精排模型...")
+        reranker_model = CrossEncoder(
+            RERANKER_MODEL_NAME,
+            local_files_only=LOCAL_FILES_ONLY,
+        )
+        return reranker_model
+    except Exception as e:
+        reranker_load_failed = True
+        print(f"Reranker 加载失败，继续使用 RRF 排序：{e}")
+        return None
+
+
 def extract_query_keywords(question):
     words = re.findall(r"[A-Za-z0-9_+\-.]{2,}|[\u4e00-\u9fff]{2,}", question)
     stop_words = {
@@ -155,8 +240,11 @@ def tokenize_text(text):
     return tokens
 
 
-def bm25_retrieve(question, limit=20):
-    data = collection.get(include=["documents", "metadatas"])
+def bm25_retrieve(question, limit=20, metadata_filter=None):
+    if metadata_filter:
+        data = collection.get(include=["documents", "metadatas"], where=metadata_filter)
+    else:
+        data = collection.get(include=["documents", "metadatas"])
     ids = data.get("ids", [])
     documents = data.get("documents", [])
     metadatas = data.get("metadatas", [])
@@ -217,6 +305,9 @@ def make_search_item(item_id, document, metadata, distance=None, bm25_score=0.0)
         "source_type": metadata.get("source_type", "unknown"),
         "url": metadata.get("url", ""),
         "chunk_index": metadata.get("chunk_index", 0),
+        "created_at": metadata.get("created_at", 0),
+        "content_type": metadata.get("content_type", "text"),
+        "document_key": metadata.get("document_key", source),
         "distance": distance,
         "bm25_score": bm25_score,
     }
@@ -227,14 +318,15 @@ def safe_id(text):
     return text[:120]
 
 
-def add_text_to_chroma(text, source, source_type="local", url=""):
+def add_text_to_chroma(text, source, source_type="local", url="", content_type="text", created_at=None):
     chunks = split_text(text)
     if not chunks:
         return 0
 
-    now = int(time.time())
+    now = int(created_at or time.time())
     ids = []
     metadatas = []
+    document_key = f"{source_type}:{source}:{url or source}"
 
     for index, chunk in enumerate(chunks):
         item_id = f"{source_type}_{safe_id(source)}_{now}_{index}"
@@ -244,6 +336,9 @@ def add_text_to_chroma(text, source, source_type="local", url=""):
             "source_type": source_type,
             "url": url,
             "chunk_index": index,
+            "created_at": now,
+            "content_type": content_type,
+            "document_key": document_key,
         })
 
     embeddings = embed_texts(chunks)
@@ -298,12 +393,31 @@ def source_label(item):
     return "其他资料｜参考"
 
 
-def vector_retrieve(question, limit=20):
+def build_metadata_filter(query_profile):
+    if query_profile.get("intent") != "latest_news":
+        return None
+
+    recent_window_seconds = 90 * 24 * 60 * 60
+    return {
+        "created_at": {
+            "$gte": int(time.time()) - recent_window_seconds,
+        }
+    }
+
+
+def vector_retrieve(question, limit=20, metadata_filter=None):
     query_embedding = embed_texts([question])
-    results = collection.query(
-        query_embeddings=query_embedding,
-        n_results=limit,
-    )
+    if metadata_filter:
+        results = collection.query(
+            query_embeddings=query_embedding,
+            n_results=limit,
+            where=metadata_filter,
+        )
+    else:
+        results = collection.query(
+            query_embeddings=query_embedding,
+            n_results=limit,
+        )
 
     rows = []
     ids = results.get("ids", [[]])[0]
@@ -324,6 +438,101 @@ def vector_retrieve(question, limit=20):
 
 def source_weight(source_type):
     return SOURCE_WEIGHTS.get(source_type, SOURCE_WEIGHTS["unknown"])
+
+
+def freshness_score(row):
+    created_at = row.get("created_at") or 0
+    if not created_at:
+        return 0.5
+
+    age_days = max((int(time.time()) - int(created_at)) / 86400, 0)
+    if age_days <= 1:
+        return 1.0
+    if age_days <= 7:
+        return 0.85
+    if age_days <= 30:
+        return 0.65
+    if age_days <= 90:
+        return 0.4
+    return 0.2
+
+
+def normalize_rrf_score(score):
+    return min(score * 30, 1.0)
+
+
+def answerability_score(row, question_keywords, query_profile):
+    document = row.get("document", "")
+    lowered_document = document.lower()
+    intent = query_profile.get("intent", "general")
+
+    keyword_coverage = 0.0
+    if question_keywords:
+        hits = sum(1 for keyword in question_keywords if keyword in lowered_document)
+        keyword_coverage = hits / len(question_keywords)
+
+    info_markers = [
+        "包括",
+        "分别是",
+        "主要",
+        "原因",
+        "目标",
+        "明确",
+        "显示",
+        "为",
+        "是",
+        "定义",
+        "趋势",
+        "多智能体",
+        "自动化",
+        "工作流",
+        "检索增强生成",
+    ]
+    noise_markers = [
+        "导航",
+        "入口",
+        "榜单",
+        "聚合",
+        "热门产品列表",
+        "工具榜单",
+        "教程入口",
+    ]
+
+    marker_score = min(sum(1 for marker in info_markers if marker in document) / 4, 1.0)
+    length_score = min(len(document) / 120, 1.0)
+    noise_penalty = min(sum(1 for marker in noise_markers if marker in document) * 0.25, 0.6)
+
+    score = keyword_coverage * 0.45 + marker_score * 0.35 + length_score * 0.20
+
+    if intent == "definition" and ("是什么" in document or "定义" in document or "检索增强生成" in document):
+        score += 0.25
+    if intent == "latest_news" and ("趋势" in document or "新趋势" in document or "2026" in document):
+        score += 0.20
+
+    return max(min(score - noise_penalty, 1.0), 0.0)
+
+
+def base_retrieval_score(row, source_priority, keyword_hits, query_profile):
+    weights = get_ranking_weights(query_profile)
+    source_component = source_weight(row.get("source_type", "unknown")) / max(SOURCE_WEIGHTS.values())
+    freshness_component = freshness_score(row)
+    question_keywords = query_profile.get("keywords", [])
+    answerability_component = answerability_score(row, question_keywords, query_profile)
+    exact_term_bonus = keyword_hits * 0.005
+
+    score = (
+        normalize_rrf_score(row.get("rrf_score", 0)) * weights["rrf"]
+        + answerability_component * 0.35
+        + source_component * weights["source"]
+        + freshness_component * weights["freshness"]
+        + exact_term_bonus
+    )
+    row["answerability_score"] = answerability_component
+
+    if source_priority:
+        score *= 1.2
+
+    return score
 
 
 def apply_source_quotas(rows, top_k):
@@ -355,11 +564,127 @@ def apply_source_quotas(rows, top_k):
     return selected
 
 
+def dedupe_and_limit_chunks(rows, max_chunks_per_source=MAX_CHUNKS_PER_SOURCE):
+    selected = []
+    seen_texts = set()
+    source_counts = defaultdict(int)
+
+    for row in rows:
+        document_key = row.get("document_key") or row.get("source")
+        if source_counts[document_key] >= max_chunks_per_source:
+            row["context_skip_reason"] = "同文档块数已达上限"
+            continue
+
+        normalized_text = re.sub(r"\s+", "", row["document"].lower())[:260]
+        if normalized_text in seen_texts:
+            row["context_skip_reason"] = "内容重复"
+            continue
+
+        seen_texts.add(normalized_text)
+        source_counts[document_key] += 1
+        row["context_skip_reason"] = ""
+        selected.append(row)
+
+    return selected
+
+
+def pack_context_results(rows, top_k, char_budget=CONTEXT_CHAR_BUDGET):
+    quota_rows = apply_source_quotas(rows, top_k * 2)
+    deduped_rows = dedupe_and_limit_chunks(quota_rows)
+
+    packed = []
+    used_chars = 0
+
+    for row in deduped_rows:
+        content_len = len(row.get("document", ""))
+        if packed and used_chars + content_len > char_budget:
+            row["context_skip_reason"] = "超过上下文预算"
+            continue
+
+        row["context_order"] = len(packed) + 1
+        packed.append(row)
+        used_chars += content_len
+
+        if len(packed) >= top_k:
+            break
+
+    if len(packed) < top_k:
+        packed_ids = {row["id"] for row in packed}
+        for row in rows:
+            if row["id"] in packed_ids:
+                continue
+            row["context_order"] = len(packed) + 1
+            packed.append(row)
+            if len(packed) >= top_k:
+                break
+
+    return packed
+
+
+def rerank_results(question, rows, query_profile, limit=None):
+    if not rows:
+        return []
+
+    model = get_reranker_model()
+    if model is None:
+        for row in rows:
+            row["rerank_status"] = "未启用"
+            row["final_score"] = row.get("pre_rerank_score", row.get("final_score", 0))
+        return rows
+
+    rerank_limit = limit or RERANK_LIMIT
+    candidate_rows = rows[:rerank_limit]
+    remaining_rows = rows[rerank_limit:]
+
+    pairs = [
+        [question, row["document"]]
+        for row in candidate_rows
+    ]
+
+    scores = model.predict(pairs)
+    min_score = min(float(score) for score in scores)
+    max_score = max(float(score) for score in scores)
+    score_range = max_score - min_score
+    weights = get_ranking_weights(query_profile)
+
+    for row, score in zip(candidate_rows, scores):
+        raw_score = float(score)
+        if score_range == 0:
+            normalized_score = 0.5
+        else:
+            normalized_score = (raw_score - min_score) / score_range
+
+        row["pre_rerank_score"] = row.get("final_score", 0)
+        row["rerank_score"] = raw_score
+        row["rerank_norm"] = normalized_score
+        row["rerank_status"] = "已启用"
+        source_component = source_weight(row.get("source_type", "unknown")) / max(SOURCE_WEIGHTS.values())
+        freshness_component = freshness_score(row)
+        row["final_score"] = (
+            normalized_score * weights["rerank"]
+            + normalize_rrf_score(row.get("rrf_score", 0)) * weights["rrf"]
+            + source_component * weights["source"]
+            + freshness_component * weights["freshness"]
+        )
+        if row.get("source_priority"):
+            row["final_score"] *= 1.2
+
+    candidate_rows.sort(key=lambda item: item["final_score"], reverse=True)
+    return candidate_rows + remaining_rows
+
+
 def search_chroma(question, top_k=3, preferred_sources=None):
+    query_profile = analyze_query(question)
+    metadata_filter = build_metadata_filter(query_profile)
     recall_limit = max(top_k * 8, 24)
-    vector_rows = vector_retrieve(question, limit=recall_limit)
-    bm25_rows = bm25_retrieve(question, limit=recall_limit)
+    vector_rows = vector_retrieve(question, limit=recall_limit, metadata_filter=metadata_filter)
+    bm25_rows = bm25_retrieve(question, limit=recall_limit, metadata_filter=metadata_filter)
+    if metadata_filter and not vector_rows and not bm25_rows:
+        metadata_filter = None
+        vector_rows = vector_retrieve(question, limit=recall_limit)
+        bm25_rows = bm25_retrieve(question, limit=recall_limit)
     question_keywords = extract_query_keywords(question)
+    query_profile["keywords"] = question_keywords
     preferred_sources = set(preferred_sources or [])
 
     fused = {}
@@ -383,21 +708,27 @@ def search_chroma(question, top_k=3, preferred_sources=None):
         source_type = row.get("source_type", "unknown")
         source_priority = source_priority_score(row["source"], preferred_sources)
         keyword_hits = keyword_score(row["document"], question_keywords)
-        final_score = (
-            row.get("rrf_score", 0)
-            * source_weight(source_type)
-            * (1.2 if source_priority else 1.0)
-            + keyword_hits * 0.01
-        )
+        final_score = base_retrieval_score(row, source_priority, keyword_hits, query_profile)
         row["keyword_score"] = keyword_hits
         row["source_priority"] = source_priority
         row["source_weight"] = source_weight(source_type)
+        row["freshness_score"] = freshness_score(row)
+        row["answerability_score"] = row.get("answerability_score", 0)
+        row["query_intent"] = query_profile["intent"]
+        row["ranking_weights"] = str(query_profile["weights"])
         row["final_score"] = final_score
+        row["pre_rerank_score"] = final_score
         search_results.append(row)
 
     search_results.sort(key=lambda item: item["final_score"], reverse=True)
+    search_results = rerank_results(
+        question,
+        search_results,
+        query_profile,
+        limit=max(top_k * 4, RERANK_LIMIT),
+    )
 
-    return apply_source_quotas(search_results, top_k)
+    return pack_context_results(search_results, top_k)
 
 
 def build_context(search_results):
@@ -414,9 +745,16 @@ def build_context(search_results):
 来源：{source_line}
 类型：{item['source_type']}
 优先级：{source_label(item)}
+查询意图：{item.get('query_intent', 'general')}
 融合分：{item.get('final_score', 0):.4f}
+原始融合分：{item.get('pre_rerank_score', item.get('final_score', 0)):.4f}
+时间新鲜度：{item.get('freshness_score', 0):.2f}
+答案性分数：{item.get('answerability_score', 0):.2f}
+Rerank状态：{item.get('rerank_status', '未启用')}
+Rerank分：{item.get('rerank_score', '无')}
 向量排名：{item.get('vector_rank', '未召回')}
 关键词排名：{item.get('bm25_rank', '未召回')}
+上下文顺序：{item.get('context_order', index)}
 块编号：{item['chunk_index']}
 内容：{item['document']}
 """

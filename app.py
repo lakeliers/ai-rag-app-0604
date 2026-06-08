@@ -16,11 +16,23 @@ def get_secret(name):
 
 deepseek_key = get_secret("DEEPSEEK_API_KEY")
 dashscope_key = get_secret("DASHSCOPE_API_KEY")
+enable_reranker = get_secret("ENABLE_RERANKER")
+reranker_model_name = get_secret("RERANKER_MODEL_NAME")
+rerank_limit = get_secret("RERANK_LIMIT")
+hf_token = get_secret("HF_TOKEN")
 
 if deepseek_key:
     os.environ["DEEPSEEK_API_KEY"] = deepseek_key
 if dashscope_key:
     os.environ["DASHSCOPE_API_KEY"] = dashscope_key
+if enable_reranker:
+    os.environ["ENABLE_RERANKER"] = enable_reranker
+if reranker_model_name:
+    os.environ["RERANKER_MODEL_NAME"] = reranker_model_name
+if rerank_limit:
+    os.environ["RERANK_LIMIT"] = rerank_limit
+if hf_token:
+    os.environ["HF_TOKEN"] = hf_token
 
 import rag_agent_core as agent
 
@@ -146,6 +158,7 @@ def ingest_uploaded_files(uploaded_files, question):
                 source=source,
                 source_type="upload",
                 url=uploaded_file.name,
+                content_type="image",
             )
         else:
             text = read_upload_as_text(uploaded_file)
@@ -155,6 +168,7 @@ def ingest_uploaded_files(uploaded_files, question):
                 source=source,
                 source_type="upload",
                 url=uploaded_file.name,
+                content_type="file",
             )
 
         st.session_state.ingested_uploads[key] = source
@@ -207,6 +221,7 @@ with st.sidebar:
     st.caption("Agent 会自动使用上传资料，并联网补充资料；没有上传资料时，会直接联网收集。")
     st.write("DeepSeek:", "已配置" if deepseek_key else "未配置")
     st.write("通义百炼:", "已配置" if dashscope_key else "未配置")
+    st.write("Reranker:", "已启用" if os.getenv("ENABLE_RERANKER") == "1" else "未启用")
 
     if "upload_status" in st.session_state and st.session_state.upload_status:
         st.divider()
@@ -277,8 +292,15 @@ if prompt:
                     st.caption(
                         "融合分："
                         f"{source.get('final_score', 0):.4f} | "
+                        f"原始分：{source.get('pre_rerank_score', source.get('final_score', 0)):.4f} | "
+                        f"意图：{source.get('query_intent', 'general')} | "
+                        f"新鲜度：{source.get('freshness_score', 0):.2f} | "
+                        f"答案性：{source.get('answerability_score', 0):.2f} | "
+                        f"Rerank：{source.get('rerank_status', '未启用')} | "
+                        f"Rerank分：{source.get('rerank_score', '无')} | "
                         f"向量排名：{source.get('vector_rank', '未召回')} | "
-                        f"关键词排名：{source.get('bm25_rank', '未召回')}"
+                        f"关键词排名：{source.get('bm25_rank', '未召回')} | "
+                        f"上下文顺序：{source.get('context_order', index)}"
                     )
                     if url:
                         st.write(url)
