@@ -154,7 +154,8 @@ with st.sidebar:
     st.caption("Agent 会自动使用上传资料，并联网补充资料；没有上传资料时，会直接联网收集。")
     st.write("DeepSeek:", "已配置" if deepseek_key else "未配置")
     st.write("通义百炼:", "已配置" if dashscope_key else "未配置")
-    st.write("Reranker:", "已启用" if os.getenv("ENABLE_RERANKER") == "1" else "未启用")
+    reranker_status = "已启用" if agent.ENABLE_RERANKER else "未启用"
+    st.write("Reranker:", reranker_status)
 
     if "upload_status" in st.session_state and st.session_state.upload_status:
         st.divider()
