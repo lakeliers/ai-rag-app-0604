@@ -221,6 +221,12 @@ if prompt:
             st.session_state.last_sources = result["sources"]
 
             with st.expander("查看 Agent 执行步骤"):
+                planner_label = (
+                    "LLM Tool Calling"
+                    if result.get("planner_mode") == "llm_tool_calling"
+                    else "规则兜底"
+                )
+                st.caption(f"Planner来源：{planner_label}")
                 for index, step in enumerate(result.get("steps", []), start=1):
                     status = "成功" if step["status"] == "success" else "失败"
                     st.markdown(f"**{index}. {step['name']}**")
@@ -233,43 +239,44 @@ if prompt:
                         st.error(step["error"])
                     st.divider()
 
-            with st.expander("查看参考来源"):
-                for index, source in enumerate(result["sources"], start=1):
-                    title = source["source"]
-                    url = source.get("url", "")
-                    source_type = source.get("source_type", "unknown")
-                    label = source_label(source)
-                    st.markdown(f"**{index}. {title}**")
-                    st.markdown(f"`{label}`")
-                    st.caption(f"类型：{source_type} | 块类型：{source.get('chunk_type', 'child')}")
-                    location_parts = []
-                    if source.get("section_title"):
-                        location_parts.append(f"小节：{source['section_title']}")
-                    if source.get("page"):
-                        location_parts.append(f"页码：{source['page']}")
-                    if source.get("sheet"):
-                        location_parts.append(f"工作表：{source['sheet']}")
-                    if source.get("row_start"):
-                        location_parts.append(f"行：{source.get('row_start')}-{source.get('row_end')}")
-                    if location_parts:
-                        st.caption(" | ".join(location_parts))
-                    st.caption(
-                        "融合分："
-                        f"{source.get('final_score', 0):.4f} | "
-                        f"原始分：{source.get('pre_rerank_score', source.get('final_score', 0)):.4f} | "
-                        f"意图：{source.get('query_intent', 'general')} | "
-                        f"新鲜度：{source.get('freshness_score', 0):.2f} | "
-                        f"答案性：{source.get('answerability_score', 0):.2f} | "
-                        f"Rerank：{source.get('rerank_status', '未启用')} | "
-                        f"Rerank分：{source.get('rerank_score', '无')} | "
-                        f"向量排名：{source.get('vector_rank', '未召回')} | "
-                        f"关键词排名：{source.get('bm25_rank', '未召回')} | "
-                        f"上下文顺序：{source.get('context_order', index)}"
-                    )
-                    if url:
-                        st.write(url)
-                    st.write(source["document"][:300])
-                    st.divider()
+            if result["sources"]:
+                with st.expander("查看参考来源"):
+                    for index, source in enumerate(result["sources"], start=1):
+                        title = source["source"]
+                        url = source.get("url", "")
+                        source_type = source.get("source_type", "unknown")
+                        label = source_label(source)
+                        st.markdown(f"**{index}. {title}**")
+                        st.markdown(f"`{label}`")
+                        st.caption(f"类型：{source_type} | 块类型：{source.get('chunk_type', 'child')}")
+                        location_parts = []
+                        if source.get("section_title"):
+                            location_parts.append(f"小节：{source['section_title']}")
+                        if source.get("page"):
+                            location_parts.append(f"页码：{source['page']}")
+                        if source.get("sheet"):
+                            location_parts.append(f"工作表：{source['sheet']}")
+                        if source.get("row_start"):
+                            location_parts.append(f"行：{source.get('row_start')}-{source.get('row_end')}")
+                        if location_parts:
+                            st.caption(" | ".join(location_parts))
+                        st.caption(
+                            "融合分："
+                            f"{source.get('final_score', 0):.4f} | "
+                            f"原始分：{source.get('pre_rerank_score', source.get('final_score', 0)):.4f} | "
+                            f"意图：{source.get('query_intent', 'general')} | "
+                            f"新鲜度：{source.get('freshness_score', 0):.2f} | "
+                            f"答案性：{source.get('answerability_score', 0):.2f} | "
+                            f"Rerank：{source.get('rerank_status', '未启用')} | "
+                            f"Rerank分：{source.get('rerank_score', '无')} | "
+                            f"向量排名：{source.get('vector_rank', '未召回')} | "
+                            f"关键词排名：{source.get('bm25_rank', '未召回')} | "
+                            f"上下文顺序：{source.get('context_order', index)}"
+                        )
+                        if url:
+                            st.write(url)
+                        st.write(source["document"][:300])
+                        st.divider()
 
         except Exception as e:
             st.error(f"调用失败：{e}")

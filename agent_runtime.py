@@ -67,10 +67,46 @@ def tool_generate_answer(question: str, search_results: list[dict[str, Any]]) ->
     )
 
 
+def tool_direct_answer(question: str) -> ToolResult:
+    client = agent.get_deepseek_client()
+    if client is None:
+        raise RuntimeError("没有找到 DEEPSEEK_API_KEY。")
+
+    response = client.chat.completions.create(
+        model=agent.DEEPSEEK_MODEL,
+        messages=[
+            {
+                "role": "user",
+                "content": f"""请直接回复用户。
+要求：
+1. 如果是寒暄、自我介绍、普通对话，简洁自然地回应。
+2. 不要声称自己检索了资料。
+3. 不要编造参考来源。
+
+用户输入：
+{question}
+""",
+            }
+        ],
+        temperature=0.3,
+        max_tokens=300,
+    )
+    answer = response.choices[0].message.content
+    agent.conversation_history.append({"role": "user", "content": question})
+    agent.conversation_history.append({"role": "assistant", "content": answer})
+
+    return ToolResult(
+        status="success",
+        summary="无需检索，已直接生成回复。",
+        data=answer,
+    )
+
+
 TOOLS: dict[str, Callable[..., ToolResult]] = {
     "web_collect": tool_web_collect,
     "rag_search": tool_rag_search,
     "generate_answer": tool_generate_answer,
+    "direct_answer": tool_direct_answer,
 }
 
 
@@ -122,6 +158,27 @@ PLANNER_TOOLS = [
                     },
                 },
                 "required": ["question", "top_k", "reason"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "direct_answer",
+            "description": "不检索资料，直接回复用户。适合寒暄、自我介绍、闲聊、简单确认、无需事实依据或无需使用上传资料的问题。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "question": {
+                        "type": "string",
+                        "description": "用户原始输入。",
+                    },
+                    "reason": {
+                        "type": "string",
+                        "description": "为什么这个问题不需要调用 RAG 或联网工具。",
+                    },
+                },
+                "required": ["question", "reason"],
             },
         },
     },
@@ -195,11 +252,12 @@ def build_planner_prompt(
 
 规划规则：
 1. 你只能通过工具调用表达计划，不要输出自然语言答案。
-2. rag_search 通常必须调用，因为最终回答需要证据资料。
-3. 如果没有用户上传资料且允许联网，必须先调用 web_collect，再调用 rag_search。
-4. 如果问题涉及最新趋势、新闻、当前状态、外部事实，即使有上传资料，也优先调用 web_collect 补充资料。
-5. 如果问题明显只要求总结用户上传资料，可以跳过 web_collect，直接 rag_search。
-6. 不要调用最终回答工具，最终回答由系统在检索后统一生成。
+2. 如果是寒暄、自我介绍、闲聊、简单确认，调用 direct_answer，不要调用 rag_search。
+3. 如果用户问题需要依据上传资料、知识库资料或历史资料，调用 rag_search。
+4. 如果问题涉及最新趋势、新闻、当前状态、外部事实，并且允许联网，先调用 web_collect，再调用 rag_search。
+5. 如果问题明显只要求总结用户上传资料，直接调用 rag_search，不要调用 web_collect。
+6. 如果已经调用 direct_answer，不要再调用其他工具。
+7. 不要调用 generate_answer，资料型问题的最终回答由系统在检索后统一生成。
 
 用户问题：
 {question}
@@ -284,6 +342,15 @@ def build_llm_planned_steps(
                     },
                 )
             )
+        elif tool_name == "direct_answer":
+            steps.append(
+                AgentStep(
+                    name="直接回复",
+                    tool="direct_answer",
+                    reason=reason or "大模型判断这个问题不需要检索资料。",
+                    args={"question": args.get("question", question)},
+                )
+            )
 
     return normalize_planned_steps(
         steps=steps,
@@ -303,7 +370,7 @@ def normalize_planned_steps(
     web_max_results: int,
     preferred_sources: list[str],
 ) -> list[AgentStep]:
-    tool_order = {"web_collect": 0, "rag_search": 1}
+    tool_order = {"web_collect": 0, "rag_search": 1, "direct_answer": 2}
     allowed_steps = [
         step
         for step in steps
@@ -313,11 +380,14 @@ def normalize_planned_steps(
     for step in allowed_steps:
         deduped.setdefault(step.tool, step)
 
-    if use_web and not preferred_sources and "web_collect" not in deduped:
+    if "direct_answer" in deduped:
+        return [deduped["direct_answer"]]
+
+    if use_web and not preferred_sources and "web_collect" not in deduped and "rag_search" in deduped:
         deduped["web_collect"] = AgentStep(
             name="联网收集资料",
             tool="web_collect",
-            reason="没有用户上传资料，系统补充联网收集步骤。",
+            reason="资料型问题没有用户上传资料，系统补充联网收集步骤。",
             args={"question": question, "max_results": web_max_results},
         )
 
@@ -399,6 +469,7 @@ def run_agent(
         "question": question,
         "search_results": [],
         "answer": "",
+        "planner_mode": "llm_tool_calling" if ENABLE_LLM_PLANNER else "rule_based",
     }
     trace: list[dict[str, Any]] = []
     steps = plan_agent_steps(
@@ -414,7 +485,7 @@ def run_agent(
             result = run_tool(step, state)
             if step.tool == "rag_search":
                 state["search_results"] = result.data
-            elif step.tool == "generate_answer":
+            elif step.tool in {"generate_answer", "direct_answer"}:
                 state["answer"] = result.data
         except Exception as exc:
             result = ToolResult(
@@ -431,6 +502,7 @@ def run_agent(
         "answer": state["answer"],
         "sources": state["search_results"],
         "steps": trace,
+        "planner_mode": state["planner_mode"],
     }
 
 
