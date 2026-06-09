@@ -19,6 +19,7 @@ rerank_limit = get_secret("RERANK_LIMIT")
 hf_token = get_secret("HF_TOKEN")
 enable_summary_chunks = get_secret("ENABLE_SUMMARY_CHUNKS")
 summary_min_chars = get_secret("SUMMARY_MIN_CHARS")
+enable_llm_planner = get_secret("ENABLE_LLM_PLANNER")
 
 if deepseek_key:
     os.environ["DEEPSEEK_API_KEY"] = deepseek_key
@@ -36,9 +37,12 @@ if enable_summary_chunks:
     os.environ["ENABLE_SUMMARY_CHUNKS"] = enable_summary_chunks
 if summary_min_chars:
     os.environ["SUMMARY_MIN_CHARS"] = summary_min_chars
+if enable_llm_planner:
+    os.environ["ENABLE_LLM_PLANNER"] = enable_llm_planner
 
 import rag_agent_core as agent
 import parsing_layer
+import agent_runtime
 
 agent.seed_local_note()
 
@@ -156,6 +160,8 @@ with st.sidebar:
     st.write("通义百炼:", "已配置" if dashscope_key else "未配置")
     reranker_status = "已启用" if agent.ENABLE_RERANKER else "未启用"
     st.write("Reranker:", reranker_status)
+    planner_status = "LLM工具调用版" if agent_runtime.ENABLE_LLM_PLANNER else "规则版"
+    st.write("Planner:", planner_status)
 
     if "upload_status" in st.session_state and st.session_state.upload_status:
         st.divider()
@@ -196,10 +202,10 @@ if prompt:
 
     with st.chat_message("assistant"):
         try:
-            with st.spinner("整理资料、联网检索、生成回答中..."):
+            with st.spinner("执行 Agent 计划中..."):
                 uploaded_sources = ingest_uploaded_files(uploaded_files, prompt)
 
-                result = agent.answer_with_rag(
+                result = agent_runtime.run_agent(
                     prompt,
                     use_web=True,
                     top_k=top_k,
@@ -213,6 +219,19 @@ if prompt:
                 "content": result["answer"],
             })
             st.session_state.last_sources = result["sources"]
+
+            with st.expander("查看 Agent 执行步骤"):
+                for index, step in enumerate(result.get("steps", []), start=1):
+                    status = "成功" if step["status"] == "success" else "失败"
+                    st.markdown(f"**{index}. {step['name']}**")
+                    st.caption(
+                        f"工具：{step['tool']} | 状态：{status} | 耗时：{step['elapsed_ms']} ms"
+                    )
+                    st.write(step["reason"])
+                    st.write(step["summary"])
+                    if step.get("error"):
+                        st.error(step["error"])
+                    st.divider()
 
             with st.expander("查看参考来源"):
                 for index, source in enumerate(result["sources"], start=1):
