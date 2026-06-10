@@ -33,12 +33,36 @@ class IntentResult:
     intent: str
     confidence: float
     reason: str
+    suggested_action: str = ""
+    entities: list[str] = field(default_factory=list)
+    constraints: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
 class PlanResult:
     action: str
     reason: str
+    confidence: float = 0.8
+    params: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass
+class TaskNode:
+    id: str
+    name: str
+    tool: str
+    reason: str
+    args: dict[str, Any] = field(default_factory=dict)
+    depends_on: list[str] = field(default_factory=list)
+    output_key: str = ""
+    timeout_ms: int = 10000
+    retry: int = 0
+    required: bool = True
+
+
+@dataclass
+class TaskGraph:
+    nodes: list[TaskNode]
 
 
 def tool_web_collect(question: str, max_results: int) -> ToolResult:
@@ -68,12 +92,22 @@ def tool_rag_search(question: str, top_k: int, preferred_sources: list[str]) -> 
 def classify_intent(question: str, preferred_sources: list[str]) -> IntentResult:
     stripped_question = question.strip()
     lowered_question = stripped_question.lower()
+    entities = preferred_sources[:]
+    constraints = {
+        "has_uploads": bool(preferred_sources),
+        "needs_freshness": False,
+        "needs_upload_context": False,
+        "needs_web_context": False,
+    }
 
     if is_upload_status_question(stripped_question):
         return IntentResult(
             intent="upload_status",
             confidence=0.95,
             reason="用户在确认上传资料是否已经被系统看到。",
+            suggested_action="read_upload_status",
+            entities=entities,
+            constraints=constraints,
         )
 
     chitchat_words = ["你好", "您好", "嗨", "hello", "hi", "我是", "认识一下"]
@@ -82,28 +116,43 @@ def classify_intent(question: str, preferred_sources: list[str]) -> IntentResult
             intent="chitchat",
             confidence=0.9,
             reason="用户输入更像寒暄、自我介绍或普通对话。",
+            suggested_action="direct_answer",
+            entities=entities,
+            constraints=constraints,
         )
 
     latest_words = ["最近", "最新", "今天", "现在", "趋势", "新闻", "动态", "current", "latest"]
     if any(word in lowered_question for word in latest_words):
+        constraints["needs_freshness"] = True
+        constraints["needs_web_context"] = True
         return IntentResult(
             intent="latest_research",
             confidence=0.82,
             reason="用户问题涉及近期信息或外部动态，需要联网补充资料。",
+            suggested_action="collect_context",
+            entities=entities,
+            constraints=constraints,
         )
 
     upload_qa_words = ["总结", "提取", "分析", "资料", "文档", "pdf", "文件", "这份"]
     if preferred_sources and any(word in lowered_question for word in upload_qa_words):
+        constraints["needs_upload_context"] = True
         return IntentResult(
             intent="document_qa",
             confidence=0.82,
             reason="用户问题需要基于已上传资料回答。",
+            suggested_action="collect_context",
+            entities=entities,
+            constraints=constraints,
         )
 
     return IntentResult(
         intent="general_qa",
         confidence=0.62,
         reason="未命中特定状态或闲聊意图，按通用问答处理。",
+        suggested_action="collect_context",
+        entities=entities,
+        constraints=constraints,
     )
 
 
@@ -112,29 +161,39 @@ def plan_high_level_action(intent: IntentResult, preferred_sources: list[str], u
         return PlanResult(
             action="direct_answer",
             reason="寒暄或普通对话不需要检索资料，直接回复即可。",
+            confidence=0.9,
+            params={"needs_web": False, "needs_upload": False},
         )
 
     if intent.intent == "upload_status":
         return PlanResult(
             action="read_upload_status",
             reason="用户要确认上传状态，直接读取应用状态。",
+            confidence=0.95,
+            params={"needs_web": False, "needs_upload": False},
         )
 
     if intent.intent == "latest_research" and use_web:
         return PlanResult(
             action="collect_context",
             reason="问题涉及最新外部信息，需要联网资料和本地资料共同进入上下文。",
+            confidence=0.84,
+            params={"needs_web": True, "needs_upload": bool(preferred_sources)},
         )
 
     if intent.intent == "document_qa" or preferred_sources:
         return PlanResult(
             action="collect_context",
             reason="问题需要基于上传资料或知识库资料回答，先收集上下文。",
+            confidence=0.82,
+            params={"needs_web": False, "needs_upload": bool(preferred_sources)},
         )
 
     return PlanResult(
         action="collect_context",
         reason="通用问题先收集可用上下文，再评估是否足够回答。",
+        confidence=0.68,
+        params={"needs_web": use_web, "needs_upload": bool(preferred_sources)},
     )
 
 
@@ -194,42 +253,321 @@ def orchestrate_action(
     return steps
 
 
+def build_task_graph(
+    plan: PlanResult,
+    question: str,
+    intent: IntentResult,
+    use_web: bool,
+    top_k: int,
+    web_max_results: int,
+    preferred_sources: list[str],
+) -> TaskGraph:
+    if plan.action == "direct_answer":
+        return TaskGraph(nodes=[
+            TaskNode(
+                id="direct_answer",
+                name="直接回复",
+                tool="direct_answer",
+                reason="工作流模板：普通对话直接生成回复。",
+                args={"question": question},
+                output_key="answer",
+            )
+        ])
+
+    if plan.action == "read_upload_status":
+        return TaskGraph(nodes=[
+            TaskNode(
+                id="upload_status",
+                name="读取上传状态",
+                tool="upload_status",
+                reason="工作流模板：读取当前已入库上传资料状态。",
+                args={"preferred_sources": preferred_sources},
+                output_key="answer",
+            )
+        ])
+
+    nodes: list[TaskNode] = []
+    should_collect_web = use_web and (
+        intent.intent == "latest_research"
+        or not preferred_sources
+        or plan.params.get("needs_web", False)
+    )
+
+    if should_collect_web:
+        nodes.append(
+            TaskNode(
+                id="web_collect",
+                name="联网收集资料",
+                tool="web_collect",
+                reason="工作流模板：先收集外部网页资料，并写入资料库。",
+                args={"question": question, "max_results": web_max_results},
+                output_key="web_collect",
+                retry=1,
+                required=False,
+            )
+        )
+
+    nodes.append(
+        TaskNode(
+            id="rag_search",
+            name="RAG 检索排序",
+            tool="rag_search",
+            reason="工作流模板：对上传资料、网页资料和本地资料做统一检索排序。",
+            args={
+                "question": question,
+                "top_k": top_k,
+                "preferred_sources": preferred_sources,
+            },
+            depends_on=["web_collect"] if should_collect_web else [],
+            output_key="rag_search",
+            required=True,
+        )
+    )
+
+    return TaskGraph(nodes=nodes)
+
+
+def validate_task_graph(graph: TaskGraph) -> None:
+    node_ids = {node.id for node in graph.nodes}
+    if len(node_ids) != len(graph.nodes):
+        raise ValueError("任务图存在重复节点 ID。")
+
+    for node in graph.nodes:
+        if node.tool not in TOOLS:
+            raise ValueError(f"未知工具：{node.tool}")
+        for dependency in node.depends_on:
+            if dependency not in node_ids:
+                raise ValueError(f"节点 {node.id} 依赖不存在的节点：{dependency}")
+
+    visiting: set[str] = set()
+    visited: set[str] = set()
+    dependencies = {node.id: node.depends_on for node in graph.nodes}
+
+    def visit(node_id: str) -> None:
+        if node_id in visiting:
+            raise ValueError("任务图存在循环依赖。")
+        if node_id in visited:
+            return
+        visiting.add(node_id)
+        for dependency in dependencies[node_id]:
+            visit(dependency)
+        visiting.remove(node_id)
+        visited.add(node_id)
+
+    for node_id in node_ids:
+        visit(node_id)
+
+
+def task_node_to_step(node: TaskNode) -> AgentStep:
+    return AgentStep(
+        name=node.name,
+        tool=node.tool,
+        reason=node.reason,
+        args=node.args,
+    )
+
+
+def get_ready_nodes(graph: TaskGraph, completed: set[str], failed: set[str]) -> list[TaskNode]:
+    return [
+        node
+        for node in graph.nodes
+        if node.id not in completed
+        and node.id not in failed
+        and all(dependency in completed for dependency in node.depends_on)
+    ]
+
+
+def run_task_graph(graph: TaskGraph, state: dict[str, Any]) -> tuple[dict[str, ToolResult], list[dict[str, Any]]]:
+    validate_task_graph(graph)
+    completed: set[str] = set()
+    failed: set[str] = set()
+    results: dict[str, ToolResult] = {}
+    trace: list[dict[str, Any]] = []
+    batch_index = 1
+
+    while len(completed) < len(graph.nodes):
+        ready_nodes = get_ready_nodes(graph, completed, failed)
+        if not ready_nodes:
+            raise RuntimeError("没有可执行节点，可能存在前置节点失败或任务图依赖异常。")
+
+        trace.append(
+            make_stage_trace(
+                name=f"DAG 执行批次 {batch_index}",
+                tool="dag_runtime",
+                reason="根据 depends_on 规则找出当前可执行节点；同一批次代表理论上可并发执行。",
+                summary="本批节点：" + "、".join(node.id for node in ready_nodes),
+            )
+        )
+
+        for node in ready_nodes:
+            step = task_node_to_step(node)
+            last_result: ToolResult | None = None
+            for attempt in range(node.retry + 1):
+                try:
+                    last_result = run_tool(step, state)
+                    break
+                except Exception as exc:
+                    last_result = ToolResult(
+                        status="failed",
+                        summary="节点执行失败。",
+                        error=str(exc),
+                    )
+                    if attempt >= node.retry:
+                        break
+
+            result = last_result or ToolResult(status="failed", summary="节点没有返回结果。")
+            results[node.output_key or node.id] = result
+            results[node.id] = result
+
+            if result.status == "success":
+                completed.add(node.id)
+                if node.output_key:
+                    state[node.output_key] = result.data
+                if node.tool == "rag_search":
+                    state["search_results"] = result.data
+                elif node.tool in {"direct_answer", "upload_status", "generate_answer"}:
+                    state["answer"] = result.data
+            else:
+                failed.add(node.id)
+                if node.required:
+                    trace.append(format_trace_item(step, result))
+                    raise RuntimeError(result.error or f"关键节点失败：{node.id}")
+                completed.add(node.id)
+
+            trace.append(format_trace_item(step, result))
+
+        batch_index += 1
+
+    return results, trace
+
+
 def aggregate_context(tool_results: dict[str, ToolResult]) -> dict[str, Any]:
     search_results = tool_results.get("rag_search", ToolResult(status="success", summary="", data=[])).data or []
     web_results = tool_results.get("web_collect", ToolResult(status="success", summary="", data=[])).data or []
+    normalized_results = normalize_context_items(search_results)
+    deduped_results = dedupe_context_items(normalized_results)
+    packed_results = apply_source_quota(deduped_results)
     source_counts = {
-        "upload": sum(1 for item in search_results if item.get("source_type") == "upload"),
-        "web": sum(1 for item in search_results if item.get("source_type") == "web"),
-        "local": sum(1 for item in search_results if item.get("source_type") == "local"),
+        "upload": sum(1 for item in packed_results if item.get("source_type") == "upload"),
+        "web": sum(1 for item in packed_results if item.get("source_type") == "web"),
+        "local": sum(1 for item in packed_results if item.get("source_type") == "local"),
+        "image": sum(1 for item in packed_results if item.get("source_type") == "image"),
+        "unknown": sum(1 for item in packed_results if item.get("source_type") == "unknown"),
     }
     return {
-        "search_results": search_results,
+        "search_results": packed_results,
         "web_results": web_results,
         "source_counts": source_counts,
+        "quality_signals": {
+            "raw_count": len(search_results),
+            "deduped_count": len(deduped_results),
+            "packed_count": len(packed_results),
+            "has_upload_context": source_counts["upload"] > 0,
+            "has_web_context": source_counts["web"] > 0,
+            "has_citations": all(bool(item.get("source")) for item in packed_results),
+        },
     }
 
 
 def evaluate_context(intent: str, aggregated: dict[str, Any]) -> dict[str, Any]:
     search_results = aggregated.get("search_results", [])
     source_counts = aggregated.get("source_counts", {})
+    quality_signals = aggregated.get("quality_signals", {})
     has_sources = bool(search_results)
     has_upload_sources = source_counts.get("upload", 0) > 0
+    has_web_sources = source_counts.get("web", 0) > 0
+    has_citations = quality_signals.get("has_citations", False)
+    missing_aspects: list[str] = []
 
     if intent == "document_qa":
         sufficient = has_upload_sources or has_sources
+        if not has_upload_sources:
+            missing_aspects.append("缺少上传资料命中")
         reason = "文档问答优先看上传资料；当前已命中上传资料。" if has_upload_sources else "未命中上传资料，使用现有检索资料兜底。"
     elif intent == "latest_research":
         sufficient = has_sources
+        if not has_web_sources:
+            missing_aspects.append("缺少网页或近期资料")
         reason = "最新信息问题需要外部或本地资料；当前已有可用检索结果。" if has_sources else "未检索到可用资料。"
     else:
         sufficient = has_sources
         reason = "通用问题已有检索资料。" if has_sources else "没有检索到可用资料。"
 
+    if has_sources and not has_citations:
+        missing_aspects.append("部分资料缺少可引用来源")
+
+    next_action = "generate_answer" if sufficient else "broaden_search"
+    confidence = 0.82 if sufficient else 0.45
+
     return {
         "sufficient": sufficient,
+        "confidence": confidence,
         "reason": reason,
         "source_count": len(search_results),
+        "missing_aspects": missing_aspects,
+        "next_action": next_action,
     }
+
+
+def normalize_context_items(search_results: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    normalized = []
+    for index, item in enumerate(search_results, start=1):
+        copied = item.copy()
+        copied.setdefault("source_type", "unknown")
+        copied.setdefault("source", copied.get("url", f"资料{index}"))
+        copied.setdefault("document", copied.get("text", ""))
+        copied.setdefault("final_score", copied.get("score", 0))
+        copied["context_item_id"] = (
+            copied.get("id")
+            or f"{copied.get('source_type')}:{copied.get('source')}:{copied.get('chunk_index', index)}"
+        )
+        normalized.append(copied)
+    return normalized
+
+
+def dedupe_context_items(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    seen_keys: set[str] = set()
+    deduped: list[dict[str, Any]] = []
+    for item in items:
+        content = item.get("document", "")
+        key = "|".join([
+            str(item.get("document_key", "")),
+            str(item.get("source", "")),
+            str(item.get("chunk_index", "")),
+            content[:120],
+        ])
+        if key in seen_keys:
+            item["aggregator_skip_reason"] = "重复资料"
+            continue
+        seen_keys.add(key)
+        item["aggregator_skip_reason"] = ""
+        deduped.append(item)
+    return deduped
+
+
+def apply_source_quota(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    quotas = {
+        "upload": 6,
+        "web": 4,
+        "local": 3,
+        "image": 3,
+        "unknown": 2,
+    }
+    counts: dict[str, int] = {}
+    packed: list[dict[str, Any]] = []
+    sorted_items = sorted(items, key=lambda item: item.get("final_score", 0), reverse=True)
+
+    for item in sorted_items:
+        source_type = item.get("source_type", "unknown")
+        quota = quotas.get(source_type, quotas["unknown"])
+        if counts.get(source_type, 0) >= quota:
+            item["aggregator_skip_reason"] = "来源配额已满"
+            continue
+        counts[source_type] = counts.get(source_type, 0) + 1
+        item["aggregator_order"] = len(packed) + 1
+        packed.append(item)
+
+    return packed
 
 
 def tool_generate_answer(question: str, search_results: list[dict[str, Any]]) -> ToolResult:
@@ -808,6 +1146,21 @@ def make_stage_trace(
     }
 
 
+def validate_final_answer(answer: str, search_results: list[dict[str, Any]], evaluation: dict[str, Any]) -> dict[str, Any]:
+    warnings: list[str] = []
+    if not answer.strip():
+        warnings.append("答案为空")
+    if search_results and "参考" not in answer and "来源" not in answer:
+        warnings.append("答案可能缺少参考来源说明")
+    if not evaluation.get("sufficient", False) and "资料不足" not in answer:
+        warnings.append("资料不足时未明确提示")
+
+    return {
+        "passed": not warnings,
+        "warnings": warnings,
+    }
+
+
 def run_agent_pro(
     question: str,
     use_web: bool = True,
@@ -846,10 +1199,10 @@ def run_agent_pro(
     )
 
     started_at = time.time()
-    dag_steps = orchestrate_action(
-        action=plan.action,
+    task_graph = build_task_graph(
+        plan=plan,
         question=question,
-        intent=intent.intent,
+        intent=intent,
         use_web=use_web,
         top_k=top_k,
         web_max_results=web_max_results,
@@ -859,8 +1212,11 @@ def run_agent_pro(
         make_stage_trace(
             name="任务编排",
             tool="orchestrator",
-            reason="把高层动作展开成可执行 DAG 节点。",
-            summary="执行节点：" + " → ".join(step.tool for step in dag_steps),
+            reason="把高层动作展开成可执行 DAG 任务图，并写入节点依赖关系。",
+            summary="执行节点：" + " → ".join(
+                f"{node.id}(依赖:{','.join(node.depends_on) or '无'})"
+                for node in task_graph.nodes
+            ),
             elapsed_ms=int((time.time() - started_at) * 1000),
         )
     )
@@ -872,16 +1228,10 @@ def run_agent_pro(
         "planner_mode": "pro_runtime",
     }
 
-    for step in dag_steps:
-        result = run_tool(step, state)
-        tool_results[step.tool] = result
-        if step.tool == "rag_search":
-            state["search_results"] = result.data
-            search_results = result.data
-        elif step.tool in {"direct_answer", "upload_status"}:
-            state["answer"] = result.data
-            answer = result.data
-        trace.append(format_trace_item(step, result))
+    tool_results, runtime_trace = run_task_graph(task_graph, state)
+    trace.extend(runtime_trace)
+    search_results = state.get("search_results", [])
+    answer = state.get("answer", "")
 
     if answer:
         return {
@@ -901,6 +1251,8 @@ def run_agent_pro(
             reason="把多个工具或 DAG 节点的结果合并成统一上下文候选。",
             summary=(
                 f"聚合到 {len(search_results)} 条检索资料；"
+                f"原始 {aggregated['quality_signals']['raw_count']} 条，"
+                f"去重后 {aggregated['quality_signals']['deduped_count']} 条，"
                 f"上传 {aggregated['source_counts']['upload']} 条，"
                 f"网页 {aggregated['source_counts']['web']} 条，"
                 f"本地 {aggregated['source_counts']['local']} 条。"
@@ -918,7 +1270,9 @@ def run_agent_pro(
             reason="判断当前资料是否足够支撑最终回答。",
             summary=(
                 f"资料是否足够：{'是' if evaluation['sufficient'] else '否'}；"
-                f"资料数：{evaluation['source_count']}。{evaluation['reason']}"
+                f"资料数：{evaluation['source_count']}；"
+                f"置信度：{evaluation['confidence']:.2f}；"
+                f"建议动作：{evaluation['next_action']}。{evaluation['reason']}"
             ),
             elapsed_ms=int((time.time() - started_at) * 1000),
         )
@@ -934,9 +1288,26 @@ def run_agent_pro(
     answer = final_result.data
     trace.append(format_trace_item(final_step, final_result))
 
+    validation = validate_final_answer(answer, search_results, evaluation)
+    trace.append(
+        make_stage_trace(
+            name="答案校验",
+            tool="answer_validator",
+            reason="对最终回答做规则化后验检查，包括空答案、引用提示和资料不足提示。",
+            summary=(
+                "校验通过。"
+                if validation["passed"]
+                else "发现提示：" + "；".join(validation["warnings"])
+            ),
+            status="success" if validation["passed"] else "warning",
+        )
+    )
+
     return {
         "answer": answer,
         "sources": search_results,
         "steps": trace,
         "planner_mode": "pro_runtime",
+        "evaluation": evaluation,
+        "validation": validation,
     }

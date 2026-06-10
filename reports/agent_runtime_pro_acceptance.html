@@ -1,0 +1,267 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Agent Runtime Pro 验收报告</title>
+  <style>
+    :root {
+      --bg: #f6f7fb;
+      --panel: #ffffff;
+      --text: #1f2430;
+      --muted: #667085;
+      --line: #e5e7ef;
+      --blue: #2563eb;
+      --green: #047857;
+      --orange: #b45309;
+      --red: #dc2626;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      line-height: 1.65;
+    }
+    main { max-width: 1180px; margin: 0 auto; padding: 40px 24px 72px; }
+    h1 { font-size: 34px; margin: 0 0 8px; }
+    h2 { font-size: 22px; margin: 32px 0 14px; }
+    h3 { font-size: 17px; margin: 0 0 8px; }
+    .sub { color: var(--muted); margin-bottom: 28px; }
+    .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
+    .card {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 18px;
+    }
+    .metric { font-size: 28px; font-weight: 750; margin-bottom: 4px; }
+    .ok { color: var(--green); }
+    .warn { color: var(--orange); }
+    .flow {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      align-items: center;
+      margin-top: 10px;
+    }
+    .pill {
+      border: 1px solid #bfdbfe;
+      background: #eff6ff;
+      color: #1d4ed8;
+      border-radius: 999px;
+      padding: 6px 10px;
+      font-size: 13px;
+      white-space: nowrap;
+    }
+    .arrow { color: var(--muted); }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      overflow: hidden;
+    }
+    th, td {
+      padding: 12px 14px;
+      border-bottom: 1px solid var(--line);
+      text-align: left;
+      vertical-align: top;
+      font-size: 14px;
+    }
+    th { background: #f1f5f9; font-weight: 700; }
+    tr:last-child td { border-bottom: none; }
+    code {
+      background: #f3f4f6;
+      border: 1px solid #e5e7eb;
+      border-radius: 6px;
+      padding: 2px 6px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 13px;
+    }
+    pre {
+      margin: 0;
+      white-space: pre-wrap;
+      background: #111827;
+      color: #f9fafb;
+      border-radius: 8px;
+      padding: 14px;
+      overflow: auto;
+      font-size: 13px;
+    }
+    .two { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+    .note {
+      border-left: 4px solid var(--blue);
+      background: #eff6ff;
+      padding: 12px 14px;
+      border-radius: 6px;
+      color: #1e3a8a;
+    }
+    @media (max-width: 860px) {
+      .grid, .two { grid-template-columns: 1fr; }
+      main { padding: 28px 16px 56px; }
+    }
+  </style>
+</head>
+<body>
+<main>
+  <h1>Agent Runtime Pro 验收报告</h1>
+  <div class="sub">生成时间：2026-06-10。目标：把课堂里总结的主流 Tool Agent 链路，落到当前 MVP Agent 代码中，并验证核心路径可运行。</div>
+
+  <section class="grid">
+    <div class="card">
+      <div class="metric ok">通过</div>
+      <div>语法编译检查</div>
+      <p class="sub">`agent_runtime.py` 与 `app.py` 编译通过。</p>
+    </div>
+    <div class="card">
+      <div class="metric ok">3/3</div>
+      <div>本地案例验收</div>
+      <p class="sub">寒暄、上传状态、资料型问答三条路径均通过 mock 验收。</p>
+    </div>
+    <div class="card">
+      <div class="metric warn">低成本</div>
+      <div>API 消耗控制</div>
+      <p class="sub">本轮结构验收使用 mock 工具，不消耗真实 DeepSeek/Qwen token。</p>
+    </div>
+  </section>
+
+  <h2>本次升级后的主链路</h2>
+  <div class="card">
+    <div class="flow">
+      <span class="pill">Intent Classifier 意图分类器</span><span class="arrow">→</span>
+      <span class="pill">Planner 规划器</span><span class="arrow">→</span>
+      <span class="pill">Orchestrator 编排器</span><span class="arrow">→</span>
+      <span class="pill">DAG Runtime 有向无环图运行时</span><span class="arrow">→</span>
+      <span class="pill">Aggregator 聚合器</span><span class="arrow">→</span>
+      <span class="pill">Evaluator 评估器</span><span class="arrow">→</span>
+      <span class="pill">Final Answer 最终回答</span><span class="arrow">→</span>
+      <span class="pill">Answer Validator 答案校验器</span>
+    </div>
+  </div>
+
+  <h2>代码级升级点</h2>
+  <table>
+    <thead>
+      <tr>
+        <th>环节</th>
+        <th>升级前</th>
+        <th>升级后</th>
+        <th>对应文件</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>Intent Classifier 意图分类器</td>
+        <td>只输出 intent、confidence、reason。</td>
+        <td>补充 `suggested_action`、`entities`、`constraints`，给 Planner 提供结构化指引。</td>
+        <td><code>agent_runtime.py</code></td>
+      </tr>
+      <tr>
+        <td>Planner 规划器</td>
+        <td>只输出 action 和 reason。</td>
+        <td>补充 `confidence` 和 `params`，高层动作更像生产环境的结构化 plan。</td>
+        <td><code>agent_runtime.py</code></td>
+      </tr>
+      <tr>
+        <td>Orchestrator 编排器</td>
+        <td>直接返回 `list[AgentStep]`。</td>
+        <td>新增 `TaskNode`、`TaskGraph`，把高层动作翻译成任务图。</td>
+        <td><code>agent_runtime.py</code></td>
+      </tr>
+      <tr>
+        <td>DAG Runtime 有向无环图运行时</td>
+        <td>按列表顺序执行。</td>
+        <td>新增任务图校验、依赖判断、可执行批次、重试、关键/非关键节点失败策略。</td>
+        <td><code>agent_runtime.py</code></td>
+      </tr>
+      <tr>
+        <td>Aggregator 聚合器</td>
+        <td>只统计 upload/web/local 数量。</td>
+        <td>新增统一结构化、去重、来源配额、质量信号。</td>
+        <td><code>agent_runtime.py</code></td>
+      </tr>
+      <tr>
+        <td>Evaluator 评估器</td>
+        <td>只判断资料是否存在。</td>
+        <td>新增 `confidence`、`missing_aspects`、`next_action`，可给 Planner 下一步建议。</td>
+        <td><code>agent_runtime.py</code></td>
+      </tr>
+      <tr>
+        <td>Final Answer 最终回答</td>
+        <td>生成后直接返回。</td>
+        <td>新增 `answer_validator` trace，对空答案、引用提示、资料不足提示做规则校验。</td>
+        <td><code>agent_runtime.py</code></td>
+      </tr>
+      <tr>
+        <td>前端 Trace 展示</td>
+        <td>非 success 都显示为失败。</td>
+        <td>新增 warning/提示状态展示，避免答案校验提示被误标成失败。</td>
+        <td><code>app.py</code></td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h2>本地案例验收</h2>
+  <table>
+    <thead>
+      <tr>
+        <th>案例</th>
+        <th>期望路径</th>
+        <th>实际 Trace</th>
+        <th>结果</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>你好，我是萧玄</td>
+        <td>寒暄不走 RAG，直接回答。</td>
+        <td><code>intent_classifier → planner → orchestrator → dag_runtime → direct_answer</code></td>
+        <td class="ok">通过</td>
+      </tr>
+      <tr>
+        <td>能看到我上传的资料吗</td>
+        <td>读取上传状态，不检索资料内容。</td>
+        <td><code>intent_classifier → planner → orchestrator → dag_runtime → upload_status</code></td>
+        <td class="ok">通过</td>
+      </tr>
+      <tr>
+        <td>结合这份资料和最近 AI Agent 趋势总结一下</td>
+        <td>最新趋势 + 上传资料，走资料收集、检索、聚合、评估、回答、校验。</td>
+        <td><code>intent_classifier → planner → orchestrator → dag_runtime → web_collect → dag_runtime → rag_search → aggregator → evaluator → generate_answer → answer_validator</code></td>
+        <td class="ok">通过</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h2>第三个案例的评估输出</h2>
+  <div class="two">
+    <div class="card">
+      <h3>Evaluator 输出</h3>
+      <pre>{
+  "sufficient": true,
+  "confidence": 0.82,
+  "reason": "最新信息问题需要外部或本地资料；当前已有可用检索结果。",
+  "source_count": 2,
+  "missing_aspects": [],
+  "next_action": "generate_answer"
+}</pre>
+    </div>
+    <div class="card">
+      <h3>Answer Validator 输出</h3>
+      <pre>{
+  "passed": true,
+  "warnings": []
+}</pre>
+    </div>
+  </div>
+
+  <h2>验收结论</h2>
+  <div class="note">
+    本次已经把课堂里的主流 Agent Runtime 结构落到代码中：Planner 不直接碰底层工具，Orchestrator 生成 TaskGraph，DAG Runtime 按依赖执行，Aggregator 做结果治理，Evaluator 给出充分性与下一步建议，Final Answer 生成后增加规则校验。当前实现仍是“轻量生产形态”，后续可以继续补真正异步并发、模型版 Evaluator、循环式 Observe-Act 和更完整的预算控制。
+  </div>
+</main>
+</body>
+</html>

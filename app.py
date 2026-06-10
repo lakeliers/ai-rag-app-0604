@@ -230,7 +230,12 @@ if prompt:
                 )
                 st.caption(f"Planner来源：{planner_label}")
                 for index, step in enumerate(result.get("steps", []), start=1):
-                    status = "成功" if step["status"] == "success" else "失败"
+                    status_map = {
+                        "success": "成功",
+                        "warning": "提示",
+                        "failed": "失败",
+                    }
+                    status = status_map.get(step["status"], step["status"])
                     st.markdown(f"**{index}. {step['name']}**")
                     st.caption(
                         f"工具：{step['tool']} | 状态：{status} | 耗时：{step['elapsed_ms']} ms"
