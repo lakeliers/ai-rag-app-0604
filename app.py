@@ -160,7 +160,7 @@ with st.sidebar:
     st.write("通义百炼:", "已配置" if dashscope_key else "未配置")
     reranker_status = "已启用" if agent.ENABLE_RERANKER else "未启用"
     st.write("Reranker:", reranker_status)
-    planner_status = "LLM工具调用版" if agent_runtime.ENABLE_LLM_PLANNER else "规则版"
+    planner_status = "行业主流Runtime雏形"
     st.write("Planner:", planner_status)
 
     if "upload_status" in st.session_state and st.session_state.upload_status:
@@ -205,7 +205,7 @@ if prompt:
             with st.spinner("执行 Agent 计划中..."):
                 uploaded_sources = ingest_uploaded_files(uploaded_files, prompt)
 
-                result = agent_runtime.run_agent(
+                result = agent_runtime.run_agent_pro(
                     prompt,
                     use_web=True,
                     top_k=top_k,
@@ -224,6 +224,8 @@ if prompt:
                 planner_label = (
                     "LLM Tool Calling"
                     if result.get("planner_mode") == "llm_tool_calling"
+                    else "行业主流Runtime雏形"
+                    if result.get("planner_mode") == "pro_runtime"
                     else "规则兜底"
                 )
                 st.caption(f"Planner来源：{planner_label}")

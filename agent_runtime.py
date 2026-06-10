@@ -28,6 +28,19 @@ class ToolResult:
     error: str = ""
 
 
+@dataclass
+class IntentResult:
+    intent: str
+    confidence: float
+    reason: str
+
+
+@dataclass
+class PlanResult:
+    action: str
+    reason: str
+
+
 def tool_web_collect(question: str, max_results: int) -> ToolResult:
     ingested = agent.web_collect(question, max_results=max_results)
     return ToolResult(
@@ -50,6 +63,173 @@ def tool_rag_search(question: str, top_k: int, preferred_sources: list[str]) -> 
         summary=f"检索完成，选出 {len(results)} 条资料，其中上传资料 {upload_count} 条、网页资料 {web_count} 条。",
         data=results,
     )
+
+
+def classify_intent(question: str, preferred_sources: list[str]) -> IntentResult:
+    stripped_question = question.strip()
+    lowered_question = stripped_question.lower()
+
+    if is_upload_status_question(stripped_question):
+        return IntentResult(
+            intent="upload_status",
+            confidence=0.95,
+            reason="用户在确认上传资料是否已经被系统看到。",
+        )
+
+    chitchat_words = ["你好", "您好", "嗨", "hello", "hi", "我是", "认识一下"]
+    if len(stripped_question) <= 30 and any(word in lowered_question for word in chitchat_words):
+        return IntentResult(
+            intent="chitchat",
+            confidence=0.9,
+            reason="用户输入更像寒暄、自我介绍或普通对话。",
+        )
+
+    latest_words = ["最近", "最新", "今天", "现在", "趋势", "新闻", "动态", "current", "latest"]
+    if any(word in lowered_question for word in latest_words):
+        return IntentResult(
+            intent="latest_research",
+            confidence=0.82,
+            reason="用户问题涉及近期信息或外部动态，需要联网补充资料。",
+        )
+
+    upload_qa_words = ["总结", "提取", "分析", "资料", "文档", "pdf", "文件", "这份"]
+    if preferred_sources and any(word in lowered_question for word in upload_qa_words):
+        return IntentResult(
+            intent="document_qa",
+            confidence=0.82,
+            reason="用户问题需要基于已上传资料回答。",
+        )
+
+    return IntentResult(
+        intent="general_qa",
+        confidence=0.62,
+        reason="未命中特定状态或闲聊意图，按通用问答处理。",
+    )
+
+
+def plan_high_level_action(intent: IntentResult, preferred_sources: list[str], use_web: bool) -> PlanResult:
+    if intent.intent == "chitchat":
+        return PlanResult(
+            action="direct_answer",
+            reason="寒暄或普通对话不需要检索资料，直接回复即可。",
+        )
+
+    if intent.intent == "upload_status":
+        return PlanResult(
+            action="read_upload_status",
+            reason="用户要确认上传状态，直接读取应用状态。",
+        )
+
+    if intent.intent == "latest_research" and use_web:
+        return PlanResult(
+            action="collect_context",
+            reason="问题涉及最新外部信息，需要联网资料和本地资料共同进入上下文。",
+        )
+
+    if intent.intent == "document_qa" or preferred_sources:
+        return PlanResult(
+            action="collect_context",
+            reason="问题需要基于上传资料或知识库资料回答，先收集上下文。",
+        )
+
+    return PlanResult(
+        action="collect_context",
+        reason="通用问题先收集可用上下文，再评估是否足够回答。",
+    )
+
+
+def orchestrate_action(
+    action: str,
+    question: str,
+    intent: str,
+    use_web: bool,
+    top_k: int,
+    web_max_results: int,
+    preferred_sources: list[str],
+) -> list[AgentStep]:
+    if action == "direct_answer":
+        return [
+            AgentStep(
+                name="直接回复",
+                tool="direct_answer",
+                reason="高层动作判断无需检索资料。",
+                args={"question": question},
+            )
+        ]
+
+    if action == "read_upload_status":
+        return [
+            AgentStep(
+                name="读取上传状态",
+                tool="upload_status",
+                reason="高层动作判断需要读取当前上传资料状态。",
+                args={"preferred_sources": preferred_sources},
+            )
+        ]
+
+    steps: list[AgentStep] = []
+    should_collect_web = use_web and (intent == "latest_research" or not preferred_sources)
+    if should_collect_web:
+        steps.append(
+            AgentStep(
+                name="联网收集资料",
+                tool="web_collect",
+                reason="DAG 节点：收集外部网页资料并写入资料库。",
+                args={"question": question, "max_results": web_max_results},
+            )
+        )
+
+    steps.append(
+        AgentStep(
+            name="RAG 检索排序",
+            tool="rag_search",
+            reason="DAG 节点：对上传资料、网页资料和本地资料做统一检索排序。",
+            args={
+                "question": question,
+                "top_k": top_k,
+                "preferred_sources": preferred_sources,
+            },
+        )
+    )
+    return steps
+
+
+def aggregate_context(tool_results: dict[str, ToolResult]) -> dict[str, Any]:
+    search_results = tool_results.get("rag_search", ToolResult(status="success", summary="", data=[])).data or []
+    web_results = tool_results.get("web_collect", ToolResult(status="success", summary="", data=[])).data or []
+    source_counts = {
+        "upload": sum(1 for item in search_results if item.get("source_type") == "upload"),
+        "web": sum(1 for item in search_results if item.get("source_type") == "web"),
+        "local": sum(1 for item in search_results if item.get("source_type") == "local"),
+    }
+    return {
+        "search_results": search_results,
+        "web_results": web_results,
+        "source_counts": source_counts,
+    }
+
+
+def evaluate_context(intent: str, aggregated: dict[str, Any]) -> dict[str, Any]:
+    search_results = aggregated.get("search_results", [])
+    source_counts = aggregated.get("source_counts", {})
+    has_sources = bool(search_results)
+    has_upload_sources = source_counts.get("upload", 0) > 0
+
+    if intent == "document_qa":
+        sufficient = has_upload_sources or has_sources
+        reason = "文档问答优先看上传资料；当前已命中上传资料。" if has_upload_sources else "未命中上传资料，使用现有检索资料兜底。"
+    elif intent == "latest_research":
+        sufficient = has_sources
+        reason = "最新信息问题需要外部或本地资料；当前已有可用检索结果。" if has_sources else "未检索到可用资料。"
+    else:
+        sufficient = has_sources
+        reason = "通用问题已有检索资料。" if has_sources else "没有检索到可用资料。"
+
+    return {
+        "sufficient": sufficient,
+        "reason": reason,
+        "source_count": len(search_results),
+    }
 
 
 def tool_generate_answer(question: str, search_results: list[dict[str, Any]]) -> ToolResult:
@@ -605,4 +785,158 @@ def format_trace_item(step: AgentStep, result: ToolResult) -> dict[str, Any]:
         "summary": result.summary,
         "elapsed_ms": result.elapsed_ms,
         "error": result.error,
+    }
+
+
+def make_stage_trace(
+    name: str,
+    tool: str,
+    reason: str,
+    summary: str,
+    status: str = "success",
+    elapsed_ms: int = 0,
+    error: str = "",
+) -> dict[str, Any]:
+    return {
+        "name": name,
+        "tool": tool,
+        "reason": reason,
+        "status": status,
+        "summary": summary,
+        "elapsed_ms": elapsed_ms,
+        "error": error,
+    }
+
+
+def run_agent_pro(
+    question: str,
+    use_web: bool = True,
+    top_k: int = 3,
+    web_max_results: int = 3,
+    preferred_sources: list[str] | None = None,
+) -> dict[str, Any]:
+    preferred_sources = preferred_sources or []
+    trace: list[dict[str, Any]] = []
+    tool_results: dict[str, ToolResult] = {}
+    answer = ""
+    search_results: list[dict[str, Any]] = []
+
+    started_at = time.time()
+    intent = classify_intent(question, preferred_sources)
+    trace.append(
+        make_stage_trace(
+            name="意图分类",
+            tool="intent_classifier",
+            reason="先判断用户请求类型，避免所有问题都进入同一条 RAG 链路。",
+            summary=f"识别为 {intent.intent}，置信度 {intent.confidence:.2f}。{intent.reason}",
+            elapsed_ms=int((time.time() - started_at) * 1000),
+        )
+    )
+
+    started_at = time.time()
+    plan = plan_high_level_action(intent, preferred_sources, use_web)
+    trace.append(
+        make_stage_trace(
+            name="高层规划",
+            tool="planner",
+            reason="根据意图选择业务级动作，而不是直接暴露所有底层工具。",
+            summary=f"选择动作：{plan.action}。{plan.reason}",
+            elapsed_ms=int((time.time() - started_at) * 1000),
+        )
+    )
+
+    started_at = time.time()
+    dag_steps = orchestrate_action(
+        action=plan.action,
+        question=question,
+        intent=intent.intent,
+        use_web=use_web,
+        top_k=top_k,
+        web_max_results=web_max_results,
+        preferred_sources=preferred_sources,
+    )
+    trace.append(
+        make_stage_trace(
+            name="任务编排",
+            tool="orchestrator",
+            reason="把高层动作展开成可执行 DAG 节点。",
+            summary="执行节点：" + " → ".join(step.tool for step in dag_steps),
+            elapsed_ms=int((time.time() - started_at) * 1000),
+        )
+    )
+
+    state = {
+        "question": question,
+        "search_results": [],
+        "answer": "",
+        "planner_mode": "pro_runtime",
+    }
+
+    for step in dag_steps:
+        result = run_tool(step, state)
+        tool_results[step.tool] = result
+        if step.tool == "rag_search":
+            state["search_results"] = result.data
+            search_results = result.data
+        elif step.tool in {"direct_answer", "upload_status"}:
+            state["answer"] = result.data
+            answer = result.data
+        trace.append(format_trace_item(step, result))
+
+    if answer:
+        return {
+            "answer": answer,
+            "sources": search_results,
+            "steps": trace,
+            "planner_mode": "pro_runtime",
+        }
+
+    started_at = time.time()
+    aggregated = aggregate_context(tool_results)
+    search_results = aggregated["search_results"]
+    trace.append(
+        make_stage_trace(
+            name="结果聚合",
+            tool="aggregator",
+            reason="把多个工具或 DAG 节点的结果合并成统一上下文候选。",
+            summary=(
+                f"聚合到 {len(search_results)} 条检索资料；"
+                f"上传 {aggregated['source_counts']['upload']} 条，"
+                f"网页 {aggregated['source_counts']['web']} 条，"
+                f"本地 {aggregated['source_counts']['local']} 条。"
+            ),
+            elapsed_ms=int((time.time() - started_at) * 1000),
+        )
+    )
+
+    started_at = time.time()
+    evaluation = evaluate_context(intent.intent, aggregated)
+    trace.append(
+        make_stage_trace(
+            name="资料评估",
+            tool="evaluator",
+            reason="判断当前资料是否足够支撑最终回答。",
+            summary=(
+                f"资料是否足够：{'是' if evaluation['sufficient'] else '否'}；"
+                f"资料数：{evaluation['source_count']}。{evaluation['reason']}"
+            ),
+            elapsed_ms=int((time.time() - started_at) * 1000),
+        )
+    )
+
+    final_step = AgentStep(
+        name="生成最终回答",
+        tool="generate_answer",
+        reason="基于聚合并评估后的资料生成最终回答。",
+        args={"question": question, "search_results": search_results},
+    )
+    final_result = run_tool(final_step, state)
+    answer = final_result.data
+    trace.append(format_trace_item(final_step, final_result))
+
+    return {
+        "answer": answer,
+        "sources": search_results,
+        "steps": trace,
+        "planner_mode": "pro_runtime",
     }
