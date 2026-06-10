@@ -102,11 +102,28 @@ def tool_direct_answer(question: str) -> ToolResult:
     )
 
 
+def tool_upload_status(preferred_sources: list[str]) -> ToolResult:
+    if preferred_sources:
+        source_lines = "\n".join(f"- {source}" for source in preferred_sources)
+        answer = f"能看到。你当前上传并入库的资料有：\n{source_lines}\n\n你可以直接问我总结、提取重点或围绕这些资料做分析。"
+        summary = f"已读取上传状态，当前可见 {len(preferred_sources)} 个上传资料来源。"
+    else:
+        answer = "我目前没有看到已成功入库的上传资料。你可以先在左侧上传文件，等侧边栏出现“已入库资料”后再提问。"
+        summary = "已读取上传状态，当前没有可见的上传资料来源。"
+
+    return ToolResult(
+        status="success",
+        summary=summary,
+        data=answer,
+    )
+
+
 TOOLS: dict[str, Callable[..., ToolResult]] = {
     "web_collect": tool_web_collect,
     "rag_search": tool_rag_search,
     "generate_answer": tool_generate_answer,
     "direct_answer": tool_direct_answer,
+    "upload_status": tool_upload_status,
 }
 
 
@@ -182,6 +199,23 @@ PLANNER_TOOLS = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "upload_status",
+            "description": "读取当前应用状态，告诉用户是否能看到已上传并入库的资料。适合用户问：能看到上传资料吗、有没有收到文件、这个资料你看得到吗。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "reason": {
+                        "type": "string",
+                        "description": "为什么需要读取上传状态，而不是检索资料内容。",
+                    },
+                },
+                "required": ["reason"],
+            },
+        },
+    },
 ]
 
 
@@ -253,11 +287,12 @@ def build_planner_prompt(
 规划规则：
 1. 你只能通过工具调用表达计划，不要输出自然语言答案。
 2. 如果是寒暄、自我介绍、闲聊、简单确认，调用 direct_answer，不要调用 rag_search。
-3. 如果用户问题需要依据上传资料、知识库资料或历史资料，调用 rag_search。
-4. 如果问题涉及最新趋势、新闻、当前状态、外部事实，并且允许联网，先调用 web_collect，再调用 rag_search。
-5. 如果问题明显只要求总结用户上传资料，直接调用 rag_search，不要调用 web_collect。
-6. 如果已经调用 direct_answer，不要再调用其他工具。
-7. 不要调用 generate_answer，资料型问题的最终回答由系统在检索后统一生成。
+3. 如果用户是在问“能不能看到上传资料、有没有收到文件、是否已上传成功”，调用 upload_status。
+4. 如果用户问题需要依据上传资料、知识库资料或历史资料，调用 rag_search。
+5. 如果问题涉及最新趋势、新闻、当前状态、外部事实，并且允许联网，先调用 web_collect，再调用 rag_search。
+6. 如果问题明显只要求总结用户上传资料，直接调用 rag_search，不要调用 web_collect。
+7. 如果已经调用 direct_answer 或 upload_status，不要再调用其他工具。
+8. 不要调用 generate_answer，资料型问题的最终回答由系统在检索后统一生成。
 
 用户问题：
 {question}
@@ -351,6 +386,15 @@ def build_llm_planned_steps(
                     args={"question": args.get("question", question)},
                 )
             )
+        elif tool_name == "upload_status":
+            steps.append(
+                AgentStep(
+                    name="读取上传状态",
+                    tool="upload_status",
+                    reason=reason or "大模型判断用户在确认上传资料是否可见。",
+                    args={"preferred_sources": preferred_sources},
+                )
+            )
 
     return normalize_planned_steps(
         steps=steps,
@@ -370,7 +414,17 @@ def normalize_planned_steps(
     web_max_results: int,
     preferred_sources: list[str],
 ) -> list[AgentStep]:
-    tool_order = {"web_collect": 0, "rag_search": 1, "direct_answer": 2}
+    if is_upload_status_question(question):
+        return [
+            AgentStep(
+                name="读取上传状态",
+                tool="upload_status",
+                reason="用户在确认上传资料是否可见，直接读取当前应用状态。",
+                args={"preferred_sources": preferred_sources},
+            )
+        ]
+
+    tool_order = {"web_collect": 0, "rag_search": 1, "direct_answer": 2, "upload_status": 3}
     allowed_steps = [
         step
         for step in steps
@@ -382,6 +436,9 @@ def normalize_planned_steps(
 
     if "direct_answer" in deduped:
         return [deduped["direct_answer"]]
+
+    if "upload_status" in deduped:
+        return [deduped["upload_status"]]
 
     if use_web and not preferred_sources and "web_collect" not in deduped and "rag_search" in deduped:
         deduped["web_collect"] = AgentStep(
@@ -422,6 +479,17 @@ def plan_agent_steps(
     web_max_results: int,
     preferred_sources: list[str] | None = None,
 ) -> list[AgentStep]:
+    preferred_sources = preferred_sources or []
+    if is_upload_status_question(question):
+        return [
+            AgentStep(
+                name="读取上传状态",
+                tool="upload_status",
+                reason="用户在确认上传资料是否可见，直接读取当前应用状态。",
+                args={"preferred_sources": preferred_sources},
+            )
+        ]
+
     if ENABLE_LLM_PLANNER:
         try:
             steps = build_llm_planned_steps(
@@ -442,6 +510,28 @@ def plan_agent_steps(
         top_k=top_k,
         web_max_results=web_max_results,
         preferred_sources=preferred_sources,
+    )
+
+
+def is_upload_status_question(question: str) -> bool:
+    upload_words = ["上传", "资料", "文件", "pdf", "文档"]
+    status_words = [
+        "看到",
+        "看得到",
+        "看不到",
+        "看见",
+        "看不见",
+        "收到",
+        "有没有",
+        "能不能",
+        "可以看到",
+        "识别",
+        "读取",
+        "成功",
+    ]
+    lower_question = question.lower()
+    return any(word in lower_question for word in upload_words) and any(
+        word in lower_question for word in status_words
     )
 
 
@@ -485,7 +575,7 @@ def run_agent(
             result = run_tool(step, state)
             if step.tool == "rag_search":
                 state["search_results"] = result.data
-            elif step.tool in {"generate_answer", "direct_answer"}:
+            elif step.tool in {"generate_answer", "direct_answer", "upload_status"}:
                 state["answer"] = result.data
         except Exception as exc:
             result = ToolResult(
