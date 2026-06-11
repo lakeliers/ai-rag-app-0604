@@ -43,6 +43,7 @@ if enable_llm_planner:
 import rag_agent_core as agent
 import parsing_layer
 import agent_runtime
+import autonomous_agent
 
 agent.seed_local_note()
 
@@ -153,6 +154,12 @@ with st.sidebar:
 
     top_k = st.slider("资料条数", 1, 5, 3)
     web_max_results = st.slider("网页结果数", 1, 5, 2)
+    run_mode = st.radio(
+        "运行模式",
+        ["普通问答", "自主任务"],
+        help="普通问答走 Tool Agent；自主任务会先拆任务，再逐步调用 Tool Agent 推进。",
+    )
+    max_autonomous_steps = st.slider("自主任务最大步数", 1, 5, 3)
 
     st.divider()
     st.caption("Agent 会自动使用上传资料，并联网补充资料；没有上传资料时，会直接联网收集。")
@@ -205,13 +212,22 @@ if prompt:
             with st.spinner("执行 Agent 计划中..."):
                 uploaded_sources = ingest_uploaded_files(uploaded_files, prompt)
 
-                result = agent_runtime.run_agent_pro(
-                    prompt,
-                    use_web=True,
-                    top_k=top_k,
-                    web_max_results=web_max_results,
-                    preferred_sources=uploaded_sources,
-                )
+                if run_mode == "自主任务":
+                    result = autonomous_agent.run_autonomous_agent(
+                        prompt,
+                        top_k=top_k,
+                        web_max_results=web_max_results,
+                        max_steps=max_autonomous_steps,
+                        preferred_sources=uploaded_sources,
+                    )
+                else:
+                    result = agent_runtime.run_agent_pro(
+                        prompt,
+                        use_web=True,
+                        top_k=top_k,
+                        web_max_results=web_max_results,
+                        preferred_sources=uploaded_sources,
+                    )
 
             st.write(result["answer"])
             st.session_state.messages.append({
@@ -222,6 +238,9 @@ if prompt:
 
             with st.expander("查看 Agent 执行步骤"):
                 planner_label = (
+                    "Autonomous Runtime"
+                    if result.get("planner_mode") == "autonomous_runtime"
+                    else
                     "LLM Tool Calling"
                     if result.get("planner_mode") == "llm_tool_calling"
                     else "行业主流Runtime雏形"
@@ -245,6 +264,33 @@ if prompt:
                     if step.get("error"):
                         st.error(step["error"])
                     st.divider()
+
+            if result.get("planner_mode") == "autonomous_runtime":
+                with st.expander("查看自主任务状态"):
+                    goal = result.get("goal")
+                    if goal:
+                        st.markdown("**目标**")
+                        st.write(goal.objective)
+                        st.caption(f"停止原因：{result.get('stop_reason', '')}")
+
+                    st.markdown("**任务队列**")
+                    for task in result.get("tasks", []):
+                        st.write(f"{task.id}｜{task.title}｜{task.status}")
+                        st.caption(f"依赖：{', '.join(task.depends_on) or '无'}｜预期产物：{task.expected_output}")
+
+                    if result.get("critic_results"):
+                        st.markdown("**Critic 结果**")
+                        for critic in result["critic_results"]:
+                            status = "通过" if critic["passed"] else "未通过"
+                            st.write(f"{critic['task_id']}｜{status}｜分数：{critic['score']}")
+                            if critic["issues"]:
+                                st.caption("问题：" + "；".join(critic["issues"]))
+
+                    if result.get("reflections"):
+                        st.markdown("**Reflect 补救建议**")
+                        for reflection in result["reflections"]:
+                            st.write(f"{reflection['task_id']} → {reflection['repair_task_id']}")
+                            st.caption("问题：" + "；".join(reflection["issues"]))
 
             if result["sources"]:
                 with st.expander("查看参考来源"):
