@@ -212,7 +212,12 @@ if prompt:
             with st.spinner("执行 Agent 计划中..."):
                 uploaded_sources = ingest_uploaded_files(uploaded_files, prompt)
 
+                use_autonomous_mode = False
+                autonomous_route_reason = ""
                 if run_mode == "自主任务":
+                    use_autonomous_mode, autonomous_route_reason = autonomous_agent.should_use_autonomous_mode(prompt)
+
+                if run_mode == "自主任务" and use_autonomous_mode:
                     result = autonomous_agent.run_autonomous_agent(
                         prompt,
                         top_k=top_k,
@@ -228,6 +233,20 @@ if prompt:
                         web_max_results=web_max_results,
                         preferred_sources=uploaded_sources,
                     )
+                    if run_mode == "自主任务":
+                        result["planner_mode"] = "autonomous_fallback"
+                        result["steps"] = [
+                            {
+                                "name": "自主模式入口判断",
+                                "tool": "goal_router",
+                                "reason": "Goal Manager 先判断输入是否值得进入任务级 Autonomous Runtime。",
+                                "status": "success",
+                                "summary": f"已回退普通问答：{autonomous_route_reason}",
+                                "elapsed_ms": 0,
+                                "error": "",
+                            },
+                            *result.get("steps", []),
+                        ]
 
             st.write(result["answer"])
             st.session_state.messages.append({
@@ -243,6 +262,8 @@ if prompt:
                     else
                     "LLM Tool Calling"
                     if result.get("planner_mode") == "llm_tool_calling"
+                    else "自主模式回退普通问答"
+                    if result.get("planner_mode") == "autonomous_fallback"
                     else "行业主流Runtime雏形"
                     if result.get("planner_mode") == "pro_runtime"
                     else "规则兜底"

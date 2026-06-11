@@ -4,6 +4,27 @@ from typing import Any, Callable
 import agent_runtime
 
 
+AUTONOMOUS_TRIGGER_WORDS = [
+    "调研",
+    "研究",
+    "对比",
+    "报告",
+    "计划",
+    "方案",
+    "梳理",
+    "整理",
+    "分析",
+    "追踪",
+    "竞品",
+    "多个",
+    "几家",
+    "生成",
+    "输出",
+]
+
+CHITCHAT_WORDS = ["你好", "您好", "嗨", "hello", "hi", "我是", "认识一下"]
+
+
 @dataclass
 class Goal:
     objective: str
@@ -42,6 +63,22 @@ class AutonomousState:
     stop_reason: str = ""
     final_answer: str = ""
     sources: list[dict[str, Any]] = field(default_factory=list)
+
+
+def should_use_autonomous_mode(user_request: str) -> tuple[bool, str]:
+    stripped_request = user_request.strip()
+    lowered_request = stripped_request.lower()
+
+    if len(stripped_request) <= 30 and any(word in lowered_request for word in CHITCHAT_WORDS):
+        return False, "输入更像寒暄或自我介绍，不属于需要任务队列推进的目标。"
+
+    if any(word in stripped_request for word in AUTONOMOUS_TRIGGER_WORDS):
+        return True, "输入包含调研、分析、报告、计划等目标型任务信号。"
+
+    if len(stripped_request) >= 45:
+        return True, "输入较长，按复杂目标处理。"
+
+    return False, "输入更像普通问答，不需要 Autonomous Agent 的任务级循环。"
 
 
 def create_goal(user_request: str, max_steps: int, top_k: int, web_max_results: int) -> Goal:
