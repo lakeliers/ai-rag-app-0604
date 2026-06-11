@@ -459,6 +459,17 @@ def source_priority_score(source, preferred_sources):
     return 1 if source in preferred_sources else 0
 
 
+def is_allowed_source(row, preferred_sources):
+    source_type = row.get("source_type", "unknown")
+    if source_type != "upload":
+        return True
+
+    if not preferred_sources:
+        return False
+
+    return row.get("source") in preferred_sources
+
+
 def source_label(item):
     source_type = item.get("source_type", "unknown")
     source = item.get("source", "")
@@ -771,12 +782,16 @@ def search_chroma(question, top_k=3, preferred_sources=None):
     fused = {}
 
     for rank, row in enumerate(vector_rows, start=1):
+        if not is_allowed_source(row, preferred_sources):
+            continue
         item_id = row["id"]
         fused.setdefault(item_id, row.copy())
         fused[item_id]["vector_rank"] = rank
         fused[item_id]["rrf_score"] = fused[item_id].get("rrf_score", 0) + 1 / (RRF_K + rank)
 
     for rank, row in enumerate(bm25_rows, start=1):
+        if not is_allowed_source(row, preferred_sources):
+            continue
         item_id = row["id"]
         fused.setdefault(item_id, row.copy())
         fused[item_id]["bm25_rank"] = rank
