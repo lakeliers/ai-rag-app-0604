@@ -22,7 +22,21 @@ AUTONOMOUS_TRIGGER_WORDS = [
     "输出",
 ]
 
-CHITCHAT_WORDS = ["你好", "您好", "嗨", "hello", "hi", "我是", "认识一下"]
+CHITCHAT_WORDS = [
+    "你好",
+    "您好",
+    "嗨",
+    "hello",
+    "hi",
+    "我是",
+    "认识一下",
+    "你是谁",
+    "介绍一下你自己",
+    "你能做什么",
+    "你会什么",
+    "你擅长什么",
+    "能帮我什么",
+]
 
 
 @dataclass

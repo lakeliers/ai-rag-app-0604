@@ -1110,6 +1110,27 @@ def web_collect(query, max_results=3):
 
     ingested_sources = []
 
+    def ingest_search_result_fallback(item, reason):
+        fallback_text = (
+            f"网页搜索结果摘要\n"
+            f"查询：{query}\n"
+            f"标题：{item['title']}\n"
+            f"链接：{item['url']}\n"
+            f"说明：完整网页正文读取失败或正文过短，当前仅保留搜索结果标题和链接作为低置信度网页资料。\n"
+            f"失败原因：{reason}"
+        )
+        source_name = f"网页搜索结果：{item['title']}"
+        chunk_count = add_text_to_chroma(
+            fallback_text,
+            source=source_name,
+            source_type="web",
+            url=item["url"],
+            content_type="search_result",
+        )
+        if chunk_count:
+            print(f"已写入搜索结果摘要：{chunk_count} 块")
+            ingested_sources.append(item)
+
     for item in results:
         title = item["title"]
         url = item["url"]
@@ -1119,10 +1140,12 @@ def web_collect(query, max_results=3):
             text = fetch_web_text(url)
         except Exception as e:
             print(f"读取失败：{e}")
+            ingest_search_result_fallback(item, str(e))
             continue
 
         if len(text) < 100:
             print("网页正文太少，跳过。")
+            ingest_search_result_fallback(item, "网页正文太少")
             continue
 
         source_name = f"网页：{title}"

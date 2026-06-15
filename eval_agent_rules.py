@@ -1,0 +1,457 @@
+import argparse
+import html
+import json
+from collections import Counter, defaultdict
+from pathlib import Path
+from typing import Any
+
+import agent_runtime
+import autonomous_agent
+
+
+ROOT = Path(__file__).resolve().parent
+DEFAULT_CASES_PATH = ROOT / "eval_cases.jsonl"
+DEFAULT_REPORT_PATH = ROOT / "reports" / "agent_rule_eval_report.html"
+
+
+def load_cases(path: Path) -> list[dict[str, Any]]:
+    cases = []
+    for line in path.read_text(encoding="utf-8").splitlines():
+        stripped = line.strip()
+        if stripped:
+            cases.append(json.loads(stripped))
+    return cases
+
+
+def fake_direct_answer(question: str) -> agent_runtime.ToolResult:
+    if "萧玄" in question:
+        answer = "你好，萧玄，很高兴继续和你一起学习 AI Agent。"
+    else:
+        answer = "你好，我可以帮你学习 RAG、Tool Agent、Autonomous Agent 和 Agent Eval。"
+    return agent_runtime.ToolResult(status="success", summary="模拟直接回复。", data=answer)
+
+
+def fake_upload_status(preferred_sources: list[str]) -> agent_runtime.ToolResult:
+    if preferred_sources:
+        source_lines = "\n".join(f"- {source}" for source in preferred_sources)
+        answer = f"能看到。你当前上传并入库的资料有：\n{source_lines}"
+    else:
+        answer = "我目前没有看到已成功入库的上传资料。"
+    return agent_runtime.ToolResult(status="success", summary="模拟读取上传状态。", data=answer)
+
+
+def fake_web_collect(question: str, max_results: int) -> agent_runtime.ToolResult:
+    return agent_runtime.ToolResult(
+        status="success",
+        summary=f"模拟联网收集 {max_results} 条网页资料。",
+        data=[
+            {
+                "title": "AI Agent trends",
+                "url": "https://example.com/agent-trends",
+            }
+        ],
+    )
+
+
+def fake_rag_search(question: str, top_k: int, preferred_sources: list[str]) -> agent_runtime.ToolResult:
+    results: list[dict[str, Any]] = []
+    if preferred_sources:
+        results.append({
+            "source_type": "upload",
+            "source": preferred_sources[0],
+            "document": "上传资料说明 AI 产品经理需要理解 RAG、工具调用和评估体系。",
+            "final_score": 0.92,
+            "chunk_index": 1,
+        })
+    if "最近" in question or "趋势" in question or "调研" in question:
+        results.append({
+            "source_type": "web",
+            "source": "AI Agent trends web",
+            "url": "https://example.com/agent-trends",
+            "document": "近期 AI Agent 趋势包括多工具编排、可观测运行时和评估体系。",
+            "final_score": 0.88,
+            "chunk_index": 1,
+        })
+    if not results:
+        results.append({
+            "source_type": "local",
+            "source": "我的AI学习笔记",
+            "document": "RAG 是检索增强生成，通过检索资料后再让大模型回答。",
+            "final_score": 0.81,
+            "chunk_index": 1,
+        })
+
+    return agent_runtime.ToolResult(
+        status="success",
+        summary=f"模拟检索完成，返回 {len(results[:top_k])} 条资料。",
+        data=results[:top_k],
+    )
+
+
+def fake_generate_answer(question: str, search_results: list[dict[str, Any]]) -> agent_runtime.ToolResult:
+    joined_sources = "、".join(source.get("source", "未知来源") for source in search_results)
+    if "RAG" in question:
+        answer = f"RAG 是检索增强生成：先检索相关资料，再让大模型基于资料回答。参考来源：{joined_sources}。"
+    elif "趋势" in question or "调研" in question:
+        answer = (
+            "结论：AI Agent 正在从单轮工具调用走向任务级自主推进。"
+            "关键趋势包括多工具编排、可观测运行时、评估体系和更严格的数据权限控制。"
+            f"参考来源：{joined_sources}。"
+        )
+    elif "NPL" in question:
+        answer = "我目前没有看到本轮上传的 NPL 文件，因此不能引用历史上传资料来回答。"
+    else:
+        answer = f"基于当前资料，可以给出初步回答。参考来源：{joined_sources}。"
+    return agent_runtime.ToolResult(status="success", summary="模拟生成回答。", data=answer)
+
+
+def install_fake_tools() -> dict[str, Any]:
+    original_tools = agent_runtime.TOOLS.copy()
+    agent_runtime.TOOLS.update({
+        "direct_answer": fake_direct_answer,
+        "upload_status": fake_upload_status,
+        "web_collect": fake_web_collect,
+        "rag_search": fake_rag_search,
+        "generate_answer": fake_generate_answer,
+    })
+    return original_tools
+
+
+def restore_tools(original_tools: dict[str, Any]) -> None:
+    agent_runtime.TOOLS.clear()
+    agent_runtime.TOOLS.update(original_tools)
+
+
+def run_case(case: dict[str, Any]) -> dict[str, Any]:
+    selected_mode = case.get("selected_mode", "normal")
+    preferred_sources = case.get("preferred_sources", [])
+    user_input = case["user_input"]
+
+    if selected_mode == "autonomous":
+        use_autonomous, reason = autonomous_agent.should_use_autonomous_mode(user_input)
+        if use_autonomous:
+            return autonomous_agent.run_autonomous_agent(
+                user_input,
+                top_k=3,
+                web_max_results=2,
+                max_steps=3,
+                preferred_sources=preferred_sources,
+            )
+
+        result = agent_runtime.run_agent_pro(
+            user_input,
+            use_web=True,
+            top_k=3,
+            web_max_results=2,
+            preferred_sources=preferred_sources,
+        )
+        result["planner_mode"] = "autonomous_fallback"
+        result["steps"] = [
+            {
+                "name": "自主模式入口判断",
+                "tool": "goal_router",
+                "reason": "Goal Manager 判断输入不适合任务级循环。",
+                "status": "success",
+                "summary": f"已回退普通问答：{reason}",
+                "elapsed_ms": 0,
+                "error": "",
+            },
+            *result.get("steps", []),
+        ]
+        return result
+
+    return agent_runtime.run_agent_pro(
+        user_input,
+        use_web=True,
+        top_k=3,
+        web_max_results=2,
+        preferred_sources=preferred_sources,
+    )
+
+
+def actual_tools(result: dict[str, Any]) -> list[str]:
+    return [step.get("tool", "") for step in result.get("steps", [])]
+
+
+def actual_tasks(result: dict[str, Any]) -> list[str]:
+    return [task.id for task in result.get("tasks", [])]
+
+
+def score_expected_mode(case: dict[str, Any], result: dict[str, Any]) -> dict[str, Any]:
+    expected = case.get("expected_mode")
+    if not expected:
+        return {"passed": True, "expected": "", "actual": result.get("planner_mode", "")}
+    actual = result.get("planner_mode", "")
+    return {"passed": actual == expected, "expected": expected, "actual": actual}
+
+
+def score_expected_tools(case: dict[str, Any], result: dict[str, Any]) -> dict[str, Any]:
+    tools = actual_tools(result)
+    missing = [tool for tool in case.get("expected_tools", []) if tool not in tools]
+    return {"passed": not missing, "missing": missing, "actual": tools}
+
+
+def score_forbidden_tools(case: dict[str, Any], result: dict[str, Any]) -> dict[str, Any]:
+    tools = actual_tools(result)
+    violated = [tool for tool in case.get("forbidden_tools", []) if tool in tools]
+    return {"passed": not violated, "violated": violated, "actual": tools}
+
+
+def score_sources(case: dict[str, Any], result: dict[str, Any]) -> dict[str, Any]:
+    sources = result.get("sources", [])
+    source_types = [source.get("source_type", "unknown") for source in sources]
+    missing_expected = [
+        source_type for source_type in case.get("expected_sources", [])
+        if source_type not in source_types
+    ]
+    forbidden = set(case.get("forbidden_sources", []))
+    violations = [
+        source for source in sources
+        if source.get("source_type", "unknown") in forbidden
+    ]
+    return {
+        "passed": not missing_expected and not violations,
+        "source_types": source_types,
+        "missing_expected": missing_expected,
+        "violations": violations,
+    }
+
+
+def score_required_tasks(case: dict[str, Any], result: dict[str, Any]) -> dict[str, Any]:
+    tasks = actual_tasks(result)
+    missing = [task for task in case.get("required_tasks", []) if task not in tasks]
+    forbidden = [task for task in case.get("forbidden_tasks", []) if task in tasks]
+    return {"passed": not missing and not forbidden, "missing": missing, "forbidden": forbidden, "actual": tasks}
+
+
+def score_task_completion(result: dict[str, Any]) -> dict[str, Any]:
+    tasks = result.get("tasks", [])
+    if not tasks:
+        return {"passed": True, "completion_rate": None}
+    completed = [task for task in tasks if task.status == "completed"]
+    return {
+        "passed": len(completed) == len(tasks),
+        "completion_rate": len(completed) / len(tasks),
+        "completed": len(completed),
+        "total": len(tasks),
+    }
+
+
+def score_stop_reason(case: dict[str, Any], result: dict[str, Any]) -> dict[str, Any]:
+    expected = case.get("expected_stop_reason")
+    if not expected:
+        return {"passed": True, "expected": "", "actual": result.get("stop_reason", "")}
+    actual = result.get("stop_reason", "")
+    return {"passed": actual == expected, "expected": expected, "actual": actual}
+
+
+def score_answer(case: dict[str, Any], result: dict[str, Any]) -> dict[str, Any]:
+    answer = result.get("answer", "")
+    issues = []
+    min_chars = case.get("min_answer_chars")
+    if min_chars and len(answer) < min_chars:
+        issues.append(f"答案长度少于 {min_chars} 字")
+    for phrase in case.get("required_phrases", []):
+        if phrase not in answer:
+            issues.append(f"缺少必需短语：{phrase}")
+    for phrase in case.get("expected_answer_phrases", []):
+        if phrase not in answer:
+            issues.append(f"缺少期望短语：{phrase}")
+    for phrase in case.get("forbidden_answer_phrases", []):
+        if phrase in answer:
+            issues.append(f"出现禁止短语：{phrase}")
+    return {"passed": not issues, "issues": issues, "answer_preview": answer[:220]}
+
+
+def evaluate_case(case: dict[str, Any], result: dict[str, Any]) -> dict[str, Any]:
+    checks = {
+        "expected_mode": score_expected_mode(case, result),
+        "expected_tools": score_expected_tools(case, result),
+        "forbidden_tools": score_forbidden_tools(case, result),
+        "sources": score_sources(case, result),
+        "required_tasks": score_required_tasks(case, result),
+        "task_completion": score_task_completion(result),
+        "stop_reason": score_stop_reason(case, result),
+        "answer": score_answer(case, result),
+    }
+    passed = all(check["passed"] for check in checks.values())
+    failed_checks = [name for name, check in checks.items() if not check["passed"]]
+    return {
+        "case_id": case["case_id"],
+        "category": case.get("category", "unknown"),
+        "passed": passed,
+        "failed_checks": failed_checks,
+        "checks": checks,
+        "result": {
+            "planner_mode": result.get("planner_mode", ""),
+            "tools": actual_tools(result),
+            "tasks": actual_tasks(result),
+            "stop_reason": result.get("stop_reason", ""),
+            "sources": result.get("sources", []),
+            "answer": result.get("answer", ""),
+        },
+    }
+
+
+def run_eval(cases: list[dict[str, Any]], mode: str = "mock") -> dict[str, Any]:
+    original_tools = install_fake_tools() if mode == "mock" else None
+    rows = []
+    try:
+        for case in cases:
+            result = run_case(case)
+            rows.append({
+                "case": case,
+                "evaluation": evaluate_case(case, result),
+            })
+    finally:
+        if original_tools is not None:
+            restore_tools(original_tools)
+
+    total = len(rows)
+    passed = sum(1 for row in rows if row["evaluation"]["passed"])
+    by_category = defaultdict(lambda: {"total": 0, "passed": 0})
+    for row in rows:
+        category = row["evaluation"]["category"]
+        by_category[category]["total"] += 1
+        by_category[category]["passed"] += int(row["evaluation"]["passed"])
+
+    failed_check_counter = Counter()
+    for row in rows:
+        failed_check_counter.update(row["evaluation"]["failed_checks"])
+
+    return {
+        "total": total,
+        "passed": passed,
+        "failed": total - passed,
+        "pass_rate": passed / total if total else 0,
+        "mode": mode,
+        "by_category": dict(by_category),
+        "failed_check_counts": dict(failed_check_counter),
+        "rows": rows,
+    }
+
+
+def esc(value: Any) -> str:
+    return html.escape(str(value))
+
+
+def render_report(report: dict[str, Any], output_path: Path) -> None:
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    category_rows = "\n".join(
+        f"<tr><td>{esc(category)}</td><td>{stats['passed']}/{stats['total']}</td><td>{stats['passed'] / stats['total']:.0%}</td></tr>"
+        for category, stats in sorted(report["by_category"].items())
+    )
+    failed_checks = report["failed_check_counts"] or {}
+    failed_check_rows = "\n".join(
+        f"<tr><td>{esc(name)}</td><td>{count}</td></tr>"
+        for name, count in sorted(failed_checks.items())
+    ) or "<tr><td>无</td><td>0</td></tr>"
+
+    case_rows = []
+    for row in report["rows"]:
+        case = row["case"]
+        evaluation = row["evaluation"]
+        status = "通过" if evaluation["passed"] else "失败"
+        status_class = "pass" if evaluation["passed"] else "fail"
+        checks_summary = "\n".join(
+            f"{name}: {'通过' if check['passed'] else '失败'}"
+            for name, check in evaluation["checks"].items()
+        )
+        actual = evaluation["result"]
+        case_rows.append(f"""
+        <tr>
+          <td><strong>{esc(case['case_id'])}</strong><br><span>{esc(case.get('category', ''))}</span></td>
+          <td>{esc(case['user_input'])}</td>
+          <td class="{status_class}">{status}</td>
+          <td><pre>{esc(checks_summary)}</pre></td>
+          <td><pre>{esc(json.dumps(actual, ensure_ascii=False, indent=2)[:1600])}</pre></td>
+        </tr>
+        """)
+
+    html_text = f"""<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Agent Rule-based Eval 报告</title>
+  <style>
+    body {{ margin: 0; background: #f6f7fb; color: #202431; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; line-height: 1.6; }}
+    main {{ max-width: 1280px; margin: 0 auto; padding: 40px 24px 72px; }}
+    h1 {{ margin: 0 0 8px; font-size: 34px; }}
+    h2 {{ margin: 32px 0 14px; font-size: 22px; }}
+    .sub {{ color: #667085; margin-bottom: 28px; }}
+    .grid {{ display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; }}
+    .card {{ background: #fff; border: 1px solid #e5e7ef; border-radius: 8px; padding: 18px; }}
+    .metric {{ font-size: 30px; font-weight: 760; }}
+    .pass {{ color: #047857; font-weight: 700; }}
+    .fail {{ color: #dc2626; font-weight: 700; }}
+    table {{ width: 100%; border-collapse: collapse; background: #fff; border: 1px solid #e5e7ef; border-radius: 8px; overflow: hidden; }}
+    th, td {{ padding: 12px 14px; border-bottom: 1px solid #e5e7ef; text-align: left; vertical-align: top; font-size: 14px; }}
+    th {{ background: #f1f5f9; }}
+    tr:last-child td {{ border-bottom: none; }}
+    pre {{ margin: 0; white-space: pre-wrap; font-size: 12px; background: #f8fafc; border: 1px solid #e5e7eb; border-radius: 6px; padding: 8px; max-height: 260px; overflow: auto; }}
+    .note {{ border-left: 4px solid #2563eb; background: #eff6ff; color: #1e3a8a; padding: 12px 14px; border-radius: 6px; }}
+    @media (max-width: 900px) {{ .grid {{ grid-template-columns: 1fr; }} main {{ padding: 28px 16px 56px; }} }}
+  </style>
+</head>
+<body>
+<main>
+  <h1>Agent Rule-based Eval 报告</h1>
+  <div class="sub">规则评估模式：{esc(report.get('mode', 'mock'))}。mock 模式不消耗真实 token；real 模式会调用当前 Agent 链路。重点检查模式、工具、来源、任务和基础答案硬规则。</div>
+
+  <section class="grid">
+    <div class="card"><div class="metric">{report['total']}</div><div>总样本</div></div>
+    <div class="card"><div class="metric pass">{report['passed']}</div><div>通过</div></div>
+    <div class="card"><div class="metric fail">{report['failed']}</div><div>失败</div></div>
+    <div class="card"><div class="metric">{report['pass_rate']:.0%}</div><div>通过率</div></div>
+  </section>
+
+  <h2>分场景通过率</h2>
+  <table><thead><tr><th>场景</th><th>通过 / 总数</th><th>通过率</th></tr></thead><tbody>{category_rows}</tbody></table>
+
+  <h2>失败检查项</h2>
+  <table><thead><tr><th>检查项</th><th>失败次数</th></tr></thead><tbody>{failed_check_rows}</tbody></table>
+
+  <h2>逐 Case 明细</h2>
+  <table>
+    <thead><tr><th>Case</th><th>输入</th><th>结果</th><th>检查项</th><th>实际输出摘要</th></tr></thead>
+    <tbody>{''.join(case_rows)}</tbody>
+  </table>
+
+  <h2>结论</h2>
+  <div class="note">这版规则 Eval 已覆盖闲聊路由、上传状态、无上传资料隔离、Web RAG、定义问答、Autonomous 任务和 Autonomous fallback。下一步可以在此基础上增加 LLM-as-Judge 语义质量评分。</div>
+</main>
+</body>
+</html>"""
+    output_path.write_text(html_text, encoding="utf-8")
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--cases", default=str(DEFAULT_CASES_PATH))
+    parser.add_argument("--report", default=str(DEFAULT_REPORT_PATH))
+    parser.add_argument("--mode", choices=["mock", "real"], default="mock")
+    parser.add_argument("--suite", default="", help="只运行指定 suite，例如 smoke、regression、benchmark。")
+    parser.add_argument("--case-id", action="append", default=[], help="只运行指定 case_id，可重复传入。")
+    args = parser.parse_args()
+
+    cases = load_cases(Path(args.cases))
+    if args.suite:
+        cases = [case for case in cases if args.suite in case.get("suite", [])]
+    if args.case_id:
+        case_ids = set(args.case_id)
+        cases = [case for case in cases if case["case_id"] in case_ids]
+
+    report = run_eval(cases, mode=args.mode)
+    render_report(report, Path(args.report))
+
+    print(f"Mode: {report['mode']}")
+    print(f"Total: {report['total']}")
+    print(f"Passed: {report['passed']}")
+    print(f"Failed: {report['failed']}")
+    print(f"Pass rate: {report['pass_rate']:.0%}")
+    print(f"Report: {Path(args.report).resolve()}")
+
+
+if __name__ == "__main__":
+    main()
