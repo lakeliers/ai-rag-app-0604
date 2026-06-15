@@ -1,6 +1,8 @@
 import argparse
 import html
 import json
+import multiprocessing as mp
+import signal
 from collections import Counter, defaultdict
 from pathlib import Path
 from typing import Any
@@ -12,6 +14,21 @@ import autonomous_agent
 ROOT = Path(__file__).resolve().parent
 DEFAULT_CASES_PATH = ROOT / "eval_cases.jsonl"
 DEFAULT_REPORT_PATH = ROOT / "reports" / "agent_rule_eval_report.html"
+EVAL_UPLOAD_FIXTURES = {
+    "上传：AI产品经理学习笔记.md": (
+        "AI 产品经理学习笔记：RAG 是检索增强生成，Tool Agent 负责在单次任务中选择和执行工具，"
+        "Autonomous Agent 会围绕目标拆解任务、维护任务队列、观察执行结果并自检。"
+        "Agent Eval 需要包含 smoke、regression、benchmark 三类样本，并观察工具调用、资料来源、答案质量和失败原因。"
+    ),
+    "上传：Agent评估白皮书.pdf": (
+        "Agent 评估白皮书：Agent Eval 应覆盖任务成功率、工具调用正确率、资料来源准确率、答案忠实度、延迟、成本和安全边界。"
+        "评估样本集应包含基础路由、RAG 检索、文档问答、联网问答、自主任务和失败恢复等场景。"
+    ),
+    "上传：用户访谈纪要.pdf": (
+        "用户访谈纪要：用户希望清楚看到上传资料是否已入库，并希望 Agent 优先使用当前上传资料，"
+        "不要引用历史上传文件或无关网页资料。"
+    ),
+}
 
 
 def load_cases(path: Path) -> list[dict[str, Any]]:
@@ -21,6 +38,23 @@ def load_cases(path: Path) -> list[dict[str, Any]]:
         if stripped:
             cases.append(json.loads(stripped))
     return cases
+
+
+def ensure_eval_upload_fixtures(cases: list[dict[str, Any]]) -> None:
+    needed_sources = {
+        source
+        for case in cases
+        for source in case.get("preferred_sources", [])
+        if source in EVAL_UPLOAD_FIXTURES
+    }
+    for source in sorted(needed_sources):
+        agent_runtime.agent.add_text_to_chroma(
+            EVAL_UPLOAD_FIXTURES[source],
+            source=source,
+            source_type="upload",
+            content_type="eval_fixture",
+            created_at=1781490000,
+        )
 
 
 def fake_direct_answer(question: str) -> agent_runtime.ToolResult:
@@ -63,7 +97,20 @@ def fake_rag_search(question: str, top_k: int, preferred_sources: list[str]) -> 
             "final_score": 0.92,
             "chunk_index": 1,
         })
-    if "最近" in question or "趋势" in question or "调研" in question:
+    web_signal_words = [
+        "最近",
+        "最新",
+        "今天",
+        "现在",
+        "趋势",
+        "动态",
+        "调研",
+        "进展",
+        "实践",
+        "Agent Memory",
+        "多 Agent",
+    ]
+    if any(word in question for word in web_signal_words):
         results.append({
             "source_type": "web",
             "source": "AI Agent trends web",
@@ -92,6 +139,11 @@ def fake_generate_answer(question: str, search_results: list[dict[str, Any]]) ->
     joined_sources = "、".join(source.get("source", "未知来源") for source in search_results)
     if "RAG" in question:
         answer = f"RAG 是检索增强生成：先检索相关资料，再让大模型基于资料回答。参考来源：{joined_sources}。"
+    elif "Tool Agent" in question or "Autonomous Agent" in question:
+        answer = (
+            "Tool Agent 更偏向在单次任务中调用工具完成动作，Autonomous Agent 更偏向围绕目标拆任务、循环推进和自检。"
+            f"参考来源：{joined_sources}。"
+        )
     elif "趋势" in question or "调研" in question:
         answer = (
             "结论：AI Agent 正在从单轮工具调用走向任务级自主推进。"
@@ -167,6 +219,103 @@ def run_case(case: dict[str, Any]) -> dict[str, Any]:
         web_max_results=2,
         preferred_sources=preferred_sources,
     )
+
+
+def timeout_result(case: dict[str, Any], message: str) -> dict[str, Any]:
+    return {
+        "planner_mode": "timeout",
+        "answer": "",
+        "sources": [],
+        "steps": [
+            {
+                "name": "Eval 超时保护",
+                "tool": "eval_timeout",
+                "reason": f"Case {case['case_id']} 超过单条用例时间限制。",
+                "status": "failed",
+                "summary": message,
+                "elapsed_ms": 0,
+                "error": message,
+            }
+        ],
+        "tasks": [],
+        "stop_reason": "eval_timeout",
+        "error": message,
+    }
+
+
+def error_result(case: dict[str, Any], error: Exception) -> dict[str, Any]:
+    message = f"{type(error).__name__}: {error}"
+    return {
+        "planner_mode": "error",
+        "answer": "",
+        "sources": [],
+        "steps": [
+            {
+                "name": "Eval 异常捕获",
+                "tool": "eval_error",
+                "reason": f"Case {case['case_id']} 执行时抛出异常。",
+                "status": "failed",
+                "summary": message,
+                "elapsed_ms": 0,
+                "error": message,
+            }
+        ],
+        "tasks": [],
+        "stop_reason": "eval_error",
+        "error": message,
+    }
+
+
+def run_case_safely(case: dict[str, Any], case_timeout: int) -> dict[str, Any]:
+    if case_timeout <= 0:
+        try:
+            return run_case(case)
+        except Exception as error:
+            return error_result(case, error)
+
+    def handle_timeout(signum, frame):
+        raise TimeoutError(f"超过 {case_timeout} 秒未完成")
+
+    previous_handler = signal.signal(signal.SIGALRM, handle_timeout)
+    signal.alarm(case_timeout)
+    try:
+        return run_case(case)
+    except TimeoutError as error:
+        return timeout_result(case, str(error))
+    except Exception as error:
+        return error_result(case, error)
+    finally:
+        signal.alarm(0)
+        signal.signal(signal.SIGALRM, previous_handler)
+
+
+def run_case_child(case: dict[str, Any], queue: Any) -> None:
+    try:
+        queue.put({"ok": True, "result": run_case(case)})
+    except Exception as error:
+        queue.put({"ok": False, "result": error_result(case, error)})
+
+
+def run_case_isolated(case: dict[str, Any], case_timeout: int) -> dict[str, Any]:
+    context = mp.get_context("spawn")
+    queue = context.Queue()
+    process = context.Process(target=run_case_child, args=(case, queue))
+    process.start()
+    process.join(case_timeout if case_timeout > 0 else None)
+
+    if process.is_alive():
+        process.terminate()
+        process.join(5)
+        if process.is_alive():
+            process.kill()
+            process.join()
+        return timeout_result(case, f"隔离子进程超过 {case_timeout} 秒未完成，已终止。")
+
+    if queue.empty():
+        return error_result(case, RuntimeError(f"隔离子进程退出但未返回结果，exitcode={process.exitcode}"))
+
+    payload = queue.get()
+    return payload["result"]
 
 
 def actual_tools(result: dict[str, Any]) -> list[str]:
@@ -293,12 +442,21 @@ def evaluate_case(case: dict[str, Any], result: dict[str, Any]) -> dict[str, Any
     }
 
 
-def run_eval(cases: list[dict[str, Any]], mode: str = "mock") -> dict[str, Any]:
+def run_eval(
+    cases: list[dict[str, Any]],
+    mode: str = "mock",
+    case_timeout: int = 120,
+    isolate_cases: bool = False,
+) -> dict[str, Any]:
     original_tools = install_fake_tools() if mode == "mock" else None
     rows = []
     try:
-        for case in cases:
-            result = run_case(case)
+        for index, case in enumerate(cases, start=1):
+            print(f"[{index}/{len(cases)}] running {case['case_id']} ({case.get('category', 'unknown')})")
+            if isolate_cases:
+                result = run_case_isolated(case, case_timeout)
+            else:
+                result = run_case_safely(case, case_timeout)
             rows.append({
                 "case": case,
                 "evaluation": evaluate_case(case, result),
@@ -433,6 +591,8 @@ def main() -> None:
     parser.add_argument("--mode", choices=["mock", "real"], default="mock")
     parser.add_argument("--suite", default="", help="只运行指定 suite，例如 smoke、regression、benchmark。")
     parser.add_argument("--case-id", action="append", default=[], help="只运行指定 case_id，可重复传入。")
+    parser.add_argument("--case-timeout", type=int, default=120, help="单条 case 的超时时间，单位秒；<=0 表示不限制。")
+    parser.add_argument("--isolate-cases", action="store_true", help="每条 case 使用隔离子进程执行，适合真实 API benchmark。")
     args = parser.parse_args()
 
     cases = load_cases(Path(args.cases))
@@ -442,7 +602,15 @@ def main() -> None:
         case_ids = set(args.case_id)
         cases = [case for case in cases if case["case_id"] in case_ids]
 
-    report = run_eval(cases, mode=args.mode)
+    if args.mode == "real":
+        ensure_eval_upload_fixtures(cases)
+
+    report = run_eval(
+        cases,
+        mode=args.mode,
+        case_timeout=args.case_timeout,
+        isolate_cases=args.isolate_cases,
+    )
     render_report(report, Path(args.report))
 
     print(f"Mode: {report['mode']}")

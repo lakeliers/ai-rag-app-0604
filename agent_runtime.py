@@ -74,11 +74,38 @@ def tool_web_collect(question: str, max_results: int) -> ToolResult:
     )
 
 
+def is_strict_upload_context_question(question: str, preferred_sources: list[str]) -> bool:
+    if not preferred_sources:
+        return False
+
+    lowered_question = question.lower()
+    upload_context_words = [
+        "总结",
+        "提取",
+        "分析",
+        "这份",
+        "资料",
+        "文档",
+        "pdf",
+        "文件",
+        "有没有提到",
+        "是否提到",
+        "有没有包含",
+    ]
+    freshness_words = ["最近", "最新", "今天", "现在", "趋势", "新闻", "动态", "current", "latest"]
+
+    return any(word in lowered_question for word in upload_context_words) and not any(
+        word in lowered_question for word in freshness_words
+    )
+
+
 def tool_rag_search(question: str, top_k: int, preferred_sources: list[str]) -> ToolResult:
+    preferred_only = is_strict_upload_context_question(question, preferred_sources)
     results = agent.search_chroma(
         question,
         top_k=top_k,
         preferred_sources=preferred_sources,
+        preferred_only=preferred_only,
     )
     upload_count = sum(1 for item in results if item.get("source_type") == "upload")
     web_count = sum(1 for item in results if item.get("source_type") == "web")
@@ -1047,12 +1074,16 @@ def plan_agent_steps(
 
 def is_upload_status_question(question: str) -> bool:
     upload_words = ["上传", "资料", "文件", "pdf", "文档"]
+    content_question_words = ["有没有提到", "是否提到", "有没有包含", "讲了什么", "说了什么"]
     status_words = [
         "看到",
         "看得到",
         "看不到",
         "看见",
         "看不见",
+        "读到",
+        "读得到",
+        "读不到",
         "收到",
         "有没有",
         "能不能",
@@ -1062,6 +1093,8 @@ def is_upload_status_question(question: str) -> bool:
         "成功",
     ]
     lower_question = question.lower()
+    if any(word in lower_question for word in content_question_words):
+        return False
     return any(word in lower_question for word in upload_words) and any(
         word in lower_question for word in status_words
     )

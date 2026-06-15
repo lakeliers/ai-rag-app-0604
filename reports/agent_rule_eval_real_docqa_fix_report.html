@@ -1,0 +1,177 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Agent Rule-based Eval 报告</title>
+  <style>
+    body { margin: 0; background: #f6f7fb; color: #202431; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; line-height: 1.6; }
+    main { max-width: 1280px; margin: 0 auto; padding: 40px 24px 72px; }
+    h1 { margin: 0 0 8px; font-size: 34px; }
+    h2 { margin: 32px 0 14px; font-size: 22px; }
+    .sub { color: #667085; margin-bottom: 28px; }
+    .grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; }
+    .card { background: #fff; border: 1px solid #e5e7ef; border-radius: 8px; padding: 18px; }
+    .metric { font-size: 30px; font-weight: 760; }
+    .pass { color: #047857; font-weight: 700; }
+    .fail { color: #dc2626; font-weight: 700; }
+    table { width: 100%; border-collapse: collapse; background: #fff; border: 1px solid #e5e7ef; border-radius: 8px; overflow: hidden; }
+    th, td { padding: 12px 14px; border-bottom: 1px solid #e5e7ef; text-align: left; vertical-align: top; font-size: 14px; }
+    th { background: #f1f5f9; }
+    tr:last-child td { border-bottom: none; }
+    pre { margin: 0; white-space: pre-wrap; font-size: 12px; background: #f8fafc; border: 1px solid #e5e7eb; border-radius: 6px; padding: 8px; max-height: 260px; overflow: auto; }
+    .note { border-left: 4px solid #2563eb; background: #eff6ff; color: #1e3a8a; padding: 12px 14px; border-radius: 6px; }
+    @media (max-width: 900px) { .grid { grid-template-columns: 1fr; } main { padding: 28px 16px 56px; } }
+  </style>
+</head>
+<body>
+<main>
+  <h1>Agent Rule-based Eval 报告</h1>
+  <div class="sub">规则评估模式：real。mock 模式不消耗真实 token；real 模式会调用当前 Agent 链路。重点检查模式、工具、来源、任务和基础答案硬规则。</div>
+
+  <section class="grid">
+    <div class="card"><div class="metric">2</div><div>总样本</div></div>
+    <div class="card"><div class="metric pass">2</div><div>通过</div></div>
+    <div class="card"><div class="metric fail">0</div><div>失败</div></div>
+    <div class="card"><div class="metric">100%</div><div>通过率</div></div>
+  </section>
+
+  <h2>分场景通过率</h2>
+  <table><thead><tr><th>场景</th><th>通过 / 总数</th><th>通过率</th></tr></thead><tbody><tr><td>document_qa</td><td>2/2</td><td>100%</td></tr></tbody></table>
+
+  <h2>失败检查项</h2>
+  <table><thead><tr><th>检查项</th><th>失败次数</th></tr></thead><tbody><tr><td>无</td><td>0</td></tr></tbody></table>
+
+  <h2>逐 Case 明细</h2>
+  <table>
+    <thead><tr><th>Case</th><th>输入</th><th>结果</th><th>检查项</th><th>实际输出摘要</th></tr></thead>
+    <tbody>
+        <tr>
+          <td><strong>doc_qa_001</strong><br><span>document_qa</span></td>
+          <td>总结这份资料的核心观点</td>
+          <td class="pass">通过</td>
+          <td><pre>expected_mode: 通过
+expected_tools: 通过
+forbidden_tools: 通过
+sources: 通过
+required_tasks: 通过
+task_completion: 通过
+stop_reason: 通过
+answer: 通过</pre></td>
+          <td><pre>{
+  &quot;planner_mode&quot;: &quot;pro_runtime&quot;,
+  &quot;tools&quot;: [
+    &quot;intent_classifier&quot;,
+    &quot;planner&quot;,
+    &quot;orchestrator&quot;,
+    &quot;dag_runtime&quot;,
+    &quot;rag_search&quot;,
+    &quot;aggregator&quot;,
+    &quot;evaluator&quot;,
+    &quot;generate_answer&quot;,
+    &quot;answer_validator&quot;
+  ],
+  &quot;tasks&quot;: [],
+  &quot;stop_reason&quot;: &quot;&quot;,
+  &quot;sources&quot;: [
+    {
+      &quot;id&quot;: &quot;upload__AI_.md_1781490000_0_0&quot;,
+      &quot;document&quot;: &quot;AI 产品经理学习笔记：RAG 是检索增强生成，Tool Agent 负责在单次任务中选择和执行工具，Autonomous Agent 会围绕目标拆解任务、维护任务队列、观察执行结果并自检。Agent Eval 需要包含 smoke、regression、benchmark 三类样本，并观察工具调用、资料来源、答案质量和失败原因。&quot;,
+      &quot;source&quot;: &quot;上传：AI产品经理学习笔记.md&quot;,
+      &quot;source_type&quot;: &quot;upload&quot;,
+      &quot;url&quot;: &quot;&quot;,
+      &quot;chunk_index&quot;: 0,
+      &quot;created_at&quot;: 1781490000,
+      &quot;content_type&quot;: &quot;eval_fixture&quot;,
+      &quot;document_key&quot;: &quot;upload:上传：AI产品经理学习笔记.md:上传：AI产品经理学习笔记.md&quot;,
+      &quot;section_title&quot;: &quot;&quot;,
+      &quot;page&quot;: 0,
+      &quot;sheet&quot;: &quot;&quot;,
+      &quot;row_start&quot;: 0,
+      &quot;row_end&quot;: 0,
+      &quot;chunk_type&quot;: &quot;child&quot;,
+      &quot;parent_id&quot;: &quot;上传：AI产品经理学习笔记.md:0:eval_fixture&quot;,
+      &quot;parent_text&quot;: &quot;AI 产品经理学习笔记：RAG 是检索增强生成，Tool Agent 负责在单次任务中选择和执行工具，Autonomous Agent 会围绕目标拆解任务、维护任务队列、观察执行结果并自检。Agent Eval 需要包含 smoke、regression、benchmark 三类样本，并观察工具调用、资料来源、答案质量和失败原因。&quot;,
+      &quot;distance&quot;: 252.6737518310547,
+      &quot;bm25_score&quot;: 0.28768207245178085,
+      &quot;vector_rank&quot;: 1,
+      &quot;rrf_score&quot;: 0.03278688524590164,
+      &quot;bm25_rank&quot;: 1,
+      &quot;answerability_score&quot;: 0.55,
+      &quot;keyword_score&quot;: 0,
+      &quot;source_priority&quot;: 1,
+      &quot;source_weight&quot;: 1.35,
+      &quot;freshness_score&quot;: 1.0,
+      &quot;query_intent&quot;: &quot;general&quot;,
+      &quot;ranking_weights&quot;: &quot;{&#x27;rerank&#x27;: 0.65, &#x27;rrf&#x27;: 0.15, &#x27;source&#x27;: 0.1, &#x27;freshness&#x27;: 0.1}&quot;,
+      &quot;final_score&quot;:</pre></td>
+        </tr>
+        
+        <tr>
+          <td><strong>doc_qa_004</strong><br><span>document_qa</span></td>
+          <td>这份资料里有没有提到 RAG 和 Tool Agent 的关系？</td>
+          <td class="pass">通过</td>
+          <td><pre>expected_mode: 通过
+expected_tools: 通过
+forbidden_tools: 通过
+sources: 通过
+required_tasks: 通过
+task_completion: 通过
+stop_reason: 通过
+answer: 通过</pre></td>
+          <td><pre>{
+  &quot;planner_mode&quot;: &quot;pro_runtime&quot;,
+  &quot;tools&quot;: [
+    &quot;intent_classifier&quot;,
+    &quot;planner&quot;,
+    &quot;orchestrator&quot;,
+    &quot;dag_runtime&quot;,
+    &quot;rag_search&quot;,
+    &quot;aggregator&quot;,
+    &quot;evaluator&quot;,
+    &quot;generate_answer&quot;,
+    &quot;answer_validator&quot;
+  ],
+  &quot;tasks&quot;: [],
+  &quot;stop_reason&quot;: &quot;&quot;,
+  &quot;sources&quot;: [
+    {
+      &quot;id&quot;: &quot;upload__AI_.md_1781490000_0_0&quot;,
+      &quot;document&quot;: &quot;AI 产品经理学习笔记：RAG 是检索增强生成，Tool Agent 负责在单次任务中选择和执行工具，Autonomous Agent 会围绕目标拆解任务、维护任务队列、观察执行结果并自检。Agent Eval 需要包含 smoke、regression、benchmark 三类样本，并观察工具调用、资料来源、答案质量和失败原因。&quot;,
+      &quot;source&quot;: &quot;上传：AI产品经理学习笔记.md&quot;,
+      &quot;source_type&quot;: &quot;upload&quot;,
+      &quot;url&quot;: &quot;&quot;,
+      &quot;chunk_index&quot;: 0,
+      &quot;created_at&quot;: 1781490000,
+      &quot;content_type&quot;: &quot;eval_fixture&quot;,
+      &quot;document_key&quot;: &quot;upload:上传：AI产品经理学习笔记.md:上传：AI产品经理学习笔记.md&quot;,
+      &quot;section_title&quot;: &quot;&quot;,
+      &quot;page&quot;: 0,
+      &quot;sheet&quot;: &quot;&quot;,
+      &quot;row_start&quot;: 0,
+      &quot;row_end&quot;: 0,
+      &quot;chunk_type&quot;: &quot;child&quot;,
+      &quot;parent_id&quot;: &quot;上传：AI产品经理学习笔记.md:0:eval_fixture&quot;,
+      &quot;parent_text&quot;: &quot;AI 产品经理学习笔记：RAG 是检索增强生成，Tool Agent 负责在单次任务中选择和执行工具，Autonomous Agent 会围绕目标拆解任务、维护任务队列、观察执行结果并自检。Agent Eval 需要包含 smoke、regression、benchmark 三类样本，并观察工具调用、资料来源、答案质量和失败原因。&quot;,
+      &quot;distance&quot;: 194.00946044921875,
+      &quot;bm25_score&quot;: 1.3425163381083105,
+      &quot;vector_rank&quot;: 1,
+      &quot;rrf_score&quot;: 0.03278688524590164,
+      &quot;bm25_rank&quot;: 1,
+      &quot;answerability_score&quot;: 0.8200000000000001,
+      &quot;keyword_score&quot;: 3,
+      &quot;source_priority&quot;: 1,
+      &quot;source_weight&quot;: 1.35,
+      &quot;freshness_score&quot;: 1.0,
+      &quot;query_intent&quot;: &quot;general&quot;,
+      &quot;ranking_weights&quot;: &quot;{&#x27;rerank&#x27;: 0.65, &#x27;rrf&#x27;: 0.15, &#x27;source&#x27;: 0.1, &#x27;freshness&#x27;: 0.1}&quot;,
+      </pre></td>
+        </tr>
+        </tbody>
+  </table>
+
+  <h2>结论</h2>
+  <div class="note">这版规则 Eval 已覆盖闲聊路由、上传状态、无上传资料隔离、Web RAG、定义问答、Autonomous 任务和 Autonomous fallback。下一步可以在此基础上增加 LLM-as-Judge 语义质量评分。</div>
+</main>
+</body>
+</html>

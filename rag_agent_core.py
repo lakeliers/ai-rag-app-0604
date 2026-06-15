@@ -23,6 +23,7 @@ CHROMA_PATH = os.getenv("CHROMA_PATH", "./chroma_db")
 COLLECTION_NAME = "file_docs"
 DEEPSEEK_MODEL = os.getenv("DEEPSEEK_MODEL", "deepseek-v4-flash")
 QWEN_VL_MODEL = os.getenv("QWEN_VL_MODEL", "qwen-vl-plus")
+LLM_TIMEOUT_SECONDS = float(os.getenv("LLM_TIMEOUT_SECONDS", "45"))
 RERANKER_MODEL_NAME = os.getenv("RERANKER_MODEL_NAME", "BAAI/bge-reranker-base")
 ENABLE_RERANKER = os.getenv("ENABLE_RERANKER", "1") == "1"
 RERANK_LIMIT = int(os.getenv("RERANK_LIMIT", "12"))
@@ -120,14 +121,24 @@ def get_deepseek_client():
     api_key = os.getenv("DEEPSEEK_API_KEY")
     if not api_key:
         return None
-    return OpenAI(api_key=api_key, base_url="https://api.deepseek.com")
+    return OpenAI(
+        api_key=api_key,
+        base_url="https://api.deepseek.com",
+        timeout=LLM_TIMEOUT_SECONDS,
+        max_retries=0,
+    )
 
 
 def get_qwen_client():
     api_key = os.getenv("DASHSCOPE_API_KEY") or os.getenv("QWEN_API_KEY")
     if not api_key:
         return None
-    return OpenAI(api_key=api_key, base_url="https://dashscope.aliyuncs.com/compatible-mode/v1")
+    return OpenAI(
+        api_key=api_key,
+        base_url="https://dashscope.aliyuncs.com/compatible-mode/v1",
+        timeout=LLM_TIMEOUT_SECONDS,
+        max_retries=0,
+    )
 
 
 def split_text(text, chunk_size=500, chunk_overlap=80):
@@ -459,8 +470,11 @@ def source_priority_score(source, preferred_sources):
     return 1 if source in preferred_sources else 0
 
 
-def is_allowed_source(row, preferred_sources):
+def is_allowed_source(row, preferred_sources, preferred_only=False):
     source_type = row.get("source_type", "unknown")
+    if preferred_only:
+        return source_type == "upload" and row.get("source") in preferred_sources
+
     if source_type != "upload":
         return True
 
@@ -765,24 +779,26 @@ def rerank_results(question, rows, query_profile, limit=None):
     return candidate_rows + remaining_rows
 
 
-def search_chroma(question, top_k=3, preferred_sources=None):
+def search_chroma(question, top_k=3, preferred_sources=None, preferred_only=False):
     query_profile = analyze_query(question)
     metadata_filter = build_metadata_filter(query_profile)
+    preferred_sources = set(preferred_sources or [])
+    if preferred_only and preferred_sources:
+        metadata_filter = {"source": {"$in": list(preferred_sources)}}
     recall_limit = max(top_k * 8, 24)
     vector_rows = vector_retrieve(question, limit=recall_limit, metadata_filter=metadata_filter)
     bm25_rows = bm25_retrieve(question, limit=recall_limit, metadata_filter=metadata_filter)
-    if metadata_filter and not vector_rows and not bm25_rows:
+    if metadata_filter and not preferred_only and not vector_rows and not bm25_rows:
         metadata_filter = None
         vector_rows = vector_retrieve(question, limit=recall_limit)
         bm25_rows = bm25_retrieve(question, limit=recall_limit)
     question_keywords = extract_query_keywords(question)
     query_profile["keywords"] = question_keywords
-    preferred_sources = set(preferred_sources or [])
 
     fused = {}
 
     for rank, row in enumerate(vector_rows, start=1):
-        if not is_allowed_source(row, preferred_sources):
+        if not is_allowed_source(row, preferred_sources, preferred_only=preferred_only):
             continue
         item_id = row["id"]
         fused.setdefault(item_id, row.copy())
@@ -790,7 +806,7 @@ def search_chroma(question, top_k=3, preferred_sources=None):
         fused[item_id]["rrf_score"] = fused[item_id].get("rrf_score", 0) + 1 / (RRF_K + rank)
 
     for rank, row in enumerate(bm25_rows, start=1):
-        if not is_allowed_source(row, preferred_sources):
+        if not is_allowed_source(row, preferred_sources, preferred_only=preferred_only):
             continue
         item_id = row["id"]
         fused.setdefault(item_id, row.copy())

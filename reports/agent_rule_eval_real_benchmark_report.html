@@ -1,0 +1,1222 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Agent Rule-based Eval 报告</title>
+  <style>
+    body { margin: 0; background: #f6f7fb; color: #202431; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; line-height: 1.6; }
+    main { max-width: 1280px; margin: 0 auto; padding: 40px 24px 72px; }
+    h1 { margin: 0 0 8px; font-size: 34px; }
+    h2 { margin: 32px 0 14px; font-size: 22px; }
+    .sub { color: #667085; margin-bottom: 28px; }
+    .grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; }
+    .card { background: #fff; border: 1px solid #e5e7ef; border-radius: 8px; padding: 18px; }
+    .metric { font-size: 30px; font-weight: 760; }
+    .pass { color: #047857; font-weight: 700; }
+    .fail { color: #dc2626; font-weight: 700; }
+    table { width: 100%; border-collapse: collapse; background: #fff; border: 1px solid #e5e7ef; border-radius: 8px; overflow: hidden; }
+    th, td { padding: 12px 14px; border-bottom: 1px solid #e5e7ef; text-align: left; vertical-align: top; font-size: 14px; }
+    th { background: #f1f5f9; }
+    tr:last-child td { border-bottom: none; }
+    pre { margin: 0; white-space: pre-wrap; font-size: 12px; background: #f8fafc; border: 1px solid #e5e7eb; border-radius: 6px; padding: 8px; max-height: 260px; overflow: auto; }
+    .note { border-left: 4px solid #2563eb; background: #eff6ff; color: #1e3a8a; padding: 12px 14px; border-radius: 6px; }
+    @media (max-width: 900px) { .grid { grid-template-columns: 1fr; } main { padding: 28px 16px 56px; } }
+  </style>
+</head>
+<body>
+<main>
+  <h1>Agent Rule-based Eval 报告</h1>
+  <div class="sub">规则评估模式：real。mock 模式不消耗真实 token；real 模式会调用当前 Agent 链路。重点检查模式、工具、来源、任务和基础答案硬规则。</div>
+
+  <section class="grid">
+    <div class="card"><div class="metric">25</div><div>总样本</div></div>
+    <div class="card"><div class="metric pass">25</div><div>通过</div></div>
+    <div class="card"><div class="metric fail">0</div><div>失败</div></div>
+    <div class="card"><div class="metric">100%</div><div>通过率</div></div>
+  </section>
+
+  <h2>分场景通过率</h2>
+  <table><thead><tr><th>场景</th><th>通过 / 总数</th><th>通过率</th></tr></thead><tbody><tr><td>autonomous</td><td>4/4</td><td>100%</td></tr>
+<tr><td>autonomous_fallback</td><td>1/1</td><td>100%</td></tr>
+<tr><td>chitchat</td><td>2/2</td><td>100%</td></tr>
+<tr><td>definition</td><td>5/5</td><td>100%</td></tr>
+<tr><td>document_qa</td><td>4/4</td><td>100%</td></tr>
+<tr><td>source_scope</td><td>2/2</td><td>100%</td></tr>
+<tr><td>upload_status</td><td>2/2</td><td>100%</td></tr>
+<tr><td>web_rag</td><td>5/5</td><td>100%</td></tr></tbody></table>
+
+  <h2>失败检查项</h2>
+  <table><thead><tr><th>检查项</th><th>失败次数</th></tr></thead><tbody><tr><td>无</td><td>0</td></tr></tbody></table>
+
+  <h2>逐 Case 明细</h2>
+  <table>
+    <thead><tr><th>Case</th><th>输入</th><th>结果</th><th>检查项</th><th>实际输出摘要</th></tr></thead>
+    <tbody>
+        <tr>
+          <td><strong>web_001</strong><br><span>web_rag</span></td>
+          <td>最近 AI Agent 有什么新趋势？</td>
+          <td class="pass">通过</td>
+          <td><pre>expected_mode: 通过
+expected_tools: 通过
+forbidden_tools: 通过
+sources: 通过
+required_tasks: 通过
+task_completion: 通过
+stop_reason: 通过
+answer: 通过</pre></td>
+          <td><pre>{
+  &quot;planner_mode&quot;: &quot;pro_runtime&quot;,
+  &quot;tools&quot;: [
+    &quot;intent_classifier&quot;,
+    &quot;planner&quot;,
+    &quot;orchestrator&quot;,
+    &quot;dag_runtime&quot;,
+    &quot;web_collect&quot;,
+    &quot;dag_runtime&quot;,
+    &quot;rag_search&quot;,
+    &quot;aggregator&quot;,
+    &quot;evaluator&quot;,
+    &quot;generate_answer&quot;,
+    &quot;answer_validator&quot;
+  ],
+  &quot;tasks&quot;: [],
+  &quot;stop_reason&quot;: &quot;&quot;,
+  &quot;sources&quot;: [
+    {
+      &quot;id&quot;: &quot;web__AI_Agent_6_...__1781491356_0_0&quot;,
+      &quot;document&quot;: &quot;网页搜索结果摘要\n查询：最近 AI Agent 有什么新趋势？\n标题：划重点🔥AI Agent未来6大趋...@新达内的动态\n链接：https://mbd.baidu.com/newspage/data/dtlandingsuper?nid=dt_4963532781135529322\n说明：完整网页正文读取失败或正文过短，当前仅保留搜索结果标题和链接作为低置信度网页资料。\n失败原因：网页正文太少&quot;,
+      &quot;source&quot;: &quot;网页搜索结果：划重点🔥AI Agent未来6大趋...@新达内的动态&quot;,
+      &quot;source_type&quot;: &quot;web&quot;,
+      &quot;url&quot;: &quot;https://mbd.baidu.com/newspage/data/dtlandingsuper?nid=dt_4963532781135529322&quot;,
+      &quot;chunk_index&quot;: 0,
+      &quot;created_at&quot;: 1781491356,
+      &quot;content_type&quot;: &quot;search_result&quot;,
+      &quot;document_key&quot;: &quot;web:网页搜索结果：划重点🔥AI Agent未来6大趋...@新达内的动态:https://mbd.baidu.com/newspage/data/dtlandingsuper?nid=dt_4963532781135529322&quot;,
+      &quot;section_title&quot;: &quot;&quot;,
+      &quot;page&quot;: 0,
+      &quot;sheet&quot;: &quot;&quot;,
+      &quot;row_start&quot;: 0,
+      &quot;row_end&quot;: 0,
+      &quot;chunk_type&quot;: &quot;child&quot;,
+      &quot;parent_id&quot;: &quot;网页搜索结果：划重点🔥AI Agent未来6大趋...@新达内的动态:0:search_result&quot;,
+      &quot;parent_text&quot;: &quot;网页搜索结果摘要\n查询：最近 AI Agent 有什么新趋势？\n标题：划重点🔥AI Agent未来6大趋...@新达内的动态\n链接：https://mbd.baidu.com/newspage/data/dtlandingsuper?nid=dt_4963532781135529322\n说明：完整网页正文读取失败或正文过短，当前仅保留搜索结果标题和链接作为低置信度网页资料。\n失败原因：网页正文太少&quot;,
+      &quot;distance&quot;: null,
+      &quot;bm25_score&quot;: 25.0633871373258,
+      &quot;bm25_rank&quot;: 3,
+      &quot;rrf_score&quot;: 0.015873015873015872,
+      &quot;answerability_</pre></td>
+        </tr>
+        
+        <tr>
+          <td><strong>definition_001</strong><br><span>definition</span></td>
+          <td>RAG 是什么？</td>
+          <td class="pass">通过</td>
+          <td><pre>expected_mode: 通过
+expected_tools: 通过
+forbidden_tools: 通过
+sources: 通过
+required_tasks: 通过
+task_completion: 通过
+stop_reason: 通过
+answer: 通过</pre></td>
+          <td><pre>{
+  &quot;planner_mode&quot;: &quot;pro_runtime&quot;,
+  &quot;tools&quot;: [
+    &quot;intent_classifier&quot;,
+    &quot;planner&quot;,
+    &quot;orchestrator&quot;,
+    &quot;dag_runtime&quot;,
+    &quot;web_collect&quot;,
+    &quot;dag_runtime&quot;,
+    &quot;rag_search&quot;,
+    &quot;aggregator&quot;,
+    &quot;evaluator&quot;,
+    &quot;generate_answer&quot;,
+    &quot;answer_validator&quot;
+  ],
+  &quot;tasks&quot;: [],
+  &quot;stop_reason&quot;: &quot;&quot;,
+  &quot;sources&quot;: [
+    {
+      &quot;id&quot;: &quot;web__-_Rag_-__1781492308_0_0&quot;,
+      &quot;document&quot;: &quot;网页搜索结果摘要\n查询：不要使用历史上传文件，只基于当前可见资料回答 RAG 是什么\n标题：一文彻底搞懂大模型 - Rag（ 检索、增强、生成 ) - 知乎\n链接：https://zhuanlan.zhihu.com/p/1946701873588474703\n说明：完整网页正文读取失败或正文过短，当前仅保留搜索结果标题和链接作为低置信度网页资料。\n失败原因：403 Client Error: Forbidden for url: https://zhuanlan.zhihu.com/p/1946701873588474703&quot;,
+      &quot;source&quot;: &quot;网页搜索结果：一文彻底搞懂大模型 - Rag（ 检索、增强、生成 ) - 知乎&quot;,
+      &quot;source_type&quot;: &quot;web&quot;,
+      &quot;url&quot;: &quot;https://zhuanlan.zhihu.com/p/1946701873588474703&quot;,
+      &quot;chunk_index&quot;: 0,
+      &quot;created_at&quot;: 1781492308,
+      &quot;content_type&quot;: &quot;search_result&quot;,
+      &quot;document_key&quot;: &quot;web:网页搜索结果：一文彻底搞懂大模型 - Rag（ 检索、增强、生成 ) - 知乎:https://zhuanlan.zhihu.com/p/1946701873588474703&quot;,
+      &quot;section_title&quot;: &quot;&quot;,
+      &quot;page&quot;: 0,
+      &quot;sheet&quot;: &quot;&quot;,
+      &quot;row_start&quot;: 0,
+      &quot;row_end&quot;: 0,
+      &quot;chunk_type&quot;: &quot;child&quot;,
+      &quot;parent_id&quot;: &quot;网页搜索结果：一文彻底搞懂大模型 - Rag（ 检索、增强、生成 ) - 知乎:0:search_result&quot;,
+      &quot;parent_text&quot;: &quot;网页搜索结果摘要\n查询：不要使用历史上传文件，只基于当前可见资料回答 RAG 是什么\n标题：一文彻底搞懂大模型 - Rag（ 检索、增强、生成 ) - 知乎\n链接：https://zhuanlan.zhihu.com/p/1946701873588474703\n说明：完整网页正文读取失败或正文过短，当前仅保留搜索结果标题和链接作为低置信度网页资料。\n失败原因：403 Client Error: Forbidden for url: https://zhuanlan.zhihu.com/p/1946701873588474703&quot;,
+      &quot;distance&quot;: 273.56634521484375,
+      &quot;bm25_score&quot;: 8.6006</pre></td>
+        </tr>
+        
+        <tr>
+          <td><strong>auto_001</strong><br><span>autonomous</span></td>
+          <td>调研 AI Agent 产品趋势，并给产品经理学习建议</td>
+          <td class="pass">通过</td>
+          <td><pre>expected_mode: 通过
+expected_tools: 通过
+forbidden_tools: 通过
+sources: 通过
+required_tasks: 通过
+task_completion: 通过
+stop_reason: 通过
+answer: 通过</pre></td>
+          <td><pre>{
+  &quot;planner_mode&quot;: &quot;autonomous_runtime&quot;,
+  &quot;tools&quot;: [],
+  &quot;tasks&quot;: [
+    &quot;collect_context&quot;,
+    &quot;extract_findings&quot;,
+    &quot;write_deliverable&quot;
+  ],
+  &quot;stop_reason&quot;: &quot;all_tasks_completed&quot;,
+  &quot;sources&quot;: [
+    {
+      &quot;id&quot;: &quot;web__Agent_Agent_Agent__1781491387_0_0&quot;,
+      &quot;document&quot;: &quot;网页搜索结果摘要\n查询：你正在作为 Tool Agent 执行 Autonomous Agent 的一个子任务。\n\n总目标：\n调研 AI Agent 产品趋势，并给产品经理学习建议\n\n当前任务：\n收集背景资料\n\n任务说明：\n围绕目标收集资料，并说明资料来源：调研 AI Agent 产品趋势，并给产品经理学习建议\n\n预期产物：\n与目标相关的关键资料、事实和参考来源\n\n已有中间产物：\n暂无。\n\n请只完成当前任务，不要假装已经完成整个目标。\n标题：【Agent专题】Agent开发篇：Agent任务拆解全流程+实用代码，附可运行代码&amp;实战流程\n链接：https://zhuanlan.zhihu.com/p/1923483731064235838\n说明：完整网页正文读取失败或正文过短，当前仅保留搜索结果标题和链接作为低置信度网页资料。\n失败原因：403 Client Error: Forbidden for url: https://zhuanlan.zhihu.com/p/1923483731064235838&quot;,
+      &quot;source&quot;: &quot;网页搜索结果：【Agent专题】Agent开发篇：Agent任务拆解全流程+实用代码，附可运行代码&amp;实战流程&quot;,
+      &quot;source_type&quot;: &quot;web&quot;,
+      &quot;url&quot;: &quot;https://zhuanlan.zhihu.com/p/1923483731064235838&quot;,
+      &quot;chunk_index&quot;: 0,
+      &quot;created_at&quot;: 1781491387,
+      &quot;content_type&quot;: &quot;search_result&quot;,
+      &quot;document_key&quot;: &quot;web:网页搜索结果：【Agent专题】Agent开发篇：Agent任务拆解全流程+实用代码，附可运行代码&amp;实战流程:https://zhuanlan.zhihu.com/p/1923483731064235838&quot;,
+      &quot;section_title&quot;: &quot;&quot;,
+      &quot;page&quot;: 0,
+      &quot;sheet&quot;: &quot;&quot;,
+      &quot;row_start&quot;: 0,
+      &quot;row_end&quot;: 0,
+      &quot;chunk_type&quot;: &quot;child&quot;,
+      &quot;parent_id&quot;: &quot;网页搜索结果：【Agent专题】Agent开发篇：Agent任务拆解全流程+实用代码，附可运行代码&amp;实战流程:0:search_result&quot;,
+      &quot;parent_text&quot;: &quot;网页搜索结果摘要\n查询：你正在作为 Tool Agent 执行 Autonomous Agent 的一个子任务。\n\n总目标：\n调研 AI Agent 产品趋势，并给产品经理学习建议\n\n当前任务：\n收集背景资料\n\n任务说明：\n围绕目标收集资料，并说明资料来源：调研 AI Agent 产品趋势，并给产品经理学习建议\n\n预期产物：\n与目标相关的关键资料、事实和参考</pre></td>
+        </tr>
+        
+        <tr>
+          <td><strong>chat_003</strong><br><span>chitchat</span></td>
+          <td>你能做什么？</td>
+          <td class="pass">通过</td>
+          <td><pre>expected_mode: 通过
+expected_tools: 通过
+forbidden_tools: 通过
+sources: 通过
+required_tasks: 通过
+task_completion: 通过
+stop_reason: 通过
+answer: 通过</pre></td>
+          <td><pre>{
+  &quot;planner_mode&quot;: &quot;pro_runtime&quot;,
+  &quot;tools&quot;: [
+    &quot;intent_classifier&quot;,
+    &quot;planner&quot;,
+    &quot;orchestrator&quot;,
+    &quot;dag_runtime&quot;,
+    &quot;direct_answer&quot;
+  ],
+  &quot;tasks&quot;: [],
+  &quot;stop_reason&quot;: &quot;&quot;,
+  &quot;sources&quot;: [],
+  &quot;answer&quot;: &quot;我能帮你回答问题、写文案、翻译、总结信息、头脑风暴、学习辅导、编程、分析数据、安排日程、提供建议，或者单纯陪你聊聊天。有什么想试试的吗？&quot;
+}</pre></td>
+        </tr>
+        
+        <tr>
+          <td><strong>chat_004</strong><br><span>chitchat</span></td>
+          <td>介绍一下你自己</td>
+          <td class="pass">通过</td>
+          <td><pre>expected_mode: 通过
+expected_tools: 通过
+forbidden_tools: 通过
+sources: 通过
+required_tasks: 通过
+task_completion: 通过
+stop_reason: 通过
+answer: 通过</pre></td>
+          <td><pre>{
+  &quot;planner_mode&quot;: &quot;pro_runtime&quot;,
+  &quot;tools&quot;: [
+    &quot;intent_classifier&quot;,
+    &quot;planner&quot;,
+    &quot;orchestrator&quot;,
+    &quot;dag_runtime&quot;,
+    &quot;direct_answer&quot;
+  ],
+  &quot;tasks&quot;: [],
+  &quot;stop_reason&quot;: &quot;&quot;,
+  &quot;sources&quot;: [],
+  &quot;answer&quot;: &quot;你好，我是 DeepSeek，一个由深度求索公司开发的 AI 助手。我可以帮你解答问题、提供信息、协助写作或进行日常对话。有什么我可以帮你的吗？&quot;
+}</pre></td>
+        </tr>
+        
+        <tr>
+          <td><strong>upload_status_002</strong><br><span>upload_status</span></td>
+          <td>左侧上传的文件你现在能读到吗？</td>
+          <td class="pass">通过</td>
+          <td><pre>expected_mode: 通过
+expected_tools: 通过
+forbidden_tools: 通过
+sources: 通过
+required_tasks: 通过
+task_completion: 通过
+stop_reason: 通过
+answer: 通过</pre></td>
+          <td><pre>{
+  &quot;planner_mode&quot;: &quot;pro_runtime&quot;,
+  &quot;tools&quot;: [
+    &quot;intent_classifier&quot;,
+    &quot;planner&quot;,
+    &quot;orchestrator&quot;,
+    &quot;dag_runtime&quot;,
+    &quot;upload_status&quot;
+  ],
+  &quot;tasks&quot;: [],
+  &quot;stop_reason&quot;: &quot;&quot;,
+  &quot;sources&quot;: [],
+  &quot;answer&quot;: &quot;能看到。你当前上传并入库的资料有：\n- 上传：用户访谈纪要.pdf\n\n你可以直接问我总结、提取重点或围绕这些资料做分析。&quot;
+}</pre></td>
+        </tr>
+        
+        <tr>
+          <td><strong>upload_status_003</strong><br><span>upload_status</span></td>
+          <td>我没有上传资料，你能看到文件吗？</td>
+          <td class="pass">通过</td>
+          <td><pre>expected_mode: 通过
+expected_tools: 通过
+forbidden_tools: 通过
+sources: 通过
+required_tasks: 通过
+task_completion: 通过
+stop_reason: 通过
+answer: 通过</pre></td>
+          <td><pre>{
+  &quot;planner_mode&quot;: &quot;pro_runtime&quot;,
+  &quot;tools&quot;: [
+    &quot;intent_classifier&quot;,
+    &quot;planner&quot;,
+    &quot;orchestrator&quot;,
+    &quot;dag_runtime&quot;,
+    &quot;upload_status&quot;
+  ],
+  &quot;tasks&quot;: [],
+  &quot;stop_reason&quot;: &quot;&quot;,
+  &quot;sources&quot;: [],
+  &quot;answer&quot;: &quot;我目前没有看到已成功入库的上传资料。你可以先在左侧上传文件，等侧边栏出现“已入库资料”后再提问。&quot;
+}</pre></td>
+        </tr>
+        
+        <tr>
+          <td><strong>doc_qa_001</strong><br><span>document_qa</span></td>
+          <td>总结这份资料的核心观点</td>
+          <td class="pass">通过</td>
+          <td><pre>expected_mode: 通过
+expected_tools: 通过
+forbidden_tools: 通过
+sources: 通过
+required_tasks: 通过
+task_completion: 通过
+stop_reason: 通过
+answer: 通过</pre></td>
+          <td><pre>{
+  &quot;planner_mode&quot;: &quot;pro_runtime&quot;,
+  &quot;tools&quot;: [
+    &quot;intent_classifier&quot;,
+    &quot;planner&quot;,
+    &quot;orchestrator&quot;,
+    &quot;dag_runtime&quot;,
+    &quot;rag_search&quot;,
+    &quot;aggregator&quot;,
+    &quot;evaluator&quot;,
+    &quot;generate_answer&quot;,
+    &quot;answer_validator&quot;
+  ],
+  &quot;tasks&quot;: [],
+  &quot;stop_reason&quot;: &quot;&quot;,
+  &quot;sources&quot;: [
+    {
+      &quot;id&quot;: &quot;upload__AI_.md_1781490000_0_0&quot;,
+      &quot;document&quot;: &quot;AI 产品经理学习笔记：RAG 是检索增强生成，Tool Agent 负责在单次任务中选择和执行工具，Autonomous Agent 会围绕目标拆解任务、维护任务队列、观察执行结果并自检。Agent Eval 需要包含 smoke、regression、benchmark 三类样本，并观察工具调用、资料来源、答案质量和失败原因。&quot;,
+      &quot;source&quot;: &quot;上传：AI产品经理学习笔记.md&quot;,
+      &quot;source_type&quot;: &quot;upload&quot;,
+      &quot;url&quot;: &quot;&quot;,
+      &quot;chunk_index&quot;: 0,
+      &quot;created_at&quot;: 1781490000,
+      &quot;content_type&quot;: &quot;eval_fixture&quot;,
+      &quot;document_key&quot;: &quot;upload:上传：AI产品经理学习笔记.md:上传：AI产品经理学习笔记.md&quot;,
+      &quot;section_title&quot;: &quot;&quot;,
+      &quot;page&quot;: 0,
+      &quot;sheet&quot;: &quot;&quot;,
+      &quot;row_start&quot;: 0,
+      &quot;row_end&quot;: 0,
+      &quot;chunk_type&quot;: &quot;child&quot;,
+      &quot;parent_id&quot;: &quot;上传：AI产品经理学习笔记.md:0:eval_fixture&quot;,
+      &quot;parent_text&quot;: &quot;AI 产品经理学习笔记：RAG 是检索增强生成，Tool Agent 负责在单次任务中选择和执行工具，Autonomous Agent 会围绕目标拆解任务、维护任务队列、观察执行结果并自检。Agent Eval 需要包含 smoke、regression、benchmark 三类样本，并观察工具调用、资料来源、答案质量和失败原因。&quot;,
+      &quot;distance&quot;: 252.6737518310547,
+      &quot;bm25_score&quot;: 0.28768207245178085,
+      &quot;vector_rank&quot;: 1,
+      &quot;rrf_score&quot;: 0.03278688524590164,
+      &quot;bm25_rank&quot;: 1,
+      &quot;answerability_score&quot;: 0.55,
+      &quot;keyword_score&quot;: 0,
+      &quot;source_priority&quot;: 1,
+      &quot;source_weight&quot;: 1.35,
+      &quot;freshness_score&quot;: 1.0,
+      &quot;query_intent&quot;: &quot;general&quot;,
+      &quot;ranking_weights&quot;: &quot;{&#x27;rerank&#x27;: 0.65, &#x27;rrf&#x27;: 0.15, &#x27;source&#x27;: 0.1, &#x27;freshness&#x27;: 0.1}&quot;,
+      &quot;final_score&quot;:</pre></td>
+        </tr>
+        
+        <tr>
+          <td><strong>doc_qa_002</strong><br><span>document_qa</span></td>
+          <td>提取这个 PDF 里和 Agent Eval 相关的要点</td>
+          <td class="pass">通过</td>
+          <td><pre>expected_mode: 通过
+expected_tools: 通过
+forbidden_tools: 通过
+sources: 通过
+required_tasks: 通过
+task_completion: 通过
+stop_reason: 通过
+answer: 通过</pre></td>
+          <td><pre>{
+  &quot;planner_mode&quot;: &quot;pro_runtime&quot;,
+  &quot;tools&quot;: [
+    &quot;intent_classifier&quot;,
+    &quot;planner&quot;,
+    &quot;orchestrator&quot;,
+    &quot;dag_runtime&quot;,
+    &quot;rag_search&quot;,
+    &quot;aggregator&quot;,
+    &quot;evaluator&quot;,
+    &quot;generate_answer&quot;,
+    &quot;answer_validator&quot;
+  ],
+  &quot;tasks&quot;: [],
+  &quot;stop_reason&quot;: &quot;&quot;,
+  &quot;sources&quot;: [
+    {
+      &quot;id&quot;: &quot;upload__Agent_.pdf_1781490000_0_0&quot;,
+      &quot;document&quot;: &quot;Agent 评估白皮书：Agent Eval 应覆盖任务成功率、工具调用正确率、资料来源准确率、答案忠实度、延迟、成本和安全边界。评估样本集应包含基础路由、RAG 检索、文档问答、联网问答、自主任务和失败恢复等场景。&quot;,
+      &quot;source&quot;: &quot;上传：Agent评估白皮书.pdf&quot;,
+      &quot;source_type&quot;: &quot;upload&quot;,
+      &quot;url&quot;: &quot;&quot;,
+      &quot;chunk_index&quot;: 0,
+      &quot;created_at&quot;: 1781490000,
+      &quot;content_type&quot;: &quot;eval_fixture&quot;,
+      &quot;document_key&quot;: &quot;upload:上传：Agent评估白皮书.pdf:上传：Agent评估白皮书.pdf&quot;,
+      &quot;section_title&quot;: &quot;&quot;,
+      &quot;page&quot;: 0,
+      &quot;sheet&quot;: &quot;&quot;,
+      &quot;row_start&quot;: 0,
+      &quot;row_end&quot;: 0,
+      &quot;chunk_type&quot;: &quot;child&quot;,
+      &quot;parent_id&quot;: &quot;上传：Agent评估白皮书.pdf:0:eval_fixture&quot;,
+      &quot;parent_text&quot;: &quot;Agent 评估白皮书：Agent Eval 应覆盖任务成功率、工具调用正确率、资料来源准确率、答案忠实度、延迟、成本和安全边界。评估样本集应包含基础路由、RAG 检索、文档问答、联网问答、自主任务和失败恢复等场景。&quot;,
+      &quot;distance&quot;: 185.40756225585938,
+      &quot;bm25_score&quot;: 0.6986564616686106,
+      &quot;vector_rank&quot;: 1,
+      &quot;rrf_score&quot;: 0.03278688524590164,
+      &quot;bm25_rank&quot;: 1,
+      &quot;answerability_score&quot;: 0.33,
+      &quot;keyword_score&quot;: 2,
+      &quot;source_priority&quot;: 1,
+      &quot;source_weight&quot;: 1.35,
+      &quot;freshness_score&quot;: 1.0,
+      &quot;query_intent&quot;: &quot;general&quot;,
+      &quot;ranking_weights&quot;: &quot;{&#x27;rerank&#x27;: 0.65, &#x27;rrf&#x27;: 0.15, &#x27;source&#x27;: 0.1, &#x27;freshness&#x27;: 0.1}&quot;,
+      &quot;final_score&quot;: 0.8070491803278688,
+      &quot;pre_rerank_score&quot;: 0.5676491803278688,
+      &quot;rerank_score&quot;: 0.5968508124351501,</pre></td>
+        </tr>
+        
+        <tr>
+          <td><strong>doc_qa_003</strong><br><span>document_qa</span></td>
+          <td>分析这份文档里对产品经理最重要的三点</td>
+          <td class="pass">通过</td>
+          <td><pre>expected_mode: 通过
+expected_tools: 通过
+forbidden_tools: 通过
+sources: 通过
+required_tasks: 通过
+task_completion: 通过
+stop_reason: 通过
+answer: 通过</pre></td>
+          <td><pre>{
+  &quot;planner_mode&quot;: &quot;pro_runtime&quot;,
+  &quot;tools&quot;: [
+    &quot;intent_classifier&quot;,
+    &quot;planner&quot;,
+    &quot;orchestrator&quot;,
+    &quot;dag_runtime&quot;,
+    &quot;rag_search&quot;,
+    &quot;aggregator&quot;,
+    &quot;evaluator&quot;,
+    &quot;generate_answer&quot;,
+    &quot;answer_validator&quot;
+  ],
+  &quot;tasks&quot;: [],
+  &quot;stop_reason&quot;: &quot;&quot;,
+  &quot;sources&quot;: [
+    {
+      &quot;id&quot;: &quot;upload__AI_.md_1781490000_0_0&quot;,
+      &quot;document&quot;: &quot;AI 产品经理学习笔记：RAG 是检索增强生成，Tool Agent 负责在单次任务中选择和执行工具，Autonomous Agent 会围绕目标拆解任务、维护任务队列、观察执行结果并自检。Agent Eval 需要包含 smoke、regression、benchmark 三类样本，并观察工具调用、资料来源、答案质量和失败原因。&quot;,
+      &quot;source&quot;: &quot;上传：AI产品经理学习笔记.md&quot;,
+      &quot;source_type&quot;: &quot;upload&quot;,
+      &quot;url&quot;: &quot;&quot;,
+      &quot;chunk_index&quot;: 0,
+      &quot;created_at&quot;: 1781490000,
+      &quot;content_type&quot;: &quot;eval_fixture&quot;,
+      &quot;document_key&quot;: &quot;upload:上传：AI产品经理学习笔记.md:上传：AI产品经理学习笔记.md&quot;,
+      &quot;section_title&quot;: &quot;&quot;,
+      &quot;page&quot;: 0,
+      &quot;sheet&quot;: &quot;&quot;,
+      &quot;row_start&quot;: 0,
+      &quot;row_end&quot;: 0,
+      &quot;chunk_type&quot;: &quot;child&quot;,
+      &quot;parent_id&quot;: &quot;上传：AI产品经理学习笔记.md:0:eval_fixture&quot;,
+      &quot;parent_text&quot;: &quot;AI 产品经理学习笔记：RAG 是检索增强生成，Tool Agent 负责在单次任务中选择和执行工具，Autonomous Agent 会围绕目标拆解任务、维护任务队列、观察执行结果并自检。Agent Eval 需要包含 smoke、regression、benchmark 三类样本，并观察工具调用、资料来源、答案质量和失败原因。&quot;,
+      &quot;distance&quot;: 214.5990447998047,
+      &quot;bm25_score&quot;: 0.8630462173553426,
+      &quot;vector_rank&quot;: 1,
+      &quot;rrf_score&quot;: 0.03278688524590164,
+      &quot;bm25_rank&quot;: 1,
+      &quot;answerability_score&quot;: 0.55,
+      &quot;keyword_score&quot;: 0,
+      &quot;source_priority&quot;: 1,
+      &quot;source_weight&quot;: 1.35,
+      &quot;freshness_score&quot;: 1.0,
+      &quot;query_intent&quot;: &quot;general&quot;,
+      &quot;ranking_weights&quot;: &quot;{&#x27;rerank&#x27;: 0.65, &#x27;rrf&#x27;: 0.15, &#x27;source&#x27;: 0.1, &#x27;freshness&#x27;: 0.1}&quot;,
+      &quot;final_score&quot;: </pre></td>
+        </tr>
+        
+        <tr>
+          <td><strong>doc_qa_004</strong><br><span>document_qa</span></td>
+          <td>这份资料里有没有提到 RAG 和 Tool Agent 的关系？</td>
+          <td class="pass">通过</td>
+          <td><pre>expected_mode: 通过
+expected_tools: 通过
+forbidden_tools: 通过
+sources: 通过
+required_tasks: 通过
+task_completion: 通过
+stop_reason: 通过
+answer: 通过</pre></td>
+          <td><pre>{
+  &quot;planner_mode&quot;: &quot;pro_runtime&quot;,
+  &quot;tools&quot;: [
+    &quot;intent_classifier&quot;,
+    &quot;planner&quot;,
+    &quot;orchestrator&quot;,
+    &quot;dag_runtime&quot;,
+    &quot;rag_search&quot;,
+    &quot;aggregator&quot;,
+    &quot;evaluator&quot;,
+    &quot;generate_answer&quot;,
+    &quot;answer_validator&quot;
+  ],
+  &quot;tasks&quot;: [],
+  &quot;stop_reason&quot;: &quot;&quot;,
+  &quot;sources&quot;: [
+    {
+      &quot;id&quot;: &quot;upload__AI_.md_1781490000_0_0&quot;,
+      &quot;document&quot;: &quot;AI 产品经理学习笔记：RAG 是检索增强生成，Tool Agent 负责在单次任务中选择和执行工具，Autonomous Agent 会围绕目标拆解任务、维护任务队列、观察执行结果并自检。Agent Eval 需要包含 smoke、regression、benchmark 三类样本，并观察工具调用、资料来源、答案质量和失败原因。&quot;,
+      &quot;source&quot;: &quot;上传：AI产品经理学习笔记.md&quot;,
+      &quot;source_type&quot;: &quot;upload&quot;,
+      &quot;url&quot;: &quot;&quot;,
+      &quot;chunk_index&quot;: 0,
+      &quot;created_at&quot;: 1781490000,
+      &quot;content_type&quot;: &quot;eval_fixture&quot;,
+      &quot;document_key&quot;: &quot;upload:上传：AI产品经理学习笔记.md:上传：AI产品经理学习笔记.md&quot;,
+      &quot;section_title&quot;: &quot;&quot;,
+      &quot;page&quot;: 0,
+      &quot;sheet&quot;: &quot;&quot;,
+      &quot;row_start&quot;: 0,
+      &quot;row_end&quot;: 0,
+      &quot;chunk_type&quot;: &quot;child&quot;,
+      &quot;parent_id&quot;: &quot;上传：AI产品经理学习笔记.md:0:eval_fixture&quot;,
+      &quot;parent_text&quot;: &quot;AI 产品经理学习笔记：RAG 是检索增强生成，Tool Agent 负责在单次任务中选择和执行工具，Autonomous Agent 会围绕目标拆解任务、维护任务队列、观察执行结果并自检。Agent Eval 需要包含 smoke、regression、benchmark 三类样本，并观察工具调用、资料来源、答案质量和失败原因。&quot;,
+      &quot;distance&quot;: 194.00946044921875,
+      &quot;bm25_score&quot;: 1.3425163381083105,
+      &quot;vector_rank&quot;: 1,
+      &quot;rrf_score&quot;: 0.03278688524590164,
+      &quot;bm25_rank&quot;: 1,
+      &quot;answerability_score&quot;: 0.8200000000000001,
+      &quot;keyword_score&quot;: 3,
+      &quot;source_priority&quot;: 1,
+      &quot;source_weight&quot;: 1.35,
+      &quot;freshness_score&quot;: 1.0,
+      &quot;query_intent&quot;: &quot;general&quot;,
+      &quot;ranking_weights&quot;: &quot;{&#x27;rerank&#x27;: 0.65, &#x27;rrf&#x27;: 0.15, &#x27;source&#x27;: 0.1, &#x27;freshness&#x27;: 0.1}&quot;,
+      </pre></td>
+        </tr>
+        
+        <tr>
+          <td><strong>scope_002</strong><br><span>source_scope</span></td>
+          <td>我这轮没有上传资料，不要引用之前的 PDF，直接说你现在有没有资料</td>
+          <td class="pass">通过</td>
+          <td><pre>expected_mode: 通过
+expected_tools: 通过
+forbidden_tools: 通过
+sources: 通过
+required_tasks: 通过
+task_completion: 通过
+stop_reason: 通过
+answer: 通过</pre></td>
+          <td><pre>{
+  &quot;planner_mode&quot;: &quot;pro_runtime&quot;,
+  &quot;tools&quot;: [
+    &quot;intent_classifier&quot;,
+    &quot;planner&quot;,
+    &quot;orchestrator&quot;,
+    &quot;dag_runtime&quot;,
+    &quot;upload_status&quot;
+  ],
+  &quot;tasks&quot;: [],
+  &quot;stop_reason&quot;: &quot;&quot;,
+  &quot;sources&quot;: [],
+  &quot;answer&quot;: &quot;我目前没有看到已成功入库的上传资料。你可以先在左侧上传文件，等侧边栏出现“已入库资料”后再提问。&quot;
+}</pre></td>
+        </tr>
+        
+        <tr>
+          <td><strong>scope_003</strong><br><span>source_scope</span></td>
+          <td>不要使用历史上传文件，只基于当前可见资料回答 RAG 是什么</td>
+          <td class="pass">通过</td>
+          <td><pre>expected_mode: 通过
+expected_tools: 通过
+forbidden_tools: 通过
+sources: 通过
+required_tasks: 通过
+task_completion: 通过
+stop_reason: 通过
+answer: 通过</pre></td>
+          <td><pre>{
+  &quot;planner_mode&quot;: &quot;pro_runtime&quot;,
+  &quot;tools&quot;: [
+    &quot;intent_classifier&quot;,
+    &quot;planner&quot;,
+    &quot;orchestrator&quot;,
+    &quot;dag_runtime&quot;,
+    &quot;web_collect&quot;,
+    &quot;dag_runtime&quot;,
+    &quot;rag_search&quot;,
+    &quot;aggregator&quot;,
+    &quot;evaluator&quot;,
+    &quot;generate_answer&quot;,
+    &quot;answer_validator&quot;
+  ],
+  &quot;tasks&quot;: [],
+  &quot;stop_reason&quot;: &quot;&quot;,
+  &quot;sources&quot;: [
+    {
+      &quot;id&quot;: &quot;web__rag_-__1781491976_0_0&quot;,
+      &quot;document&quot;: &quot;网页搜索结果摘要\n查询：不要使用历史上传文件，只基于当前可见资料回答 RAG 是什么\n标题：一文搞懂大模型rag应用（附实践案例） - 知乎\n链接：https://zhuanlan.zhihu.com/p/668082024\n说明：完整网页正文读取失败或正文过短，当前仅保留搜索结果标题和链接作为低置信度网页资料。\n失败原因：403 Client Error: Forbidden for url: https://zhuanlan.zhihu.com/p/668082024&quot;,
+      &quot;source&quot;: &quot;网页搜索结果：一文搞懂大模型rag应用（附实践案例） - 知乎&quot;,
+      &quot;source_type&quot;: &quot;web&quot;,
+      &quot;url&quot;: &quot;https://zhuanlan.zhihu.com/p/668082024&quot;,
+      &quot;chunk_index&quot;: 0,
+      &quot;created_at&quot;: 1781491976,
+      &quot;content_type&quot;: &quot;search_result&quot;,
+      &quot;document_key&quot;: &quot;web:网页搜索结果：一文搞懂大模型rag应用（附实践案例） - 知乎:https://zhuanlan.zhihu.com/p/668082024&quot;,
+      &quot;section_title&quot;: &quot;&quot;,
+      &quot;page&quot;: 0,
+      &quot;sheet&quot;: &quot;&quot;,
+      &quot;row_start&quot;: 0,
+      &quot;row_end&quot;: 0,
+      &quot;chunk_type&quot;: &quot;child&quot;,
+      &quot;parent_id&quot;: &quot;网页搜索结果：一文搞懂大模型rag应用（附实践案例） - 知乎:0:search_result&quot;,
+      &quot;parent_text&quot;: &quot;网页搜索结果摘要\n查询：不要使用历史上传文件，只基于当前可见资料回答 RAG 是什么\n标题：一文搞懂大模型rag应用（附实践案例） - 知乎\n链接：https://zhuanlan.zhihu.com/p/668082024\n说明：完整网页正文读取失败或正文过短，当前仅保留搜索结果标题和链接作为低置信度网页资料。\n失败原因：403 Client Error: Forbidden for url: https://zhuanlan.zhihu.com/p/668082024&quot;,
+      &quot;distance&quot;: 100.52529907226562,
+      &quot;bm25_score&quot;: 96.5902220349736,
+      &quot;vector_rank&quot;: 2,
+      &quot;rrf_score&quot;: 0.03252247488101534,
+      &quot;bm25_rank&quot;: 1,
+    </pre></td>
+        </tr>
+        
+        <tr>
+          <td><strong>web_002</strong><br><span>web_rag</span></td>
+          <td>今天 AI Agent 领域有什么值得关注的产品动态？</td>
+          <td class="pass">通过</td>
+          <td><pre>expected_mode: 通过
+expected_tools: 通过
+forbidden_tools: 通过
+sources: 通过
+required_tasks: 通过
+task_completion: 通过
+stop_reason: 通过
+answer: 通过</pre></td>
+          <td><pre>{
+  &quot;planner_mode&quot;: &quot;pro_runtime&quot;,
+  &quot;tools&quot;: [
+    &quot;intent_classifier&quot;,
+    &quot;planner&quot;,
+    &quot;orchestrator&quot;,
+    &quot;dag_runtime&quot;,
+    &quot;web_collect&quot;,
+    &quot;dag_runtime&quot;,
+    &quot;rag_search&quot;,
+    &quot;aggregator&quot;,
+    &quot;evaluator&quot;,
+    &quot;generate_answer&quot;,
+    &quot;answer_validator&quot;
+  ],
+  &quot;tasks&quot;: [],
+  &quot;stop_reason&quot;: &quot;&quot;,
+  &quot;sources&quot;: [
+    {
+      &quot;id&quot;: &quot;web__2025_Agent_AI_-__1781491988_0_0&quot;,
+      &quot;document&quot;: &quot;网页搜索结果摘要\n查询：今天 AI Agent 领域有什么值得关注的产品动态？\n标题：一文看懂2025年Agent六大最新趋势｜AI专栏 - 知乎\n链接：https://zhuanlan.zhihu.com/p/1945795472112490240\n说明：完整网页正文读取失败或正文过短，当前仅保留搜索结果标题和链接作为低置信度网页资料。\n失败原因：403 Client Error: Forbidden for url: https://zhuanlan.zhihu.com/p/1945795472112490240&quot;,
+      &quot;source&quot;: &quot;网页搜索结果：一文看懂2025年Agent六大最新趋势｜AI专栏 - 知乎&quot;,
+      &quot;source_type&quot;: &quot;web&quot;,
+      &quot;url&quot;: &quot;https://zhuanlan.zhihu.com/p/1945795472112490240&quot;,
+      &quot;chunk_index&quot;: 0,
+      &quot;created_at&quot;: 1781491988,
+      &quot;content_type&quot;: &quot;search_result&quot;,
+      &quot;document_key&quot;: &quot;web:网页搜索结果：一文看懂2025年Agent六大最新趋势｜AI专栏 - 知乎:https://zhuanlan.zhihu.com/p/1945795472112490240&quot;,
+      &quot;section_title&quot;: &quot;&quot;,
+      &quot;page&quot;: 0,
+      &quot;sheet&quot;: &quot;&quot;,
+      &quot;row_start&quot;: 0,
+      &quot;row_end&quot;: 0,
+      &quot;chunk_type&quot;: &quot;child&quot;,
+      &quot;parent_id&quot;: &quot;网页搜索结果：一文看懂2025年Agent六大最新趋势｜AI专栏 - 知乎:0:search_result&quot;,
+      &quot;parent_text&quot;: &quot;网页搜索结果摘要\n查询：今天 AI Agent 领域有什么值得关注的产品动态？\n标题：一文看懂2025年Agent六大最新趋势｜AI专栏 - 知乎\n链接：https://zhuanlan.zhihu.com/p/1945795472112490240\n说明：完整网页正文读取失败或正文过短，当前仅保留搜索结果标题和链接作为低置信度网页资料。\n失败原因：403 Client Error: Forbidden for url: https://zhuanlan.zhihu.com/p/1945795472112490240&quot;,
+      &quot;distance&quot;: 196.4913787841797,
+      &quot;bm25_score&quot;: 64.462301366631</pre></td>
+        </tr>
+        
+        <tr>
+          <td><strong>web_003</strong><br><span>web_rag</span></td>
+          <td>最新的 RAG 工程化趋势有哪些？</td>
+          <td class="pass">通过</td>
+          <td><pre>expected_mode: 通过
+expected_tools: 通过
+forbidden_tools: 通过
+sources: 通过
+required_tasks: 通过
+task_completion: 通过
+stop_reason: 通过
+answer: 通过</pre></td>
+          <td><pre>{
+  &quot;planner_mode&quot;: &quot;pro_runtime&quot;,
+  &quot;tools&quot;: [
+    &quot;intent_classifier&quot;,
+    &quot;planner&quot;,
+    &quot;orchestrator&quot;,
+    &quot;dag_runtime&quot;,
+    &quot;web_collect&quot;,
+    &quot;dag_runtime&quot;,
+    &quot;rag_search&quot;,
+    &quot;aggregator&quot;,
+    &quot;evaluator&quot;,
+    &quot;generate_answer&quot;,
+    &quot;answer_validator&quot;
+  ],
+  &quot;tasks&quot;: [],
+  &quot;stop_reason&quot;: &quot;&quot;,
+  &quot;sources&quot;: [
+    {
+      &quot;id&quot;: &quot;web__2025_RAG_..._1781492000_0_0&quot;,
+      &quot;document&quot;: &quot;网页搜索结果摘要\n查询：最新的 RAG 工程化趋势有哪些？\n标题：2025 年末 RAG 技术全景总结:技术演进、落地痛点、最新趋...\n链接：https://zhuanlan.zhihu.com/p/1987561705794986878\n说明：完整网页正文读取失败或正文过短，当前仅保留搜索结果标题和链接作为低置信度网页资料。\n失败原因：403 Client Error: Forbidden for url: https://zhuanlan.zhihu.com/p/1987561705794986878&quot;,
+      &quot;source&quot;: &quot;网页搜索结果：2025 年末 RAG 技术全景总结:技术演进、落地痛点、最新趋...&quot;,
+      &quot;source_type&quot;: &quot;web&quot;,
+      &quot;url&quot;: &quot;https://zhuanlan.zhihu.com/p/1987561705794986878&quot;,
+      &quot;chunk_index&quot;: 0,
+      &quot;created_at&quot;: 1781492000,
+      &quot;content_type&quot;: &quot;search_result&quot;,
+      &quot;document_key&quot;: &quot;web:网页搜索结果：2025 年末 RAG 技术全景总结:技术演进、落地痛点、最新趋...:https://zhuanlan.zhihu.com/p/1987561705794986878&quot;,
+      &quot;section_title&quot;: &quot;&quot;,
+      &quot;page&quot;: 0,
+      &quot;sheet&quot;: &quot;&quot;,
+      &quot;row_start&quot;: 0,
+      &quot;row_end&quot;: 0,
+      &quot;chunk_type&quot;: &quot;child&quot;,
+      &quot;parent_id&quot;: &quot;网页搜索结果：2025 年末 RAG 技术全景总结:技术演进、落地痛点、最新趋...:0:search_result&quot;,
+      &quot;parent_text&quot;: &quot;网页搜索结果摘要\n查询：最新的 RAG 工程化趋势有哪些？\n标题：2025 年末 RAG 技术全景总结:技术演进、落地痛点、最新趋...\n链接：https://zhuanlan.zhihu.com/p/1987561705794986878\n说明：完整网页正文读取失败或正文过短，当前仅保留搜索结果标题和链接作为低置信度网页资料。\n失败原因：403 Client Error: Forbidden for url: https://zhuanlan.zhihu.com/p/1987561705794986878&quot;,
+      &quot;distance&quot;: 200.09335327148438,
+      &quot;bm25_score&quot;: 42.9553315391</pre></td>
+        </tr>
+        
+        <tr>
+          <td><strong>web_004</strong><br><span>web_rag</span></td>
+          <td>现在多 Agent 协作有什么新进展？</td>
+          <td class="pass">通过</td>
+          <td><pre>expected_mode: 通过
+expected_tools: 通过
+forbidden_tools: 通过
+sources: 通过
+required_tasks: 通过
+task_completion: 通过
+stop_reason: 通过
+answer: 通过</pre></td>
+          <td><pre>{
+  &quot;planner_mode&quot;: &quot;pro_runtime&quot;,
+  &quot;tools&quot;: [
+    &quot;intent_classifier&quot;,
+    &quot;planner&quot;,
+    &quot;orchestrator&quot;,
+    &quot;dag_runtime&quot;,
+    &quot;web_collect&quot;,
+    &quot;dag_runtime&quot;,
+    &quot;rag_search&quot;,
+    &quot;aggregator&quot;,
+    &quot;evaluator&quot;,
+    &quot;generate_answer&quot;,
+    &quot;answer_validator&quot;
+  ],
+  &quot;tasks&quot;: [],
+  &quot;stop_reason&quot;: &quot;&quot;,
+  &quot;sources&quot;: [
+    {
+      &quot;id&quot;: &quot;web__Multi-Agent_Agent__1781492015_0_0&quot;,
+      &quot;document&quot;: &quot;网页搜索结果摘要\n查询：现在多 Agent 协作有什么新进展？\n标题：Multi-Agent 协作开发实战：如何用多 Agent 完成中大型项目\n链接：https://zhuanlan.zhihu.com/p/1989786047844991637\n说明：完整网页正文读取失败或正文过短，当前仅保留搜索结果标题和链接作为低置信度网页资料。\n失败原因：403 Client Error: Forbidden for url: https://zhuanlan.zhihu.com/p/1989786047844991637&quot;,
+      &quot;source&quot;: &quot;网页搜索结果：Multi-Agent 协作开发实战：如何用多 Agent 完成中大型项目&quot;,
+      &quot;source_type&quot;: &quot;web&quot;,
+      &quot;url&quot;: &quot;https://zhuanlan.zhihu.com/p/1989786047844991637&quot;,
+      &quot;chunk_index&quot;: 0,
+      &quot;created_at&quot;: 1781492015,
+      &quot;content_type&quot;: &quot;search_result&quot;,
+      &quot;document_key&quot;: &quot;web:网页搜索结果：Multi-Agent 协作开发实战：如何用多 Agent 完成中大型项目:https://zhuanlan.zhihu.com/p/1989786047844991637&quot;,
+      &quot;section_title&quot;: &quot;&quot;,
+      &quot;page&quot;: 0,
+      &quot;sheet&quot;: &quot;&quot;,
+      &quot;row_start&quot;: 0,
+      &quot;row_end&quot;: 0,
+      &quot;chunk_type&quot;: &quot;child&quot;,
+      &quot;parent_id&quot;: &quot;网页搜索结果：Multi-Agent 协作开发实战：如何用多 Agent 完成中大型项目:0:search_result&quot;,
+      &quot;parent_text&quot;: &quot;网页搜索结果摘要\n查询：现在多 Agent 协作有什么新进展？\n标题：Multi-Agent 协作开发实战：如何用多 Agent 完成中大型项目\n链接：https://zhuanlan.zhihu.com/p/1989786047844991637\n说明：完整网页正文读取失败或正文过短，当前仅保留搜索结果标题和链接作为低置信度网页资料。\n失败原因：403 Client Error: Forbidden for url: https://zhuanlan.zhihu.com/p/1989786047844991637&quot;,
+      &quot;distance&quot;: 205.78237915039062,
+      &quot;bm25_s</pre></td>
+        </tr>
+        
+        <tr>
+          <td><strong>web_005</strong><br><span>web_rag</span></td>
+          <td>最近 Agent Memory 有什么实践趋势？</td>
+          <td class="pass">通过</td>
+          <td><pre>expected_mode: 通过
+expected_tools: 通过
+forbidden_tools: 通过
+sources: 通过
+required_tasks: 通过
+task_completion: 通过
+stop_reason: 通过
+answer: 通过</pre></td>
+          <td><pre>{
+  &quot;planner_mode&quot;: &quot;pro_runtime&quot;,
+  &quot;tools&quot;: [
+    &quot;intent_classifier&quot;,
+    &quot;planner&quot;,
+    &quot;orchestrator&quot;,
+    &quot;dag_runtime&quot;,
+    &quot;web_collect&quot;,
+    &quot;dag_runtime&quot;,
+    &quot;rag_search&quot;,
+    &quot;aggregator&quot;,
+    &quot;evaluator&quot;,
+    &quot;generate_answer&quot;,
+    &quot;answer_validator&quot;
+  ],
+  &quot;tasks&quot;: [],
+  &quot;stop_reason&quot;: &quot;&quot;,
+  &quot;sources&quot;: [
+    {
+      &quot;id&quot;: &quot;web__Agent_Memory_-__1781492027_0_0&quot;,
+      &quot;document&quot;: &quot;网页搜索结果摘要\n查询：最近 Agent Memory 有什么实践趋势？\n标题：万字解析 Agent Memory 实现 - 知乎\n链接：https://zhuanlan.zhihu.com/p/1940091301249909899\n说明：完整网页正文读取失败或正文过短，当前仅保留搜索结果标题和链接作为低置信度网页资料。\n失败原因：403 Client Error: Forbidden for url: https://zhuanlan.zhihu.com/p/1940091301249909899&quot;,
+      &quot;source&quot;: &quot;网页搜索结果：万字解析 Agent Memory 实现 - 知乎&quot;,
+      &quot;source_type&quot;: &quot;web&quot;,
+      &quot;url&quot;: &quot;https://zhuanlan.zhihu.com/p/1940091301249909899&quot;,
+      &quot;chunk_index&quot;: 0,
+      &quot;created_at&quot;: 1781492027,
+      &quot;content_type&quot;: &quot;search_result&quot;,
+      &quot;document_key&quot;: &quot;web:网页搜索结果：万字解析 Agent Memory 实现 - 知乎:https://zhuanlan.zhihu.com/p/1940091301249909899&quot;,
+      &quot;section_title&quot;: &quot;&quot;,
+      &quot;page&quot;: 0,
+      &quot;sheet&quot;: &quot;&quot;,
+      &quot;row_start&quot;: 0,
+      &quot;row_end&quot;: 0,
+      &quot;chunk_type&quot;: &quot;child&quot;,
+      &quot;parent_id&quot;: &quot;网页搜索结果：万字解析 Agent Memory 实现 - 知乎:0:search_result&quot;,
+      &quot;parent_text&quot;: &quot;网页搜索结果摘要\n查询：最近 Agent Memory 有什么实践趋势？\n标题：万字解析 Agent Memory 实现 - 知乎\n链接：https://zhuanlan.zhihu.com/p/1940091301249909899\n说明：完整网页正文读取失败或正文过短，当前仅保留搜索结果标题和链接作为低置信度网页资料。\n失败原因：403 Client Error: Forbidden for url: https://zhuanlan.zhihu.com/p/1940091301249909899&quot;,
+      &quot;distance&quot;: null,
+      &quot;bm25_score&quot;: 34.11361986588442,
+      &quot;bm25_rank&quot;: 1,
+      &quot;rrf_score&quot;: </pre></td>
+        </tr>
+        
+        <tr>
+          <td><strong>definition_002</strong><br><span>definition</span></td>
+          <td>Tool Agent 和 Autonomous Agent 的区别是什么？</td>
+          <td class="pass">通过</td>
+          <td><pre>expected_mode: 通过
+expected_tools: 通过
+forbidden_tools: 通过
+sources: 通过
+required_tasks: 通过
+task_completion: 通过
+stop_reason: 通过
+answer: 通过</pre></td>
+          <td><pre>{
+  &quot;planner_mode&quot;: &quot;pro_runtime&quot;,
+  &quot;tools&quot;: [
+    &quot;intent_classifier&quot;,
+    &quot;planner&quot;,
+    &quot;orchestrator&quot;,
+    &quot;dag_runtime&quot;,
+    &quot;web_collect&quot;,
+    &quot;dag_runtime&quot;,
+    &quot;rag_search&quot;,
+    &quot;aggregator&quot;,
+    &quot;evaluator&quot;,
+    &quot;generate_answer&quot;,
+    &quot;answer_validator&quot;
+  ],
+  &quot;tasks&quot;: [],
+  &quot;stop_reason&quot;: &quot;&quot;,
+  &quot;sources&quot;: [
+    {
+      &quot;id&quot;: &quot;web__Skill_Tool_Agent__agent_skill_tool-CSDN__1781492044_0_8&quot;,
+      &quot;document&quot;: &quot;s\n:\n---\n深度解析 Claude：如何打造高阶\nSkill\n以及它\n与\nTool\n的本质区别\nweixin_66005172的博客\n12-06\n1688\n摘要： Claude的\nSkill\n（技能）\n与\nTool\n（工具）是企业级AI应用的关键组件，但二者功能不同。\nSkill\n是自定义指令集，用于固化知识、标准化流程（如文档处理或财务分析），需通过明确需求、命名、描述、指令编写\n和\n部署五步创建；而\nTool\n是执行外部操作的函数（如数据查询）。\nSkill\n决定“如何思考”，\nTool\n解决“如何执行”。二者协同可提升AI效能，例如\nSkill\n指导报告框架，\nTool\n调用数据工具。开发时应聚焦高频需求，避免过度填充上下文，通过测试验证可靠性。二者的结合能将通用AI转化为专业化业务代理。\n【必读】\nAgent\nSkill\ns到底是什么？\n与\nTool\n和\nMCP的关系深度解析，收藏这篇不再被概念忽悠\nCSDN_430422的博客\n02-03\n513\n大模型\n应用层级架构解析：从Function Call基础\n能力\n到\nAgent\n系统构建。\nTool\n封装Function call完成特定任务，MCP协议统一工具调用标准，\nAgent\nSkill\ns则是对\nTool&quot;,
+      &quot;source&quot;: &quot;网页：Skill 与 Tool 彻底分清：Agent 能力的底层原理_agent skill和tool-CSDN博客&quot;,
+      &quot;source_type&quot;: &quot;web&quot;,
+      &quot;url&quot;: &quot;https://blog.csdn.net/DrLai/article/details/158837422&quot;,
+      &quot;chunk_index&quot;: 8,
+      &quot;created_at&quot;: 1781492044,
+      &quot;content_type&quot;: &quot;text&quot;,
+      &quot;document_key&quot;: &quot;web:网页：Skill 与 Tool 彻底分清：Agent 能力的底层原理_agent skill和tool-CSDN博客:https://blog.csdn.net/DrLai/article/details/158837422&quot;,
+      &quot;section_title&quot;: &quot;&quot;,
+      &quot;page&quot;: 0,
+      &quot;sheet&quot;: &quot;&quot;,
+      &quot;row_start&quot;: 0,
+      &quot;row_end&quot;: 0,
+      &quot;chunk_type&quot;: &quot;child&quot;,
+      &quot;parent_id&quot;: &quot;网页：Skill 与 Tool 彻</pre></td>
+        </tr>
+        
+        <tr>
+          <td><strong>definition_003</strong><br><span>definition</span></td>
+          <td>什么是 reranker？</td>
+          <td class="pass">通过</td>
+          <td><pre>expected_mode: 通过
+expected_tools: 通过
+forbidden_tools: 通过
+sources: 通过
+required_tasks: 通过
+task_completion: 通过
+stop_reason: 通过
+answer: 通过</pre></td>
+          <td><pre>{
+  &quot;planner_mode&quot;: &quot;pro_runtime&quot;,
+  &quot;tools&quot;: [
+    &quot;intent_classifier&quot;,
+    &quot;planner&quot;,
+    &quot;orchestrator&quot;,
+    &quot;dag_runtime&quot;,
+    &quot;web_collect&quot;,
+    &quot;dag_runtime&quot;,
+    &quot;rag_search&quot;,
+    &quot;aggregator&quot;,
+    &quot;evaluator&quot;,
+    &quot;generate_answer&quot;,
+    &quot;answer_validator&quot;
+  ],
+  &quot;tasks&quot;: [],
+  &quot;stop_reason&quot;: &quot;&quot;,
+  &quot;sources&quot;: [
+    {
+      &quot;id&quot;: &quot;web__RAG_10_Reranker__ranker_-CSDN__1781494351_0_1&quot;,
+      &quot;document&quot;: &quot;端。我们拒绝枯燥的数据堆砌，将文字分析包装成一场“搜集库洛牌”的魔法仪式，让用户在粉色与金色的交织中，洞察文字背后的喜怒哀乐。\n一、什么是Reranker模型？\nReRanker模型是对RAG检索返回的结果进行重新排序的模型。也就是下图所示中2nd Retrieval的模型。具体来说，ReRanker模型在RAG Pipeline中扮演着第二阶段的角色，即在初始检索步骤之后，对检索出的文档块chunks进行重新排序，以确保相关的文档块优先被传递给LLM进行处理。\n二、为什么需要Reranker模型？\n在回答这个问题之前，我们先深入了解一下背后的问题。\nRAG通过在大量文本文档中进行语义搜索来工作，这些文档数量可能达到数十亿。为了实现大规模搜索的快速响应，我们一般采用向量搜索技术，即将文本转化为向量后，放入一个向量空间内，通过余弦相似度等度量标准来比较它们与查询向量之间的相似度。\n向量搜索的前提是需要向量。这些向量基本上是将文本背后的意义压缩成固定维度的向量（如768或1536维），这一过程不可避免地会导致信息丢失。因此，常常会发现，即便是排名靠前的文档，也可能会遗漏一些关键信息。&quot;,
+      &quot;source&quot;: &quot;网页：RAG效果提升10倍!Reranker重排序模型，从原理到实战，一篇搞定!_ranker模型-CSDN博客&quot;,
+      &quot;source_type&quot;: &quot;web&quot;,
+      &quot;url&quot;: &quot;https://blog.csdn.net/m0_59235245/article/details/156110831&quot;,
+      &quot;chunk_index&quot;: 1,
+      &quot;created_at&quot;: 1781494351,
+      &quot;content_type&quot;: &quot;text&quot;,
+      &quot;document_key&quot;: &quot;web:网页：RAG效果提升10倍!Reranker重排序模型，从原理到实战，一篇搞定!_ranker模型-CSDN博客:https://blog.csdn.net/m0_59235245/article/details/156110831&quot;,
+      &quot;section_title&quot;: &quot;&quot;,
+      &quot;page&quot;: 0,
+      &quot;sheet&quot;: &quot;&quot;,
+      &quot;row_start&quot;: 0,
+      &quot;row_end&quot;: 0,
+      &quot;chunk_type&quot;: &quot;child&quot;,
+      &quot;parent_id&quot;: &quot;网页：RAG效果提升10倍!Reranker重排序模型，从原理到实战，一篇搞定!_ranker模型-CSDN博客:0:text&quot;,
+      &quot;parent_text&quot;: &quot;RAG效果提升10倍！Reranker重排序模型，从原理到</pre></td>
+        </tr>
+        
+        <tr>
+          <td><strong>definition_004</strong><br><span>definition</span></td>
+          <td>Context Packing 是什么？</td>
+          <td class="pass">通过</td>
+          <td><pre>expected_mode: 通过
+expected_tools: 通过
+forbidden_tools: 通过
+sources: 通过
+required_tasks: 通过
+task_completion: 通过
+stop_reason: 通过
+answer: 通过</pre></td>
+          <td><pre>{
+  &quot;planner_mode&quot;: &quot;pro_runtime&quot;,
+  &quot;tools&quot;: [
+    &quot;intent_classifier&quot;,
+    &quot;planner&quot;,
+    &quot;orchestrator&quot;,
+    &quot;dag_runtime&quot;,
+    &quot;web_collect&quot;,
+    &quot;dag_runtime&quot;,
+    &quot;rag_search&quot;,
+    &quot;aggregator&quot;,
+    &quot;evaluator&quot;,
+    &quot;generate_answer&quot;,
+    &quot;answer_validator&quot;
+  ],
+  &quot;tasks&quot;: [],
+  &quot;stop_reason&quot;: &quot;&quot;,
+  &quot;sources&quot;: [
+    {
+      &quot;id&quot;: &quot;web__packing_2__1781492063_0_0&quot;,
+      &quot;document&quot;: &quot;网页搜索结果摘要\n查询：Context Packing 是什么？\n标题：加速大型语言模型训练:packing方法实现预训练2倍速度提升\n链接：https://zhuanlan.zhihu.com/p/661080449\n说明：完整网页正文读取失败或正文过短，当前仅保留搜索结果标题和链接作为低置信度网页资料。\n失败原因：403 Client Error: Forbidden for url: https://zhuanlan.zhihu.com/p/661080449&quot;,
+      &quot;source&quot;: &quot;网页搜索结果：加速大型语言模型训练:packing方法实现预训练2倍速度提升&quot;,
+      &quot;source_type&quot;: &quot;web&quot;,
+      &quot;url&quot;: &quot;https://zhuanlan.zhihu.com/p/661080449&quot;,
+      &quot;chunk_index&quot;: 0,
+      &quot;created_at&quot;: 1781492063,
+      &quot;content_type&quot;: &quot;search_result&quot;,
+      &quot;document_key&quot;: &quot;web:网页搜索结果：加速大型语言模型训练:packing方法实现预训练2倍速度提升:https://zhuanlan.zhihu.com/p/661080449&quot;,
+      &quot;section_title&quot;: &quot;&quot;,
+      &quot;page&quot;: 0,
+      &quot;sheet&quot;: &quot;&quot;,
+      &quot;row_start&quot;: 0,
+      &quot;row_end&quot;: 0,
+      &quot;chunk_type&quot;: &quot;child&quot;,
+      &quot;parent_id&quot;: &quot;网页搜索结果：加速大型语言模型训练:packing方法实现预训练2倍速度提升:0:search_result&quot;,
+      &quot;parent_text&quot;: &quot;网页搜索结果摘要\n查询：Context Packing 是什么？\n标题：加速大型语言模型训练:packing方法实现预训练2倍速度提升\n链接：https://zhuanlan.zhihu.com/p/661080449\n说明：完整网页正文读取失败或正文过短，当前仅保留搜索结果标题和链接作为低置信度网页资料。\n失败原因：403 Client Error: Forbidden for url: https://zhuanlan.zhihu.com/p/661080449&quot;,
+      &quot;distance&quot;: 227.2600555419922,
+      &quot;bm25_score&quot;: 17.677450562011252,
+      &quot;vector_rank&quot;: 1,
+      &quot;rrf_score&quot;: 0.032266458495966696,
+     </pre></td>
+        </tr>
+        
+        <tr>
+          <td><strong>definition_005</strong><br><span>definition</span></td>
+          <td>BM25 和向量检索有什么区别？</td>
+          <td class="pass">通过</td>
+          <td><pre>expected_mode: 通过
+expected_tools: 通过
+forbidden_tools: 通过
+sources: 通过
+required_tasks: 通过
+task_completion: 通过
+stop_reason: 通过
+answer: 通过</pre></td>
+          <td><pre>{
+  &quot;planner_mode&quot;: &quot;pro_runtime&quot;,
+  &quot;tools&quot;: [
+    &quot;intent_classifier&quot;,
+    &quot;planner&quot;,
+    &quot;orchestrator&quot;,
+    &quot;dag_runtime&quot;,
+    &quot;web_collect&quot;,
+    &quot;dag_runtime&quot;,
+    &quot;rag_search&quot;,
+    &quot;aggregator&quot;,
+    &quot;evaluator&quot;,
+    &quot;generate_answer&quot;,
+    &quot;answer_validator&quot;
+  ],
+  &quot;tasks&quot;: [],
+  &quot;stop_reason&quot;: &quot;&quot;,
+  &quot;sources&quot;: [
+    {
+      &quot;id&quot;: &quot;web__BM25_-_ExplorerMan_-__1781492082_0_0&quot;,
+      &quot;document&quot;: &quot;BM25 和向量检索的区别 - ExplorerMan - 博客园\n会员\n周边\n新闻\n博问\n闪存\n赞助商\nChat2DB\n所有博客\n当前博客\n我的博客\n我的园子\n账号设置\n会员中心\n简洁模式\n...\n退出登录\n注册\n登录\nExplorerMan\nBM25 和向量检索的区别\nBM25和向量检索是两种不同的信息检索方法，它们在原理、效率、语义理解能力等方面存在显著区别，适用于不同的应用场景。以下是两者的详细对比：\n方面\nBM25\n向量检索\n原理\n基于词频（TF）和逆文档频率（IDF）的统计方法，通过计算查询词与文档的相关性得分\n。\n使用深度学习技术将文本转换为高维向量，通过向量相似度（如余弦相似度）来衡量文档与查询的相关性\n。\n语义理解能力\n主要依赖关键词匹配，对语义的理解较弱，无法处理同义词、多义词等问题\n。\n能够捕捉深层语义信息，理解上下文和语义关系，适合复杂语义场景\n。\n效率\n实现简单，计算效率高，适合大规模数据集的快速检索\n。\n计算复杂度较高，尤其在大规模数据集上可能面临性能瓶颈\n。\n适用场景\n适用于关键词匹配为主的场景，如网页搜索、文档检索等\n。&quot;,
+      &quot;source&quot;: &quot;网页：BM25 和向量检索的区别 - ExplorerMan - 博客园&quot;,
+      &quot;source_type&quot;: &quot;web&quot;,
+      &quot;url&quot;: &quot;https://www.cnblogs.com/ExMan/p/18762905&quot;,
+      &quot;chunk_index&quot;: 0,
+      &quot;created_at&quot;: 1781492082,
+      &quot;content_type&quot;: &quot;text&quot;,
+      &quot;document_key&quot;: &quot;web:网页：BM25 和向量检索的区别 - ExplorerMan - 博客园:https://www.cnblogs.com/ExMan/p/18762905&quot;,
+      &quot;section_title&quot;: &quot;&quot;,
+      &quot;page&quot;: 0,
+      &quot;sheet&quot;: &quot;&quot;,
+      &quot;row_start&quot;: 0,
+      &quot;row_end&quot;: 0,
+      &quot;chunk_type&quot;: &quot;child&quot;,
+      &quot;parent_id&quot;: &quot;网页：BM25 和向量检索的区别 - ExplorerMan - 博客园:0:text&quot;,
+      &quot;parent_text&quot;: &quot;BM25 和向量检索的区别 - ExplorerMan - 博客园\n会员\n周边\n新闻\n博问\n闪存\n赞助商\nChat2DB\n所有博客\n当前博客\n我的博客\n我的园子\n账号设置\n会员中心\n简洁模式\n...</pre></td>
+        </tr>
+        
+        <tr>
+          <td><strong>auto_002</strong><br><span>autonomous</span></td>
+          <td>调研三个 AI Agent 产品，并输出产品经理应该关注的能力清单</td>
+          <td class="pass">通过</td>
+          <td><pre>expected_mode: 通过
+expected_tools: 通过
+forbidden_tools: 通过
+sources: 通过
+required_tasks: 通过
+task_completion: 通过
+stop_reason: 通过
+answer: 通过</pre></td>
+          <td><pre>{
+  &quot;planner_mode&quot;: &quot;autonomous_runtime&quot;,
+  &quot;tools&quot;: [],
+  &quot;tasks&quot;: [
+    &quot;collect_context&quot;,
+    &quot;extract_findings&quot;,
+    &quot;write_deliverable&quot;
+  ],
+  &quot;stop_reason&quot;: &quot;all_tasks_completed&quot;,
+  &quot;sources&quot;: [
+    {
+      &quot;id&quot;: &quot;web__baidu.comhttps_baike.baidu.com_item__1781492098_0_0&quot;,
+      &quot;document&quot;: &quot;网页搜索结果摘要\n查询：你正在作为 Tool Agent 执行 Autonomous Agent 的一个子任务。\n\n总目标：\n调研三个 AI Agent 产品，并输出产品经理应该关注的能力清单\n\n当前任务：\n收集背景资料\n\n任务说明：\n围绕目标收集资料，并说明资料来源：调研三个 AI Agent 产品，并输出产品经理应该关注的能力清单\n\n预期产物：\n与目标相关的关键资料、事实和参考来源\n\n已有中间产物：\n暂无。\n\n请只完成当前任务，不要假装已经完成整个目标。\n标题：baidu.comhttps://baike.baidu.com › item › 你\n链接：https://baike.baidu.com/item/%E4%BD%A0/1187\n说明：完整网页正文读取失败或正文过短，当前仅保留搜索结果标题和链接作为低置信度网页资料。\n失败原因：403 Client Error: Forbidden for url: https://baike.baidu.com/item/%E4%BD%A0/1187&quot;,
+      &quot;source&quot;: &quot;网页搜索结果：baidu.comhttps://baike.baidu.com › item › 你&quot;,
+      &quot;source_type&quot;: &quot;web&quot;,
+      &quot;url&quot;: &quot;https://baike.baidu.com/item/%E4%BD%A0/1187&quot;,
+      &quot;chunk_index&quot;: 0,
+      &quot;created_at&quot;: 1781492098,
+      &quot;content_type&quot;: &quot;search_result&quot;,
+      &quot;document_key&quot;: &quot;web:网页搜索结果：baidu.comhttps://baike.baidu.com › item › 你:https://baike.baidu.com/item/%E4%BD%A0/1187&quot;,
+      &quot;section_title&quot;: &quot;&quot;,
+      &quot;page&quot;: 0,
+      &quot;sheet&quot;: &quot;&quot;,
+      &quot;row_start&quot;: 0,
+      &quot;row_end&quot;: 0,
+      &quot;chunk_type&quot;: &quot;child&quot;,
+      &quot;parent_id&quot;: &quot;网页搜索结果：baidu.comhttps://baike.baidu.com › item › 你:0:search_result&quot;,
+      &quot;parent_text&quot;: &quot;网页搜索结果摘要\n查询：你正在作为 Tool Agent 执行 Autonomous Agent 的一个子任务。\n\n总目标：\n调研三个 AI Agent 产品，并输出产品经理应该关注的能力清单\n\n当前任务：\n收集背景资料\n\n任务说明：\n围绕目标收集资料，并说明资料来源：调研三个 AI Agent 产品，并输出产品经理应该关注的能力清单\n\n预期产物：\n与目标相关的关键资料</pre></td>
+        </tr>
+        
+        <tr>
+          <td><strong>auto_003</strong><br><span>autonomous</span></td>
+          <td>整理一份 RAG 产品化评估方案，包含指标、样本集和验收方式</td>
+          <td class="pass">通过</td>
+          <td><pre>expected_mode: 通过
+expected_tools: 通过
+forbidden_tools: 通过
+sources: 通过
+required_tasks: 通过
+task_completion: 通过
+stop_reason: 通过
+answer: 通过</pre></td>
+          <td><pre>{
+  &quot;planner_mode&quot;: &quot;autonomous_runtime&quot;,
+  &quot;tools&quot;: [],
+  &quot;tasks&quot;: [
+    &quot;collect_context&quot;,
+    &quot;extract_findings&quot;,
+    &quot;write_deliverable&quot;
+  ],
+  &quot;stop_reason&quot;: &quot;all_tasks_completed&quot;,
+  &quot;sources&quot;: [
+    {
+      &quot;id&quot;: &quot;web__baidu.comhttps_baike.baidu.com_item__1781492114_0_0&quot;,
+      &quot;document&quot;: &quot;网页搜索结果摘要\n查询：你正在作为 Tool Agent 执行 Autonomous Agent 的一个子任务。\n\n总目标：\n整理一份 RAG 产品化评估方案，包含指标、样本集和验收方式\n\n当前任务：\n收集背景资料\n\n任务说明：\n围绕目标收集资料，并说明资料来源：整理一份 RAG 产品化评估方案，包含指标、样本集和验收方式\n\n预期产物：\n与目标相关的关键资料、事实和参考来源\n\n已有中间产物：\n暂无。\n\n请只完成当前任务，不要假装已经完成整个目标。\n标题：baidu.comhttps://baike.baidu.com › item › 你\n链接：https://baike.baidu.com/item/%E4%BD%A0/1187\n说明：完整网页正文读取失败或正文过短，当前仅保留搜索结果标题和链接作为低置信度网页资料。\n失败原因：403 Client Error: Forbidden for url: https://baike.baidu.com/item/%E4%BD%A0/1187&quot;,
+      &quot;source&quot;: &quot;网页搜索结果：baidu.comhttps://baike.baidu.com › item › 你&quot;,
+      &quot;source_type&quot;: &quot;web&quot;,
+      &quot;url&quot;: &quot;https://baike.baidu.com/item/%E4%BD%A0/1187&quot;,
+      &quot;chunk_index&quot;: 0,
+      &quot;created_at&quot;: 1781492114,
+      &quot;content_type&quot;: &quot;search_result&quot;,
+      &quot;document_key&quot;: &quot;web:网页搜索结果：baidu.comhttps://baike.baidu.com › item › 你:https://baike.baidu.com/item/%E4%BD%A0/1187&quot;,
+      &quot;section_title&quot;: &quot;&quot;,
+      &quot;page&quot;: 0,
+      &quot;sheet&quot;: &quot;&quot;,
+      &quot;row_start&quot;: 0,
+      &quot;row_end&quot;: 0,
+      &quot;chunk_type&quot;: &quot;child&quot;,
+      &quot;parent_id&quot;: &quot;网页搜索结果：baidu.comhttps://baike.baidu.com › item › 你:0:search_result&quot;,
+      &quot;parent_text&quot;: &quot;网页搜索结果摘要\n查询：你正在作为 Tool Agent 执行 Autonomous Agent 的一个子任务。\n\n总目标：\n整理一份 RAG 产品化评估方案，包含指标、样本集和验收方式\n\n当前任务：\n收集背景资料\n\n任务说明：\n围绕目标收集资料，并说明资料来源：整理一份 RAG 产品化评估方案，包含指标、样本集和验收方式\n\n预期产物：\n与目标相关的关键资料、事实和参考来源\n\n</pre></td>
+        </tr>
+        
+        <tr>
+          <td><strong>auto_004</strong><br><span>autonomous</span></td>
+          <td>分析当前 Agent MVP 的主要风险，并给出下一轮优化计划</td>
+          <td class="pass">通过</td>
+          <td><pre>expected_mode: 通过
+expected_tools: 通过
+forbidden_tools: 通过
+sources: 通过
+required_tasks: 通过
+task_completion: 通过
+stop_reason: 通过
+answer: 通过</pre></td>
+          <td><pre>{
+  &quot;planner_mode&quot;: &quot;autonomous_runtime&quot;,
+  &quot;tools&quot;: [],
+  &quot;tasks&quot;: [
+    &quot;collect_context&quot;,
+    &quot;extract_findings&quot;,
+    &quot;write_deliverable&quot;
+  ],
+  &quot;stop_reason&quot;: &quot;all_tasks_completed&quot;,
+  &quot;sources&quot;: [
+    {
+      &quot;id&quot;: &quot;web__baidu.comhttps_baike.baidu.com_item__1781492130_0_0&quot;,
+      &quot;document&quot;: &quot;网页搜索结果摘要\n查询：你正在作为 Tool Agent 执行 Autonomous Agent 的一个子任务。\n\n总目标：\n分析当前 Agent MVP 的主要风险，并给出下一轮优化计划\n\n当前任务：\n收集背景资料\n\n任务说明：\n围绕目标收集资料，并说明资料来源：分析当前 Agent MVP 的主要风险，并给出下一轮优化计划\n\n预期产物：\n与目标相关的关键资料、事实和参考来源\n\n已有中间产物：\n暂无。\n\n请只完成当前任务，不要假装已经完成整个目标。\n标题：baidu.comhttps://baike.baidu.com › item › 你\n链接：https://baike.baidu.com/item/%E4%BD%A0/1187\n说明：完整网页正文读取失败或正文过短，当前仅保留搜索结果标题和链接作为低置信度网页资料。\n失败原因：403 Client Error: Forbidden for url: https://baike.baidu.com/item/%E4%BD%A0/1187&quot;,
+      &quot;source&quot;: &quot;网页搜索结果：baidu.comhttps://baike.baidu.com › item › 你&quot;,
+      &quot;source_type&quot;: &quot;web&quot;,
+      &quot;url&quot;: &quot;https://baike.baidu.com/item/%E4%BD%A0/1187&quot;,
+      &quot;chunk_index&quot;: 0,
+      &quot;created_at&quot;: 1781492130,
+      &quot;content_type&quot;: &quot;search_result&quot;,
+      &quot;document_key&quot;: &quot;web:网页搜索结果：baidu.comhttps://baike.baidu.com › item › 你:https://baike.baidu.com/item/%E4%BD%A0/1187&quot;,
+      &quot;section_title&quot;: &quot;&quot;,
+      &quot;page&quot;: 0,
+      &quot;sheet&quot;: &quot;&quot;,
+      &quot;row_start&quot;: 0,
+      &quot;row_end&quot;: 0,
+      &quot;chunk_type&quot;: &quot;child&quot;,
+      &quot;parent_id&quot;: &quot;网页搜索结果：baidu.comhttps://baike.baidu.com › item › 你:0:search_result&quot;,
+      &quot;parent_text&quot;: &quot;网页搜索结果摘要\n查询：你正在作为 Tool Agent 执行 Autonomous Agent 的一个子任务。\n\n总目标：\n分析当前 Agent MVP 的主要风险，并给出下一轮优化计划\n\n当前任务：\n收集背景资料\n\n任务说明：\n围绕目标收集资料，并说明资料来源：分析当前 Agent MVP 的主要风险，并给出下一轮优化计划\n\n预期产物：\n与目标相关的关键资料、事实和参考来源</pre></td>
+        </tr>
+        
+        <tr>
+          <td><strong>auto_fallback_002</strong><br><span>autonomous_fallback</span></td>
+          <td>你会什么？</td>
+          <td class="pass">通过</td>
+          <td><pre>expected_mode: 通过
+expected_tools: 通过
+forbidden_tools: 通过
+sources: 通过
+required_tasks: 通过
+task_completion: 通过
+stop_reason: 通过
+answer: 通过</pre></td>
+          <td><pre>{
+  &quot;planner_mode&quot;: &quot;autonomous_fallback&quot;,
+  &quot;tools&quot;: [
+    &quot;goal_router&quot;,
+    &quot;intent_classifier&quot;,
+    &quot;planner&quot;,
+    &quot;orchestrator&quot;,
+    &quot;dag_runtime&quot;,
+    &quot;direct_answer&quot;
+  ],
+  &quot;tasks&quot;: [],
+  &quot;stop_reason&quot;: &quot;&quot;,
+  &quot;sources&quot;: [],
+  &quot;answer&quot;: &quot;我会很多，比如回答问题、写作、翻译、编程、数据分析、创意构思、学习指导等等。你有什么想了解的，直接问我就好。&quot;
+}</pre></td>
+        </tr>
+        </tbody>
+  </table>
+
+  <h2>结论</h2>
+  <div class="note">这版规则 Eval 已覆盖闲聊路由、上传状态、无上传资料隔离、Web RAG、定义问答、Autonomous 任务和 Autonomous fallback。下一步可以在此基础上增加 LLM-as-Judge 语义质量评分。</div>
+</main>
+</body>
+</html>
