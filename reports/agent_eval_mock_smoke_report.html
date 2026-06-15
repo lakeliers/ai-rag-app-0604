@@ -1,0 +1,361 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Agent Eval 报告</title>
+  <style>
+    body { margin: 0; background: #f6f7fb; color: #202431; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; line-height: 1.6; }
+    main { max-width: 1280px; margin: 0 auto; padding: 40px 24px 72px; }
+    h1 { margin: 0 0 8px; font-size: 34px; }
+    h2 { margin: 32px 0 14px; font-size: 22px; }
+    .sub { color: #667085; margin-bottom: 28px; }
+    .grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; }
+    .card { background: #fff; border: 1px solid #e5e7ef; border-radius: 8px; padding: 18px; }
+    .metric { font-size: 30px; font-weight: 760; }
+    .pass { color: #047857; font-weight: 700; }
+    .fail { color: #dc2626; font-weight: 700; }
+    table { width: 100%; border-collapse: collapse; background: #fff; border: 1px solid #e5e7ef; border-radius: 8px; overflow: hidden; }
+    th, td { padding: 12px 14px; border-bottom: 1px solid #e5e7ef; text-align: left; vertical-align: top; font-size: 14px; }
+    th { background: #f1f5f9; }
+    tr:last-child td { border-bottom: none; }
+    pre { margin: 0; white-space: pre-wrap; font-size: 12px; background: #f8fafc; border: 1px solid #e5e7eb; border-radius: 6px; padding: 8px; max-height: 260px; overflow: auto; }
+    .note { border-left: 4px solid #2563eb; background: #eff6ff; color: #1e3a8a; padding: 12px 14px; border-radius: 6px; }
+    @media (max-width: 900px) { .grid { grid-template-columns: 1fr; } main { padding: 28px 16px 56px; } }
+  </style>
+</head>
+<body>
+<main>
+  <h1>Agent Eval 报告</h1>
+  <div class="sub">运行模式：mock。Judge：未启用。规则检查系统是否跑对；LLM-as-Judge 检查语义质量、资料忠实度和来源使用。</div>
+
+  <section class="grid">
+    <div class="card"><div class="metric">8</div><div>总样本</div></div>
+    <div class="card"><div class="metric pass">8</div><div>通过</div></div>
+    <div class="card"><div class="metric fail">0</div><div>失败</div></div>
+    <div class="card"><div class="metric">100%</div><div>通过率</div></div>
+  </section>
+
+  <h2>分场景通过率</h2>
+  <table><thead><tr><th>场景</th><th>通过 / 总数</th><th>通过率</th></tr></thead><tbody><tr><td>autonomous</td><td>1/1</td><td>100%</td></tr>
+<tr><td>autonomous_fallback</td><td>1/1</td><td>100%</td></tr>
+<tr><td>chitchat</td><td>2/2</td><td>100%</td></tr>
+<tr><td>definition</td><td>1/1</td><td>100%</td></tr>
+<tr><td>source_scope</td><td>1/1</td><td>100%</td></tr>
+<tr><td>upload_status</td><td>1/1</td><td>100%</td></tr>
+<tr><td>web_rag</td><td>1/1</td><td>100%</td></tr></tbody></table>
+
+  <h2>失败检查项</h2>
+  <table><thead><tr><th>检查项</th><th>失败次数</th></tr></thead><tbody><tr><td>无</td><td>0</td></tr></tbody></table>
+
+  <h2>逐 Case 明细</h2>
+  <table>
+    <thead><tr><th>Case</th><th>输入</th><th>最终结果</th><th>规则检查</th><th>Judge 语义评分</th><th>实际输出摘要</th></tr></thead>
+    <tbody>
+        <tr>
+          <td><strong>chat_001</strong><br><span>chitchat</span></td>
+          <td>你好我是萧玄</td>
+          <td class="pass">通过</td>
+          <td><pre>expected_mode: 通过
+expected_tools: 通过
+forbidden_tools: 通过
+sources: 通过
+required_tasks: 通过
+task_completion: 通过
+stop_reason: 通过
+answer: 通过</pre></td>
+          <td><pre>未启用</pre></td>
+          <td><pre>{
+  &quot;planner_mode&quot;: &quot;pro_runtime&quot;,
+  &quot;tools&quot;: [
+    &quot;intent_classifier&quot;,
+    &quot;planner&quot;,
+    &quot;orchestrator&quot;,
+    &quot;dag_runtime&quot;,
+    &quot;direct_answer&quot;
+  ],
+  &quot;tasks&quot;: [],
+  &quot;stop_reason&quot;: &quot;&quot;,
+  &quot;sources&quot;: [],
+  &quot;answer&quot;: &quot;你好，萧玄，很高兴继续和你一起学习 AI Agent。&quot;
+}</pre></td>
+        </tr>
+        
+        <tr>
+          <td><strong>chat_002</strong><br><span>chitchat</span></td>
+          <td>你擅长什么？</td>
+          <td class="pass">通过</td>
+          <td><pre>expected_mode: 通过
+expected_tools: 通过
+forbidden_tools: 通过
+sources: 通过
+required_tasks: 通过
+task_completion: 通过
+stop_reason: 通过
+answer: 通过</pre></td>
+          <td><pre>未启用</pre></td>
+          <td><pre>{
+  &quot;planner_mode&quot;: &quot;pro_runtime&quot;,
+  &quot;tools&quot;: [
+    &quot;intent_classifier&quot;,
+    &quot;planner&quot;,
+    &quot;orchestrator&quot;,
+    &quot;dag_runtime&quot;,
+    &quot;direct_answer&quot;
+  ],
+  &quot;tasks&quot;: [],
+  &quot;stop_reason&quot;: &quot;&quot;,
+  &quot;sources&quot;: [],
+  &quot;answer&quot;: &quot;你好，我可以帮你学习 RAG、Tool Agent、Autonomous Agent 和 Agent Eval。&quot;
+}</pre></td>
+        </tr>
+        
+        <tr>
+          <td><strong>upload_status_001</strong><br><span>upload_status</span></td>
+          <td>你能看到我上传的资料吗？</td>
+          <td class="pass">通过</td>
+          <td><pre>expected_mode: 通过
+expected_tools: 通过
+forbidden_tools: 通过
+sources: 通过
+required_tasks: 通过
+task_completion: 通过
+stop_reason: 通过
+answer: 通过</pre></td>
+          <td><pre>未启用</pre></td>
+          <td><pre>{
+  &quot;planner_mode&quot;: &quot;pro_runtime&quot;,
+  &quot;tools&quot;: [
+    &quot;intent_classifier&quot;,
+    &quot;planner&quot;,
+    &quot;orchestrator&quot;,
+    &quot;dag_runtime&quot;,
+    &quot;upload_status&quot;
+  ],
+  &quot;tasks&quot;: [],
+  &quot;stop_reason&quot;: &quot;&quot;,
+  &quot;sources&quot;: [],
+  &quot;answer&quot;: &quot;能看到。你当前上传并入库的资料有：\n- 上传：AI产品经理学习笔记.md&quot;
+}</pre></td>
+        </tr>
+        
+        <tr>
+          <td><strong>scope_001</strong><br><span>source_scope</span></td>
+          <td>我还没上传文件，你哪里看到 NPL 方法论文件？</td>
+          <td class="pass">通过</td>
+          <td><pre>expected_mode: 通过
+expected_tools: 通过
+forbidden_tools: 通过
+sources: 通过
+required_tasks: 通过
+task_completion: 通过
+stop_reason: 通过
+answer: 通过</pre></td>
+          <td><pre>未启用</pre></td>
+          <td><pre>{
+  &quot;planner_mode&quot;: &quot;pro_runtime&quot;,
+  &quot;tools&quot;: [
+    &quot;intent_classifier&quot;,
+    &quot;planner&quot;,
+    &quot;orchestrator&quot;,
+    &quot;dag_runtime&quot;,
+    &quot;upload_status&quot;
+  ],
+  &quot;tasks&quot;: [],
+  &quot;stop_reason&quot;: &quot;&quot;,
+  &quot;sources&quot;: [],
+  &quot;answer&quot;: &quot;我目前没有看到已成功入库的上传资料。&quot;
+}</pre></td>
+        </tr>
+        
+        <tr>
+          <td><strong>web_001</strong><br><span>web_rag</span></td>
+          <td>最近 AI Agent 有什么新趋势？</td>
+          <td class="pass">通过</td>
+          <td><pre>expected_mode: 通过
+expected_tools: 通过
+forbidden_tools: 通过
+sources: 通过
+required_tasks: 通过
+task_completion: 通过
+stop_reason: 通过
+answer: 通过</pre></td>
+          <td><pre>未启用</pre></td>
+          <td><pre>{
+  &quot;planner_mode&quot;: &quot;pro_runtime&quot;,
+  &quot;tools&quot;: [
+    &quot;intent_classifier&quot;,
+    &quot;planner&quot;,
+    &quot;orchestrator&quot;,
+    &quot;dag_runtime&quot;,
+    &quot;web_collect&quot;,
+    &quot;dag_runtime&quot;,
+    &quot;rag_search&quot;,
+    &quot;aggregator&quot;,
+    &quot;evaluator&quot;,
+    &quot;generate_answer&quot;,
+    &quot;answer_validator&quot;
+  ],
+  &quot;tasks&quot;: [],
+  &quot;stop_reason&quot;: &quot;&quot;,
+  &quot;sources&quot;: [
+    {
+      &quot;source_type&quot;: &quot;web&quot;,
+      &quot;source&quot;: &quot;AI Agent trends web&quot;,
+      &quot;url&quot;: &quot;https://example.com/agent-trends&quot;,
+      &quot;document&quot;: &quot;近期 AI Agent 趋势包括多工具编排、可观测运行时和评估体系。&quot;,
+      &quot;final_score&quot;: 0.88,
+      &quot;chunk_index&quot;: 1,
+      &quot;context_item_id&quot;: &quot;web:AI Agent trends web:1&quot;,
+      &quot;aggregator_skip_reason&quot;: &quot;&quot;,
+      &quot;aggregator_order&quot;: 1
+    }
+  ],
+  &quot;answer&quot;: &quot;结论：AI Agent 正在从单轮工具调用走向任务级自主推进。关键趋势包括多工具编排、可观测运行时、评估体系和更严格的数据权限控制。参考来源：AI Agent trends web。&quot;
+}</pre></td>
+        </tr>
+        
+        <tr>
+          <td><strong>definition_001</strong><br><span>definition</span></td>
+          <td>RAG 是什么？</td>
+          <td class="pass">通过</td>
+          <td><pre>expected_mode: 通过
+expected_tools: 通过
+forbidden_tools: 通过
+sources: 通过
+required_tasks: 通过
+task_completion: 通过
+stop_reason: 通过
+answer: 通过</pre></td>
+          <td><pre>未启用</pre></td>
+          <td><pre>{
+  &quot;planner_mode&quot;: &quot;pro_runtime&quot;,
+  &quot;tools&quot;: [
+    &quot;intent_classifier&quot;,
+    &quot;planner&quot;,
+    &quot;orchestrator&quot;,
+    &quot;dag_runtime&quot;,
+    &quot;web_collect&quot;,
+    &quot;dag_runtime&quot;,
+    &quot;rag_search&quot;,
+    &quot;aggregator&quot;,
+    &quot;evaluator&quot;,
+    &quot;generate_answer&quot;,
+    &quot;answer_validator&quot;
+  ],
+  &quot;tasks&quot;: [],
+  &quot;stop_reason&quot;: &quot;&quot;,
+  &quot;sources&quot;: [
+    {
+      &quot;source_type&quot;: &quot;local&quot;,
+      &quot;source&quot;: &quot;我的AI学习笔记&quot;,
+      &quot;document&quot;: &quot;RAG 是检索增强生成，通过检索资料后再让大模型回答。&quot;,
+      &quot;final_score&quot;: 0.81,
+      &quot;chunk_index&quot;: 1,
+      &quot;context_item_id&quot;: &quot;local:我的AI学习笔记:1&quot;,
+      &quot;aggregator_skip_reason&quot;: &quot;&quot;,
+      &quot;aggregator_order&quot;: 1
+    }
+  ],
+  &quot;answer&quot;: &quot;RAG 是检索增强生成：先检索相关资料，再让大模型基于资料回答。参考来源：我的AI学习笔记。&quot;
+}</pre></td>
+        </tr>
+        
+        <tr>
+          <td><strong>auto_001</strong><br><span>autonomous</span></td>
+          <td>调研 AI Agent 产品趋势，并给产品经理学习建议</td>
+          <td class="pass">通过</td>
+          <td><pre>expected_mode: 通过
+expected_tools: 通过
+forbidden_tools: 通过
+sources: 通过
+required_tasks: 通过
+task_completion: 通过
+stop_reason: 通过
+answer: 通过</pre></td>
+          <td><pre>未启用</pre></td>
+          <td><pre>{
+  &quot;planner_mode&quot;: &quot;autonomous_runtime&quot;,
+  &quot;tools&quot;: [],
+  &quot;tasks&quot;: [
+    &quot;collect_context&quot;,
+    &quot;extract_findings&quot;,
+    &quot;write_deliverable&quot;
+  ],
+  &quot;stop_reason&quot;: &quot;all_tasks_completed&quot;,
+  &quot;sources&quot;: [
+    {
+      &quot;source_type&quot;: &quot;web&quot;,
+      &quot;source&quot;: &quot;AI Agent trends web&quot;,
+      &quot;url&quot;: &quot;https://example.com/agent-trends&quot;,
+      &quot;document&quot;: &quot;近期 AI Agent 趋势包括多工具编排、可观测运行时和评估体系。&quot;,
+      &quot;final_score&quot;: 0.88,
+      &quot;chunk_index&quot;: 1,
+      &quot;context_item_id&quot;: &quot;web:AI Agent trends web:1&quot;,
+      &quot;aggregator_skip_reason&quot;: &quot;&quot;,
+      &quot;aggregator_order&quot;: 1
+    },
+    {
+      &quot;source_type&quot;: &quot;web&quot;,
+      &quot;source&quot;: &quot;AI Agent trends web&quot;,
+      &quot;url&quot;: &quot;https://example.com/agent-trends&quot;,
+      &quot;document&quot;: &quot;近期 AI Agent 趋势包括多工具编排、可观测运行时和评估体系。&quot;,
+      &quot;final_score&quot;: 0.88,
+      &quot;chunk_index&quot;: 1,
+      &quot;context_item_id&quot;: &quot;web:AI Agent trends web:1&quot;,
+      &quot;aggregator_skip_reason&quot;: &quot;&quot;,
+      &quot;aggregator_order&quot;: 1
+    },
+    {
+      &quot;source_type&quot;: &quot;web&quot;,
+      &quot;source&quot;: &quot;AI Agent trends web&quot;,
+      &quot;url&quot;: &quot;https://example.com/agent-trends&quot;,
+      &quot;document&quot;: &quot;近期 AI Agent 趋势包括多工具编排、可观测运行时和评估体系。&quot;,
+      &quot;final_score&quot;: 0.88,
+      &quot;chunk_index&quot;: 1,
+      &quot;context_item_id&quot;: &quot;web:AI Agent trends web:1&quot;,
+      &quot;aggregator_skip_reason&quot;: &quot;&quot;,
+      &quot;aggregator_order&quot;: 1
+    }
+  ],
+  &quot;answer&quot;: &quot;Tool Agent 更偏向在单次任务中调用工具完成动作，Autonomous Agent 更偏向围绕目标拆任务、循环推进和自检。参考来源：AI Agent trends web。&quot;
+}</pre></td>
+        </tr>
+        
+        <tr>
+          <td><strong>auto_fallback_001</strong><br><span>autonomous_fallback</span></td>
+          <td>你好我是萧玄</td>
+          <td class="pass">通过</td>
+          <td><pre>expected_mode: 通过
+expected_tools: 通过
+forbidden_tools: 通过
+sources: 通过
+required_tasks: 通过
+task_completion: 通过
+stop_reason: 通过
+answer: 通过</pre></td>
+          <td><pre>未启用</pre></td>
+          <td><pre>{
+  &quot;planner_mode&quot;: &quot;autonomous_fallback&quot;,
+  &quot;tools&quot;: [
+    &quot;goal_router&quot;,
+    &quot;intent_classifier&quot;,
+    &quot;planner&quot;,
+    &quot;orchestrator&quot;,
+    &quot;dag_runtime&quot;,
+    &quot;direct_answer&quot;
+  ],
+  &quot;tasks&quot;: [],
+  &quot;stop_reason&quot;: &quot;&quot;,
+  &quot;sources&quot;: [],
+  &quot;answer&quot;: &quot;你好，萧玄，很高兴继续和你一起学习 AI Agent。&quot;
+}</pre></td>
+        </tr>
+        </tbody>
+  </table>
+
+  <h2>结论</h2>
+  <div class="note">这版 Eval 同时支持规则校验和 LLM-as-Judge。规则负责硬边界，Judge 负责语义质量；最终结果要求两者都通过。</div>
+</main>
+</body>
+</html>
