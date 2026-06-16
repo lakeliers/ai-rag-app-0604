@@ -23,6 +23,14 @@ SOURCE_STRATEGIES = {
     SOURCE_STRATEGY_WEB_ONLY,
     SOURCE_STRATEGY_UPLOAD_AND_WEB,
 }
+PLANNER_RULES = "rules"
+PLANNER_LLM_TOOL_CALLING = "llm_tool_calling"
+PLANNER_FALLBACK_MIXED = "fallback_mixed"
+PLANNER_TYPES = {PLANNER_RULES, PLANNER_LLM_TOOL_CALLING, PLANNER_FALLBACK_MIXED}
+EVALUATOR_OFF = "off"
+EVALUATOR_RULES = "rules"
+EVALUATOR_LLM_JUDGE = "llm_judge"
+EVALUATOR_TYPES = {EVALUATOR_OFF, EVALUATOR_RULES, EVALUATOR_LLM_JUDGE}
 
 GREETING_PATTERNS = [
     r"^(你好|您好|嗨|hello|hi)(呀|啊|哈|，|,|。|！|!|\s)*$",
@@ -192,6 +200,8 @@ def tool_rag_search(
     top_k: int,
     preferred_sources: list[str],
     source_strategy: str = SOURCE_STRATEGY_AUTO,
+    retrieval_strategy: str = agent.RETRIEVAL_VECTOR_BM25_RRF,
+    context_packing_strategy: str = agent.CONTEXT_STRICT_BUDGET,
 ) -> ToolResult:
     if source_strategy == SOURCE_STRATEGY_UPLOAD_ONLY and not preferred_sources:
         return ToolResult(
@@ -209,6 +219,8 @@ def tool_rag_search(
         top_k=top_k,
         preferred_sources=preferred_sources,
         preferred_only=preferred_only,
+        retrieval_strategy=retrieval_strategy,
+        context_packing_strategy=context_packing_strategy,
     )
     if source_strategy == SOURCE_STRATEGY_WEB_ONLY:
         results = [item for item in results if item.get("source_type") == "web"]
@@ -593,6 +605,8 @@ def build_task_graph(
     web_max_results: int,
     preferred_sources: list[str],
     source_strategy: str = SOURCE_STRATEGY_AUTO,
+    retrieval_strategy: str = agent.RETRIEVAL_VECTOR_BM25_RRF,
+    context_packing_strategy: str = agent.CONTEXT_STRICT_BUDGET,
 ) -> TaskGraph:
     if plan.action == "direct_answer":
         return TaskGraph(nodes=[
@@ -656,6 +670,8 @@ def build_task_graph(
                 "top_k": top_k,
                 "preferred_sources": preferred_sources,
                 "source_strategy": source_strategy,
+                "retrieval_strategy": retrieval_strategy,
+                "context_packing_strategy": context_packing_strategy,
             },
             depends_on=["web_collect"] if should_collect_web else [],
             output_key="rag_search",
@@ -1098,6 +1114,9 @@ def build_rule_based_steps(
     top_k: int,
     web_max_results: int,
     preferred_sources: list[str] | None = None,
+    source_strategy: str = SOURCE_STRATEGY_AUTO,
+    retrieval_strategy: str = agent.RETRIEVAL_VECTOR_BM25_RRF,
+    context_packing_strategy: str = agent.CONTEXT_STRICT_BUDGET,
 ) -> list[AgentStep]:
     preferred_sources = preferred_sources or []
     steps: list[AgentStep] = []
@@ -1125,6 +1144,9 @@ def build_rule_based_steps(
                 "question": question,
                 "top_k": top_k,
                 "preferred_sources": preferred_sources,
+                "source_strategy": source_strategy,
+                "retrieval_strategy": retrieval_strategy,
+                "context_packing_strategy": context_packing_strategy,
             },
         )
     )
@@ -1189,6 +1211,9 @@ def build_llm_planned_steps(
     top_k: int,
     web_max_results: int,
     preferred_sources: list[str] | None = None,
+    source_strategy: str = SOURCE_STRATEGY_AUTO,
+    retrieval_strategy: str = agent.RETRIEVAL_VECTOR_BM25_RRF,
+    context_packing_strategy: str = agent.CONTEXT_STRICT_BUDGET,
 ) -> list[AgentStep]:
     preferred_sources = preferred_sources or []
     client = agent.get_deepseek_client()
@@ -1247,6 +1272,9 @@ def build_llm_planned_steps(
                         "question": args.get("question", question),
                         "top_k": min(int(args.get("top_k", top_k)), top_k),
                         "preferred_sources": preferred_sources,
+                        "source_strategy": source_strategy,
+                        "retrieval_strategy": retrieval_strategy,
+                        "context_packing_strategy": context_packing_strategy,
                     },
                 )
             )
@@ -1276,6 +1304,9 @@ def build_llm_planned_steps(
         top_k=top_k,
         web_max_results=web_max_results,
         preferred_sources=preferred_sources,
+        source_strategy=source_strategy,
+        retrieval_strategy=retrieval_strategy,
+        context_packing_strategy=context_packing_strategy,
     )
 
 
@@ -1286,6 +1317,9 @@ def normalize_planned_steps(
     top_k: int,
     web_max_results: int,
     preferred_sources: list[str],
+    source_strategy: str = SOURCE_STRATEGY_AUTO,
+    retrieval_strategy: str = agent.RETRIEVAL_VECTOR_BM25_RRF,
+    context_packing_strategy: str = agent.CONTEXT_STRICT_BUDGET,
 ) -> list[AgentStep]:
     if is_upload_status_question(question):
         return [
@@ -1330,6 +1364,9 @@ def normalize_planned_steps(
                 "question": question,
                 "top_k": top_k,
                 "preferred_sources": preferred_sources,
+                "source_strategy": source_strategy,
+                "retrieval_strategy": retrieval_strategy,
+                "context_packing_strategy": context_packing_strategy,
             },
         )
 
@@ -1351,6 +1388,9 @@ def plan_agent_steps(
     top_k: int,
     web_max_results: int,
     preferred_sources: list[str] | None = None,
+    source_strategy: str = SOURCE_STRATEGY_AUTO,
+    retrieval_strategy: str = agent.RETRIEVAL_VECTOR_BM25_RRF,
+    context_packing_strategy: str = agent.CONTEXT_STRICT_BUDGET,
 ) -> list[AgentStep]:
     preferred_sources = preferred_sources or []
     if is_upload_status_question(question):
@@ -1371,6 +1411,9 @@ def plan_agent_steps(
                 top_k=top_k,
                 web_max_results=web_max_results,
                 preferred_sources=preferred_sources,
+                source_strategy=source_strategy,
+                retrieval_strategy=retrieval_strategy,
+                context_packing_strategy=context_packing_strategy,
             )
             if steps:
                 return steps
@@ -1383,6 +1426,9 @@ def plan_agent_steps(
         top_k=top_k,
         web_max_results=web_max_results,
         preferred_sources=preferred_sources,
+        source_strategy=source_strategy,
+        retrieval_strategy=retrieval_strategy,
+        context_packing_strategy=context_packing_strategy,
     )
 
 
@@ -1436,6 +1482,9 @@ def run_agent(
     top_k: int = 3,
     web_max_results: int = 3,
     preferred_sources: list[str] | None = None,
+    source_strategy: str = SOURCE_STRATEGY_AUTO,
+    retrieval_strategy: str = agent.RETRIEVAL_VECTOR_BM25_RRF,
+    context_packing_strategy: str = agent.CONTEXT_STRICT_BUDGET,
 ) -> dict[str, Any]:
     state: dict[str, Any] = {
         "question": question,
@@ -1450,6 +1499,9 @@ def run_agent(
         top_k=top_k,
         web_max_results=web_max_results,
         preferred_sources=preferred_sources,
+        source_strategy=source_strategy,
+        retrieval_strategy=retrieval_strategy,
+        context_packing_strategy=context_packing_strategy,
     )
 
     for step in steps:
@@ -1533,9 +1585,37 @@ def run_agent_pro(
     preferred_sources: list[str] | None = None,
     router_mode: str = ROUTER_MODE_RULES,
     source_strategy: str = SOURCE_STRATEGY_AUTO,
+    retrieval_strategy: str = agent.RETRIEVAL_VECTOR_BM25_RRF,
+    context_packing_strategy: str = agent.CONTEXT_STRICT_BUDGET,
+    planner_type: str = PLANNER_FALLBACK_MIXED,
+    evaluator_type: str = EVALUATOR_RULES,
 ) -> dict[str, Any]:
     if source_strategy not in SOURCE_STRATEGIES:
         source_strategy = SOURCE_STRATEGY_AUTO
+    if planner_type not in PLANNER_TYPES:
+        planner_type = PLANNER_FALLBACK_MIXED
+    if evaluator_type not in EVALUATOR_TYPES:
+        evaluator_type = EVALUATOR_RULES
+
+    if planner_type == PLANNER_LLM_TOOL_CALLING:
+        result = run_agent(
+            question=question,
+            use_web=use_web,
+            top_k=top_k,
+            web_max_results=web_max_results,
+            preferred_sources=preferred_sources,
+            source_strategy=source_strategy,
+            retrieval_strategy=retrieval_strategy,
+            context_packing_strategy=context_packing_strategy,
+        )
+        result["teaching_config"] = {
+            "retrieval_strategy": retrieval_strategy,
+            "context_packing_strategy": context_packing_strategy,
+            "planner_type": planner_type,
+            "evaluator_type": evaluator_type,
+        }
+        return result
+
     preferred_sources = preferred_sources or []
     effective_preferred_sources = [] if source_strategy == SOURCE_STRATEGY_WEB_ONLY else preferred_sources
     effective_use_web = use_web and source_strategy != SOURCE_STRATEGY_UPLOAD_ONLY
@@ -1572,7 +1652,7 @@ def run_agent_pro(
             name="高层规划",
             tool="planner",
             reason="根据意图选择业务级动作，而不是直接暴露所有底层工具。",
-            summary=f"选择动作：{plan.action}。{plan.reason}",
+            summary=f"Planner类型：{planner_type}。选择动作：{plan.action}。{plan.reason}",
             elapsed_ms=int((time.time() - started_at) * 1000),
         )
     )
@@ -1587,6 +1667,8 @@ def run_agent_pro(
         web_max_results=web_max_results,
         preferred_sources=effective_preferred_sources,
         source_strategy=source_strategy,
+        retrieval_strategy=retrieval_strategy,
+        context_packing_strategy=context_packing_strategy,
     )
     trace.append(
         make_stage_trace(
@@ -1619,6 +1701,12 @@ def run_agent_pro(
             "sources": search_results,
             "steps": trace,
             "planner_mode": "pro_runtime",
+            "teaching_config": {
+                "retrieval_strategy": retrieval_strategy,
+                "context_packing_strategy": context_packing_strategy,
+                "planner_type": planner_type,
+                "evaluator_type": evaluator_type,
+            },
         }
 
     started_at = time.time()
@@ -1642,21 +1730,43 @@ def run_agent_pro(
     )
 
     started_at = time.time()
-    evaluation = evaluate_context(intent.intent, aggregated)
-    trace.append(
-        make_stage_trace(
-            name="资料评估",
-            tool="evaluator",
-            reason="判断当前资料是否足够支撑最终回答。",
-            summary=(
-                f"资料是否足够：{'是' if evaluation['sufficient'] else '否'}；"
-                f"资料数：{evaluation['source_count']}；"
-                f"置信度：{evaluation['confidence']:.2f}；"
-                f"建议动作：{evaluation['next_action']}。{evaluation['reason']}"
-            ),
-            elapsed_ms=int((time.time() - started_at) * 1000),
+    if evaluator_type == EVALUATOR_OFF:
+        evaluation = {
+            "sufficient": True,
+            "confidence": 1.0,
+            "reason": "当前配置关闭 Evaluator/Critic，直接进入最终回答。",
+            "source_count": len(search_results),
+            "missing_aspects": [],
+            "next_action": "generate_answer",
+        }
+        trace.append(
+            make_stage_trace(
+                name="资料评估",
+                tool="evaluator",
+                reason="当前教学配置关闭 Evaluator/Critic。",
+                summary="Evaluator 已关闭，跳过资料充分性判断。",
+                elapsed_ms=int((time.time() - started_at) * 1000),
+            )
         )
-    )
+    else:
+        evaluation = evaluate_context(intent.intent, aggregated)
+        if evaluator_type == EVALUATOR_LLM_JUDGE:
+            evaluation["llm_judge_note"] = "线上聊天暂用规则评估占位；完整 LLM-as-Judge 在 eval 脚本中执行，避免每次聊天额外消耗 judge 成本。"
+        trace.append(
+            make_stage_trace(
+                name="资料评估",
+                tool="evaluator" if evaluator_type == EVALUATOR_RULES else "llm_as_judge_placeholder",
+                reason="判断当前资料是否足够支撑最终回答。",
+                summary=(
+                    f"资料是否足够：{'是' if evaluation['sufficient'] else '否'}；"
+                    f"资料数：{evaluation['source_count']}；"
+                    f"置信度：{evaluation['confidence']:.2f}；"
+                    f"建议动作：{evaluation['next_action']}。{evaluation['reason']}"
+                    + (f" {evaluation.get('llm_judge_note', '')}" if evaluator_type == EVALUATOR_LLM_JUDGE else "")
+                ),
+                elapsed_ms=int((time.time() - started_at) * 1000),
+            )
+        )
 
     final_step = AgentStep(
         name="生成最终回答",
@@ -1688,6 +1798,12 @@ def run_agent_pro(
         "sources": search_results,
         "steps": trace,
         "planner_mode": "pro_runtime",
+        "teaching_config": {
+            "retrieval_strategy": retrieval_strategy,
+            "context_packing_strategy": context_packing_strategy,
+            "planner_type": planner_type,
+            "evaluator_type": evaluator_type,
+        },
         "evaluation": evaluation,
         "validation": validation,
     }

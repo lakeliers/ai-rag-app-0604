@@ -15,7 +15,7 @@ import requests
 from openai import OpenAI
 from sentence_transformers import CrossEncoder, SentenceTransformer
 from parsing_layer import ParsedSection
-from chunking_layer import ChunkCandidate, chunk_section, split_text_fixed, split_text_recursive
+from chunking_layer import ChunkCandidate, chunk_section, format_section_text, split_table_section, split_text_fixed, split_text_recursive
 
 
 EMBEDDING_MODEL_NAME = "shibing624/text2vec-base-chinese"
@@ -33,6 +33,34 @@ ENABLE_SUMMARY_CHUNKS = os.getenv("ENABLE_SUMMARY_CHUNKS", "0") == "1"
 SUMMARY_MIN_CHARS = int(os.getenv("SUMMARY_MIN_CHARS", "1200"))
 PARENT_TEXT_CHAR_LIMIT = int(os.getenv("PARENT_TEXT_CHAR_LIMIT", "1800"))
 RRF_K = 60
+RETRIEVAL_VECTOR_ONLY = "vector_only"
+RETRIEVAL_VECTOR_BM25 = "vector_bm25"
+RETRIEVAL_VECTOR_BM25_RRF = "vector_bm25_rrf"
+RETRIEVAL_STRATEGIES = {
+    RETRIEVAL_VECTOR_ONLY,
+    RETRIEVAL_VECTOR_BM25,
+    RETRIEVAL_VECTOR_BM25_RRF,
+}
+CONTEXT_SIMPLE_TOPK = "simple_topk"
+CONTEXT_SOURCE_PRIORITY = "source_priority"
+CONTEXT_WEIGHTED = "weighted"
+CONTEXT_STRICT_BUDGET = "strict_budget"
+CONTEXT_PACKING_STRATEGIES = {
+    CONTEXT_SIMPLE_TOPK,
+    CONTEXT_SOURCE_PRIORITY,
+    CONTEXT_WEIGHTED,
+    CONTEXT_STRICT_BUDGET,
+}
+CHUNKING_PLAIN = "plain"
+CHUNKING_PARENT_CHILD = "parent_child"
+CHUNKING_TABLE = "table"
+CHUNKING_SUMMARY = "summary"
+CHUNKING_STRATEGIES = {
+    CHUNKING_PLAIN,
+    CHUNKING_PARENT_CHILD,
+    CHUNKING_TABLE,
+    CHUNKING_SUMMARY,
+}
 SOURCE_WEIGHTS = {
     "upload": 1.35,
     "web": 1.0,
@@ -156,8 +184,8 @@ def embed_texts(texts):
     return embedding_model.encode(texts).tolist()
 
 
-def summarize_section_for_retrieval(section):
-    if not ENABLE_SUMMARY_CHUNKS:
+def summarize_section_for_retrieval(section, force=False):
+    if not ENABLE_SUMMARY_CHUNKS and not force:
         return ""
 
     text = section.text.strip()
@@ -371,7 +399,38 @@ def safe_id(text):
     return text[:120]
 
 
-def add_text_to_chroma(text, source, source_type="local", url="", content_type="text", created_at=None):
+def build_chunk_candidates(section, source, section_index, chunking_strategy):
+    if chunking_strategy not in CHUNKING_STRATEGIES:
+        chunking_strategy = CHUNKING_PARENT_CHILD
+
+    parent_text = format_section_text(section)
+    parent_id = f"{source}:{section_index}:{section.section_title or section.content_type or 'section'}"
+
+    if chunking_strategy == CHUNKING_PLAIN:
+        return [
+            ChunkCandidate(text=text, chunk_type="plain")
+            for text in split_text_fixed(parent_text)
+        ]
+
+    if chunking_strategy == CHUNKING_TABLE:
+        if section.content_type == "table":
+            texts = split_table_section(section)
+        else:
+            texts = split_text_recursive(parent_text)
+        return [
+            ChunkCandidate(
+                text=text,
+                chunk_type="table" if section.content_type == "table" else "child",
+                parent_id=parent_id,
+                parent_text=parent_text,
+            )
+            for text in texts
+        ]
+
+    return chunk_section(section, source=source, section_index=section_index)
+
+
+def add_text_to_chroma(text, source, source_type="local", url="", content_type="text", created_at=None, chunking_strategy=CHUNKING_PARENT_CHILD):
     section = ParsedSection(text=text, content_type=content_type)
     return add_sections_to_chroma(
         [section],
@@ -379,15 +438,16 @@ def add_text_to_chroma(text, source, source_type="local", url="", content_type="
         source_type=source_type,
         url=url,
         created_at=created_at,
+        chunking_strategy=chunking_strategy,
     )
 
 
-def add_sections_to_chroma(sections, source, source_type="local", url="", created_at=None):
+def add_sections_to_chroma(sections, source, source_type="local", url="", created_at=None, chunking_strategy=CHUNKING_PARENT_CHILD):
     chunk_rows = []
 
     for section_index, section in enumerate(sections):
-        chunk_candidates = chunk_section(section, source=source, section_index=section_index)
-        summary = summarize_section_for_retrieval(section)
+        chunk_candidates = build_chunk_candidates(section, source, section_index, chunking_strategy)
+        summary = summarize_section_for_retrieval(section, force=True) if chunking_strategy == CHUNKING_SUMMARY else ""
         if summary:
             parent_id = chunk_candidates[0].parent_id if chunk_candidates else f"{source}:{section_index}:summary"
             parent_text = chunk_candidates[0].parent_text if chunk_candidates else section.text.strip()
@@ -567,6 +627,19 @@ def normalize_rrf_score(score):
     return min(score * 30, 1.0)
 
 
+def vector_similarity_score(row):
+    distance = row.get("distance")
+    if distance is None:
+        return 0.0
+    return 1 / (1 + max(float(distance), 0.0))
+
+
+def normalize_bm25_score(score, max_score):
+    if max_score <= 0:
+        return 0.0
+    return min(float(score) / max_score, 1.0)
+
+
 def answerability_score(row, question_keywords, query_profile):
     document = row.get("document", "")
     lowered_document = document.lower()
@@ -694,7 +767,30 @@ def dedupe_and_limit_chunks(rows, max_chunks_per_source=MAX_CHUNKS_PER_SOURCE):
     return selected
 
 
-def pack_context_results(rows, top_k, char_budget=CONTEXT_CHAR_BUDGET):
+def pack_context_results(rows, top_k, char_budget=CONTEXT_CHAR_BUDGET, context_packing_strategy=CONTEXT_STRICT_BUDGET):
+    if context_packing_strategy not in CONTEXT_PACKING_STRATEGIES:
+        context_packing_strategy = CONTEXT_STRICT_BUDGET
+
+    if context_packing_strategy == CONTEXT_SIMPLE_TOPK:
+        packed = rows[:top_k]
+        for index, row in enumerate(packed, start=1):
+            row["context_order"] = index
+            row["context_skip_reason"] = ""
+        return packed
+
+    if context_packing_strategy == CONTEXT_SOURCE_PRIORITY:
+        packed = apply_source_quotas(rows, top_k)
+        for index, row in enumerate(packed, start=1):
+            row["context_order"] = index
+            row["context_skip_reason"] = ""
+        return packed
+
+    if context_packing_strategy == CONTEXT_WEIGHTED:
+        packed = dedupe_and_limit_chunks(apply_source_quotas(rows, top_k * 2))[:top_k]
+        for index, row in enumerate(packed, start=1):
+            row["context_order"] = index
+        return packed
+
     quota_rows = apply_source_quotas(rows, top_k * 2)
     deduped_rows = dedupe_and_limit_chunks(quota_rows)
 
@@ -779,7 +875,16 @@ def rerank_results(question, rows, query_profile, limit=None):
     return candidate_rows + remaining_rows
 
 
-def search_chroma(question, top_k=3, preferred_sources=None, preferred_only=False):
+def search_chroma(
+    question,
+    top_k=3,
+    preferred_sources=None,
+    preferred_only=False,
+    retrieval_strategy=RETRIEVAL_VECTOR_BM25_RRF,
+    context_packing_strategy=CONTEXT_STRICT_BUDGET,
+):
+    if retrieval_strategy not in RETRIEVAL_STRATEGIES:
+        retrieval_strategy = RETRIEVAL_VECTOR_BM25_RRF
     query_profile = analyze_query(question)
     metadata_filter = build_metadata_filter(query_profile)
     preferred_sources = set(preferred_sources or [])
@@ -787,11 +892,14 @@ def search_chroma(question, top_k=3, preferred_sources=None, preferred_only=Fals
         metadata_filter = {"source": {"$in": list(preferred_sources)}}
     recall_limit = max(top_k * 8, 24)
     vector_rows = vector_retrieve(question, limit=recall_limit, metadata_filter=metadata_filter)
-    bm25_rows = bm25_retrieve(question, limit=recall_limit, metadata_filter=metadata_filter)
+    bm25_rows = []
+    if retrieval_strategy != RETRIEVAL_VECTOR_ONLY:
+        bm25_rows = bm25_retrieve(question, limit=recall_limit, metadata_filter=metadata_filter)
     if metadata_filter and not preferred_only and not vector_rows and not bm25_rows:
         metadata_filter = None
         vector_rows = vector_retrieve(question, limit=recall_limit)
-        bm25_rows = bm25_retrieve(question, limit=recall_limit)
+        if retrieval_strategy != RETRIEVAL_VECTOR_ONLY:
+            bm25_rows = bm25_retrieve(question, limit=recall_limit)
     question_keywords = extract_query_keywords(question)
     query_profile["keywords"] = question_keywords
 
@@ -804,6 +912,7 @@ def search_chroma(question, top_k=3, preferred_sources=None, preferred_only=Fals
         fused.setdefault(item_id, row.copy())
         fused[item_id]["vector_rank"] = rank
         fused[item_id]["rrf_score"] = fused[item_id].get("rrf_score", 0) + 1 / (RRF_K + rank)
+        fused[item_id]["vector_score"] = vector_similarity_score(row)
 
     for rank, row in enumerate(bm25_rows, start=1):
         if not is_allowed_source(row, preferred_sources, preferred_only=preferred_only):
@@ -815,12 +924,22 @@ def search_chroma(question, top_k=3, preferred_sources=None, preferred_only=Fals
         fused[item_id]["rrf_score"] = fused[item_id].get("rrf_score", 0) + 1 / (RRF_K + rank)
 
     search_results = []
+    max_bm25_score = max((row.get("bm25_score", 0) for row in fused.values()), default=0)
 
     for row in fused.values():
         source_type = row.get("source_type", "unknown")
         source_priority = source_priority_score(row["source"], preferred_sources)
         keyword_hits = keyword_score(row["document"], question_keywords)
-        final_score = base_retrieval_score(row, source_priority, keyword_hits, query_profile)
+        if retrieval_strategy == RETRIEVAL_VECTOR_ONLY:
+            final_score = row.get("vector_score", vector_similarity_score(row))
+        elif retrieval_strategy == RETRIEVAL_VECTOR_BM25:
+            vector_component = row.get("vector_score", vector_similarity_score(row))
+            bm25_component = normalize_bm25_score(row.get("bm25_score", 0), max_bm25_score)
+            final_score = vector_component * 0.65 + bm25_component * 0.35
+            if source_priority:
+                final_score *= 1.1
+        else:
+            final_score = base_retrieval_score(row, source_priority, keyword_hits, query_profile)
         row["keyword_score"] = keyword_hits
         row["source_priority"] = source_priority
         row["source_weight"] = source_weight(source_type)
@@ -828,19 +947,29 @@ def search_chroma(question, top_k=3, preferred_sources=None, preferred_only=Fals
         row["answerability_score"] = row.get("answerability_score", 0)
         row["query_intent"] = query_profile["intent"]
         row["ranking_weights"] = str(query_profile["weights"])
+        row["retrieval_strategy"] = retrieval_strategy
+        row["context_packing_strategy"] = context_packing_strategy
         row["final_score"] = final_score
         row["pre_rerank_score"] = final_score
         search_results.append(row)
 
     search_results.sort(key=lambda item: item["final_score"], reverse=True)
-    search_results = rerank_results(
-        question,
-        search_results,
-        query_profile,
-        limit=max(top_k * 4, RERANK_LIMIT),
-    )
+    if retrieval_strategy == RETRIEVAL_VECTOR_BM25_RRF:
+        search_results = rerank_results(
+            question,
+            search_results,
+            query_profile,
+            limit=max(top_k * 4, RERANK_LIMIT),
+        )
+    else:
+        for row in search_results:
+            row["rerank_status"] = "未启用"
 
-    return pack_context_results(search_results, top_k)
+    return pack_context_results(
+        search_results,
+        top_k,
+        context_packing_strategy=context_packing_strategy,
+    )
 
 
 def build_context(search_results):

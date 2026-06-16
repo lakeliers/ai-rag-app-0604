@@ -66,18 +66,18 @@ def is_image(uploaded_file):
     return uploaded_file.type.startswith("image/")
 
 
-def file_key(uploaded_file):
-    return f"{uploaded_file.name}:{len(uploaded_file.getvalue())}"
+def file_key(uploaded_file, chunking_strategy):
+    return f"{uploaded_file.name}:{len(uploaded_file.getvalue())}:{chunking_strategy}"
 
 
-def ingest_uploaded_files(uploaded_files, question):
+def ingest_uploaded_files(uploaded_files, question, chunking_strategy):
     if not uploaded_files:
         return []
 
     ingested_sources = []
 
     for uploaded_file in uploaded_files:
-        key = file_key(uploaded_file)
+        key = file_key(uploaded_file, chunking_strategy)
         if key in st.session_state.ingested_uploads:
             ingested_sources.append(st.session_state.ingested_uploads[key])
             continue
@@ -99,6 +99,7 @@ def ingest_uploaded_files(uploaded_files, question):
                 source_type="upload",
                 url=uploaded_file.name,
                 content_type="image",
+                chunking_strategy=chunking_strategy,
             )
         else:
             sections = read_upload_as_sections(uploaded_file)
@@ -108,10 +109,11 @@ def ingest_uploaded_files(uploaded_files, question):
                 source=source,
                 source_type="upload",
                 url=uploaded_file.name,
+                chunking_strategy=chunking_strategy,
             )
 
         st.session_state.ingested_uploads[key] = source
-        st.session_state.upload_status.append(f"{source}：{chunk_count} 块")
+        st.session_state.upload_status.append(f"{source}：{chunk_count} 块｜切分：{chunking_strategy}")
         ingested_sources.append(source)
 
     return ingested_sources
@@ -137,6 +139,33 @@ SOURCE_STRATEGY_LABELS = {
     "仅上传资料": "upload_only",
     "仅联网资料": "web_only",
     "上传资料 + 联网并行": "upload_and_web",
+}
+RETRIEVAL_STRATEGY_LABELS = {
+    "仅向量检索": "vector_only",
+    "向量 + BM25": "vector_bm25",
+    "向量 + BM25 + RRF": "vector_bm25_rrf",
+}
+CONTEXT_PACKING_LABELS = {
+    "简单 TopK": "simple_topk",
+    "来源优先": "source_priority",
+    "去重 + 新鲜度 + 来源权重": "weighted",
+    "严格 token budget": "strict_budget",
+}
+CHUNKING_STRATEGY_LABELS = {
+    "普通文本切分": "plain",
+    "Parent-child": "parent_child",
+    "表格专用": "table",
+    "摘要 chunk": "summary",
+}
+PLANNER_TYPE_LABELS = {
+    "规则 Planner": "rules",
+    "LLM Tool Calling Planner": "llm_tool_calling",
+    "fallback 混合 Planner": "fallback_mixed",
+}
+EVALUATOR_TYPE_LABELS = {
+    "关闭": "off",
+    "规则评估": "rules",
+    "LLM-as-Judge": "llm_judge",
 }
 
 
@@ -189,6 +218,20 @@ with st.sidebar:
         else "rules"
     )
     max_autonomous_steps = st.slider("自主任务最大步数", 1, 5, 3)
+    planner_type_label = st.selectbox(
+        "Planner 类型",
+        list(PLANNER_TYPE_LABELS.keys()),
+        index=2,
+        help="规则 Planner 更稳定；LLM Tool Calling Planner 会让模型选择工具；fallback 混合 Planner 是当前教学默认链路。",
+    )
+    planner_type = PLANNER_TYPE_LABELS[planner_type_label]
+    evaluator_type_label = st.selectbox(
+        "Evaluator / Critic",
+        list(EVALUATOR_TYPE_LABELS.keys()),
+        index=1,
+        help="关闭会跳过资料充分性判断；规则评估适合线上低成本运行；LLM-as-Judge 目前在线上聊天中仅做占位提示，完整版本在 eval 脚本运行。",
+    )
+    evaluator_type = EVALUATOR_TYPE_LABELS[evaluator_type_label]
 
     st.divider()
     st.subheader("RAG 配置")
@@ -198,6 +241,27 @@ with st.sidebar:
         help="用于观察上传资料、网页资料和自动策略对结果的影响。",
     )
     source_strategy = SOURCE_STRATEGY_LABELS[source_strategy_label]
+    retrieval_strategy_label = st.selectbox(
+        "检索策略",
+        list(RETRIEVAL_STRATEGY_LABELS.keys()),
+        index=2,
+        help="用于对比向量召回、关键词召回和 RRF 融合召回的差异。",
+    )
+    retrieval_strategy = RETRIEVAL_STRATEGY_LABELS[retrieval_strategy_label]
+    context_packing_label = st.selectbox(
+        "Context Packing 策略",
+        list(CONTEXT_PACKING_LABELS.keys()),
+        index=3,
+        help="控制最终送进大模型的资料如何筛选、去重、配额和预算约束。",
+    )
+    context_packing_strategy = CONTEXT_PACKING_LABELS[context_packing_label]
+    chunking_strategy_label = st.selectbox(
+        "Chunking 策略",
+        list(CHUNKING_STRATEGY_LABELS.keys()),
+        index=1,
+        help="对新上传文件入库生效；已入库资料不会自动重切。",
+    )
+    chunking_strategy = CHUNKING_STRATEGY_LABELS[chunking_strategy_label]
     top_k = st.slider("资料条数", 1, 5, 3)
     web_max_results = st.slider("网页结果数", 1, 5, 2)
     reranker_enabled = st.toggle(
@@ -225,6 +289,10 @@ with st.sidebar:
     st.write("Planner:", planner_status)
     st.write("Router:", router_mode_label)
     st.write("Source:", source_strategy_label)
+    st.write("Retrieval:", retrieval_strategy_label)
+    st.write("Packing:", context_packing_label)
+    st.write("Chunking:", chunking_strategy_label)
+    st.write("Evaluator:", evaluator_type_label)
 
     if "upload_status" in st.session_state and st.session_state.upload_status:
         st.divider()
@@ -266,7 +334,7 @@ if prompt:
     with st.chat_message("assistant"):
         try:
             with st.spinner("执行 Agent 计划中..."):
-                uploaded_sources = ingest_uploaded_files(uploaded_files, prompt)
+                uploaded_sources = ingest_uploaded_files(uploaded_files, prompt, chunking_strategy)
 
                 use_autonomous_mode = False
                 autonomous_route_reason = ""
@@ -287,6 +355,10 @@ if prompt:
                         preferred_sources=uploaded_sources,
                         router_mode=router_mode,
                         source_strategy=source_strategy,
+                        retrieval_strategy=retrieval_strategy,
+                        context_packing_strategy=context_packing_strategy,
+                        planner_type=planner_type,
+                        evaluator_type=evaluator_type,
                     )
                 else:
                     result = call_with_supported_kwargs(
@@ -298,6 +370,10 @@ if prompt:
                         preferred_sources=uploaded_sources,
                         router_mode=router_mode,
                         source_strategy=source_strategy,
+                        retrieval_strategy=retrieval_strategy,
+                        context_packing_strategy=context_packing_strategy,
+                        planner_type=planner_type,
+                        evaluator_type=evaluator_type,
                     )
                     if run_mode == "自主任务":
                         result["planner_mode"] = "autonomous_fallback"
@@ -335,7 +411,11 @@ if prompt:
                         if result.get("planner_mode") == "pro_runtime"
                         else "规则兜底"
                     )
-                    st.caption(f"Planner来源：{planner_label}｜Router：{router_mode_label}｜Source：{source_strategy_label}")
+                    st.caption(
+                        f"Planner来源：{planner_label}｜Router：{router_mode_label}｜"
+                        f"Source：{source_strategy_label}｜Retrieval：{retrieval_strategy_label}｜"
+                        f"Packing：{context_packing_label}｜Evaluator：{evaluator_type_label}"
+                    )
                     for index, step in enumerate(result.get("steps", []), start=1):
                         status_map = {
                             "success": "成功",

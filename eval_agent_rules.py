@@ -212,6 +212,8 @@ def fake_rag_search(
     top_k: int,
     preferred_sources: list[str],
     source_strategy: str = SOURCE_STRATEGY_AUTO,
+    retrieval_strategy: str = "vector_bm25_rrf",
+    context_packing_strategy: str = "strict_budget",
 ) -> agent_runtime.ToolResult:
     results: list[dict[str, Any]] = []
     if preferred_sources and source_strategy != SOURCE_STRATEGY_WEB_ONLY:

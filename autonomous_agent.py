@@ -205,6 +205,10 @@ def execute_task_with_tool_agent(
         preferred_sources=preferred_sources,
         router_mode=state.goal.constraints.get("router_mode", "rules"),
         source_strategy=state.goal.constraints.get("source_strategy", "auto"),
+        retrieval_strategy=state.goal.constraints.get("retrieval_strategy", "vector_bm25_rrf"),
+        context_packing_strategy=state.goal.constraints.get("context_packing_strategy", "strict_budget"),
+        planner_type=state.goal.constraints.get("planner_type", "fallback_mixed"),
+        evaluator_type=state.goal.constraints.get("evaluator_type", "rules"),
     )
     return {
         "success": bool(result.get("answer")),
@@ -358,12 +362,20 @@ def run_autonomous_agent(
     preferred_sources: list[str] | None = None,
     router_mode: str = "rules",
     source_strategy: str = "auto",
+    retrieval_strategy: str = "vector_bm25_rrf",
+    context_packing_strategy: str = "strict_budget",
+    planner_type: str = "fallback_mixed",
+    evaluator_type: str = "rules",
     tool_agent_runner: Callable[..., dict[str, Any]] = agent_runtime.run_agent_pro,
 ) -> dict[str, Any]:
     preferred_sources = preferred_sources or []
     goal = create_goal(user_request, max_steps=max_steps, top_k=top_k, web_max_results=web_max_results)
     goal.constraints["router_mode"] = router_mode
     goal.constraints["source_strategy"] = source_strategy
+    goal.constraints["retrieval_strategy"] = retrieval_strategy
+    goal.constraints["context_packing_strategy"] = context_packing_strategy
+    goal.constraints["planner_type"] = planner_type
+    goal.constraints["evaluator_type"] = evaluator_type
     state = AutonomousState(goal=goal, tasks=create_initial_tasks(goal))
 
     while not state.done:
