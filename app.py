@@ -21,6 +21,8 @@ hf_token = get_secret("HF_TOKEN")
 enable_summary_chunks = get_secret("ENABLE_SUMMARY_CHUNKS")
 summary_min_chars = get_secret("SUMMARY_MIN_CHARS")
 enable_llm_planner = get_secret("ENABLE_LLM_PLANNER")
+github_token = get_secret("GITHUB_TOKEN")
+github_repo = get_secret("GITHUB_REPO")
 
 if deepseek_key:
     os.environ["DEEPSEEK_API_KEY"] = deepseek_key
@@ -40,11 +42,16 @@ if summary_min_chars:
     os.environ["SUMMARY_MIN_CHARS"] = summary_min_chars
 if enable_llm_planner:
     os.environ["ENABLE_LLM_PLANNER"] = enable_llm_planner
+if github_token:
+    os.environ["GITHUB_TOKEN"] = github_token
+if github_repo:
+    os.environ["GITHUB_REPO"] = github_repo
 
 import rag_agent_core as agent
 import parsing_layer
 import agent_runtime
 import autonomous_agent
+import badcase_manager
 
 agent.seed_local_note()
 
@@ -176,6 +183,214 @@ def call_with_supported_kwargs(func, *args, **kwargs):
         if key in supported_params
     }
     return func(*args, **filtered_kwargs)
+
+
+def parse_lines_input(value):
+    return [line.strip() for line in (value or "").splitlines() if line.strip()]
+
+
+def extract_tools_from_steps(steps):
+    tools = []
+    for step in steps or []:
+        tool = step.get("tool")
+        if tool and tool not in tools:
+            tools.append(tool)
+    return tools
+
+
+def extract_source_types(sources):
+    source_types = []
+    for source in sources or []:
+        source_type = source.get("source_type", "")
+        if source_type and source_type not in source_types:
+            source_types.append(source_type)
+    return source_types
+
+
+def build_current_config():
+    return {
+        "run_mode": run_mode,
+        "router_mode": router_mode,
+        "source_strategy": source_strategy,
+        "retrieval_strategy": retrieval_strategy,
+        "context_packing_strategy": context_packing_strategy,
+        "chunking_strategy": chunking_strategy,
+        "planner_type": planner_type,
+        "evaluator_type": evaluator_type,
+        "reranker_enabled": agent.ENABLE_RERANKER,
+        "top_k": top_k,
+        "web_max_results": web_max_results,
+        "max_autonomous_steps": max_autonomous_steps,
+    }
+
+
+def render_badcase_form():
+    run = st.session_state.get("last_agent_run")
+    if not run:
+        return
+
+    st.divider()
+    st.subheader("Bad Case / Regression Set")
+    st.caption("把最近一轮对话沉淀为 regression case。线上保存会创建 GitHub Issue，由开发者确认后再合并。")
+
+    if st.button("记录最近一轮为 Bad Case"):
+        st.session_state.show_badcase_form = True
+
+    if not st.session_state.get("show_badcase_form"):
+        return
+
+    with st.expander("补充 Regression Case 信息", expanded=True):
+        st.markdown("**当前问题现场**")
+        st.write("User Prompt：", run["user_input"])
+        st.write("Agent Answer：", run["actual_answer"])
+        st.caption("工具调用：" + (", ".join(run["tools_called"]) or "无"))
+        st.caption("资料来源：" + (", ".join(run["sources_used"]) or "无"))
+
+        default_category = "chitchat"
+        if "upload_status" in run["tools_called"]:
+            default_category = "upload_status"
+        elif "web_collect" in run["tools_called"]:
+            default_category = "web_rag"
+        elif run["config"].get("run_mode") == "自主任务":
+            default_category = "autonomous"
+
+        with st.form("badcase_form"):
+            save_target = st.radio(
+                "保存位置",
+                badcase_manager.SAVE_TARGETS,
+                index=0,
+                help="本地 eval 会直接写入 eval_cases.jsonl；线上 eval 会创建 GitHub Issue 等待开发者确认。",
+            )
+
+            st.markdown("**Case 基础信息**")
+            category = st.selectbox(
+                "category",
+                badcase_manager.CATEGORIES,
+                index=badcase_manager.CATEGORIES.index(default_category),
+            )
+            case_id = st.text_input(
+                "case_id",
+                value=badcase_manager.generate_case_id(run["user_input"], category),
+            )
+            suite = st.multiselect(
+                "suite",
+                badcase_manager.SUITES,
+                default=["regression"],
+            )
+            severity = st.radio(
+                "severity",
+                badcase_manager.SEVERITIES,
+                index=2,
+                horizontal=True,
+            )
+            problem_description = st.text_area(
+                "问题说明",
+                value="",
+                placeholder="说明这轮回答哪里错了，例如：能力介绍问题不应该联网检索，也不应该引用无关网页。",
+            )
+
+            st.markdown("**行为约束**")
+            selected_mode_default = (
+                "autonomous"
+                if run["config"].get("run_mode") == "自主任务"
+                else "normal"
+            )
+            selected_mode = st.radio(
+                "selected_mode",
+                badcase_manager.SELECTED_MODES,
+                index=badcase_manager.SELECTED_MODES.index(selected_mode_default),
+                horizontal=True,
+            )
+            expected_mode = st.selectbox(
+                "expected_mode",
+                [""] + badcase_manager.EXPECTED_MODES,
+                index=0,
+            )
+            expected_tools = st.multiselect("expected_tools", badcase_manager.TOOLS)
+            forbidden_tools = st.multiselect("forbidden_tools", badcase_manager.TOOLS)
+            expected_sources = st.multiselect("expected_sources", badcase_manager.SOURCES)
+            forbidden_sources = st.multiselect("forbidden_sources", badcase_manager.SOURCES)
+
+            st.markdown("**答案约束**")
+            required_phrases_text = st.text_input(
+                "required_phrases（逗号分隔）",
+                help="例如：上传，联网，RAG",
+            )
+            expected_answer_phrases_text = st.text_input(
+                "expected_answer_phrases（逗号分隔）",
+                help="用于更明确地要求答案必须包含某些表述。",
+            )
+            forbidden_answer_phrases_text = st.text_input(
+                "forbidden_answer_phrases（逗号分隔）",
+                help="例如：搜狐，极简生活，根据现有资料",
+            )
+            min_answer_chars = st.number_input(
+                "min_answer_chars",
+                min_value=0,
+                max_value=1000,
+                value=20,
+                step=1,
+            )
+            success_criteria_text = st.text_area(
+                "success_criteria（每行一条）",
+                value="",
+                placeholder="例如：不得引用历史上传资料\n必须直接介绍 Agent 能力",
+            )
+            note = st.text_area("note（人工备注，不参与规则评估）", value="")
+
+            submitted = st.form_submit_button("校验并提交")
+
+        if submitted:
+            case = {
+                "case_id": case_id.strip(),
+                "suite": suite,
+                "category": category,
+                "user_input": run["user_input"],
+                "selected_mode": selected_mode,
+                "required_phrases": badcase_manager.split_list(required_phrases_text),
+                "expected_answer_phrases": badcase_manager.split_list(expected_answer_phrases_text),
+                "forbidden_answer_phrases": badcase_manager.split_list(forbidden_answer_phrases_text),
+                "min_answer_chars": int(min_answer_chars),
+            }
+            if expected_mode:
+                case["expected_mode"] = expected_mode
+            if expected_tools:
+                case["expected_tools"] = expected_tools
+            if forbidden_tools:
+                case["forbidden_tools"] = forbidden_tools
+            if expected_sources:
+                case["expected_sources"] = expected_sources
+            if forbidden_sources:
+                case["forbidden_sources"] = forbidden_sources
+            success_criteria = parse_lines_input(success_criteria_text)
+            if success_criteria:
+                case["success_criteria"] = success_criteria
+
+            try:
+                save_result = badcase_manager.save_case(
+                    save_target=save_target,
+                    case=case,
+                    actual_answer=run["actual_answer"],
+                    config=run["config"],
+                    tools_called=run["tools_called"],
+                    sources_used=run["sources_used"],
+                    severity=severity,
+                    problem_description=problem_description,
+                    note=note,
+                )
+                if save_result["errors"]:
+                    for error in save_result["errors"]:
+                        st.error(error)
+                else:
+                    if save_result["local_eval_saved"]:
+                        st.success("已写入本地 eval_cases.jsonl。")
+                    if save_result["local_badcase_saved"]:
+                        st.success("已写入 bad_cases.jsonl。")
+                    if save_result["github_issue_url"]:
+                        st.success("已创建 GitHub Issue。")
+                        st.write(save_result["github_issue_url"])
+            except Exception as error:
+                st.error(str(error))
 
 
 with st.sidebar:
@@ -312,6 +527,12 @@ if "ingested_uploads" not in st.session_state:
 if "upload_status" not in st.session_state:
     st.session_state.upload_status = []
 
+if "last_agent_run" not in st.session_state:
+    st.session_state.last_agent_run = None
+
+if "show_badcase_form" not in st.session_state:
+    st.session_state.show_badcase_form = False
+
 
 for message in st.session_state.messages:
     with st.chat_message(message["role"]):
@@ -395,6 +616,14 @@ if prompt:
                 "content": result["answer"],
             })
             st.session_state.last_sources = result["sources"]
+            st.session_state.last_agent_run = {
+                "user_input": prompt,
+                "actual_answer": result["answer"],
+                "config": build_current_config(),
+                "tools_called": extract_tools_from_steps(result.get("steps", [])),
+                "sources_used": extract_source_types(result.get("sources", [])),
+                "planner_mode": result.get("planner_mode", ""),
+            }
 
             if trace_level != "隐藏":
                 with st.expander("查看 Agent 执行步骤"):
@@ -503,3 +732,5 @@ if prompt:
 
         except Exception as e:
             st.error(f"调用失败：{e}")
+
+render_badcase_form()
