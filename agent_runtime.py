@@ -148,9 +148,13 @@ def classify_intent(question: str, preferred_sources: list[str]) -> IntentResult
         "你是谁",
         "介绍一下你自己",
         "你能做什么",
+        "你能做些什么",
+        "你能做哪些事",
         "你会什么",
         "你擅长什么",
         "能帮我什么",
+        "可以帮我什么",
+        "能帮我做什么",
     ]
     if len(stripped_question) <= 30 and any(word in lowered_question for word in chitchat_words):
         return IntentResult(
@@ -627,6 +631,32 @@ def tool_generate_answer(question: str, search_results: list[dict[str, Any]]) ->
 
 
 def tool_direct_answer(question: str) -> ToolResult:
+    capability_question_words = [
+        "你能做什么",
+        "你能做些什么",
+        "你能做哪些事",
+        "你会什么",
+        "你擅长什么",
+        "能帮我什么",
+        "可以帮我什么",
+        "能帮我做什么",
+    ]
+    if any(word in question for word in capability_question_words):
+        answer = (
+            "我可以帮你做三类事情：\n\n"
+            "1. 基于你上传的资料做总结、提取要点、问答和对比分析。\n"
+            "2. 联网收集公开信息，再结合本地资料做 RAG 回答。\n"
+            "3. 帮你学习和实操 AI 产品经理相关主题，比如 RAG、Tool Agent、Autonomous Agent 和 Agent Eval。\n\n"
+            "你可以直接上传文件，或者问我一个具体问题。"
+        )
+        agent.conversation_history.append({"role": "user", "content": question})
+        agent.conversation_history.append({"role": "assistant", "content": answer})
+        return ToolResult(
+            status="success",
+            summary="识别为能力介绍问题，已直接说明可用能力。",
+            data=answer,
+        )
+
     client = agent.get_deepseek_client()
     if client is None:
         raise RuntimeError("没有找到 DEEPSEEK_API_KEY。")

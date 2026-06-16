@@ -167,6 +167,8 @@ def ensure_eval_upload_fixtures(cases: list[dict[str, Any]]) -> None:
 def fake_direct_answer(question: str) -> agent_runtime.ToolResult:
     if "萧玄" in question:
         answer = "你好，萧玄，很高兴继续和你一起学习 AI Agent。"
+    elif any(word in question for word in ["你能做什么", "你能做些什么", "你能做哪些事", "你会什么", "你擅长什么"]):
+        answer = "我可以帮你上传资料问答、联网收集公开信息，并学习 RAG、Tool Agent、Autonomous Agent 和 Agent Eval。"
     else:
         answer = "你好，我可以帮你学习 RAG、Tool Agent、Autonomous Agent 和 Agent Eval。"
     return agent_runtime.ToolResult(status="success", summary="模拟直接回复。", data=answer)
