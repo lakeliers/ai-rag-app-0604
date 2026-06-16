@@ -1,0 +1,1396 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Teaching Config Matrix Eval</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; margin: 32px; color: #1f2937; }
+    h1 { margin-bottom: 4px; }
+    .sub { color: #6b7280; margin-bottom: 24px; }
+    .metrics { display: flex; gap: 12px; margin-bottom: 24px; }
+    .card { border: 1px solid #e5e7eb; border-radius: 8px; padding: 14px 16px; min-width: 120px; background: #f9fafb; }
+    .metric { font-size: 28px; font-weight: 700; }
+    table { border-collapse: collapse; width: 100%; }
+    th, td { border-bottom: 1px solid #e5e7eb; padding: 10px; text-align: left; vertical-align: top; }
+    th { background: #f3f4f6; position: sticky; top: 0; }
+    .pass { color: #047857; font-weight: 700; }
+    .fail { color: #b91c1c; font-weight: 700; }
+    pre { margin: 0; white-space: pre-wrap; font-size: 12px; max-height: 260px; overflow: auto; }
+  </style>
+</head>
+<body>
+  <h1>Teaching Config Matrix Eval</h1>
+  <div class="sub">生成时间：2026-06-16 15:20:41。模式：mock-plumbing。用于检查每个教学配置项是否能正常跑通。</div>
+  <div class="metrics">
+    <div class="card"><div class="metric">33</div><div>配置样本</div></div>
+    <div class="card"><div class="metric pass">33</div><div>通过</div></div>
+    <div class="card"><div class="metric fail">0</div><div>失败</div></div>
+    <div class="card"><div class="metric">100%</div><div>通过率</div></div>
+  </div>
+  <table>
+    <thead>
+      <tr><th>配置组</th><th>选项</th><th>结果</th><th>Prompt</th><th>配置</th><th>运行摘要</th></tr>
+    </thead>
+    <tbody>
+      
+        <tr>
+          <td>运行模式</td>
+          <td>普通问答</td>
+          <td class="pass">通过</td>
+          <td>RAG 是什么？</td>
+          <td><pre>{
+  &quot;run_mode&quot;: &quot;normal&quot;,
+  &quot;router_mode&quot;: &quot;rules&quot;,
+  &quot;source_strategy&quot;: &quot;auto&quot;,
+  &quot;retrieval_strategy&quot;: &quot;vector_bm25_rrf&quot;,
+  &quot;context_packing_strategy&quot;: &quot;strict_budget&quot;,
+  &quot;chunking_strategy&quot;: &quot;parent_child&quot;,
+  &quot;planner_type&quot;: &quot;fallback_mixed&quot;,
+  &quot;evaluator_type&quot;: &quot;rules&quot;,
+  &quot;reranker_enabled&quot;: true,
+  &quot;trace_level&quot;: &quot;简洁&quot;,
+  &quot;top_k&quot;: 3,
+  &quot;web_max_results&quot;: 2
+}</pre></td>
+          <td><pre>{
+  &quot;planner_mode&quot;: &quot;pro_runtime&quot;,
+  &quot;tools&quot;: [
+    &quot;intent_classifier&quot;,
+    &quot;planner&quot;,
+    &quot;orchestrator&quot;,
+    &quot;dag_runtime&quot;,
+    &quot;web_collect&quot;,
+    &quot;dag_runtime&quot;,
+    &quot;rag_search&quot;,
+    &quot;aggregator&quot;,
+    &quot;evaluator&quot;,
+    &quot;generate_answer&quot;,
+    &quot;answer_validator&quot;
+  ],
+  &quot;source_types&quot;: [
+    &quot;local&quot;
+  ],
+  &quot;extra&quot;: {},
+  &quot;answer_preview&quot;: &quot;RAG 是检索增强生成：先检索相关资料，再让大模型基于资料回答。参考来源：我的AI学习笔记。&quot;,
+  &quot;elapsed_ms&quot;: 1,
+  &quot;error&quot;: &quot;&quot;
+}</pre></td>
+        </tr>
+        
+        <tr>
+          <td>运行模式</td>
+          <td>自主任务</td>
+          <td class="pass">通过</td>
+          <td>调研 AI Agent 产品趋势，并给产品经理学习建议</td>
+          <td><pre>{
+  &quot;run_mode&quot;: &quot;autonomous&quot;,
+  &quot;router_mode&quot;: &quot;rules&quot;,
+  &quot;source_strategy&quot;: &quot;auto&quot;,
+  &quot;retrieval_strategy&quot;: &quot;vector_bm25_rrf&quot;,
+  &quot;context_packing_strategy&quot;: &quot;strict_budget&quot;,
+  &quot;chunking_strategy&quot;: &quot;parent_child&quot;,
+  &quot;planner_type&quot;: &quot;fallback_mixed&quot;,
+  &quot;evaluator_type&quot;: &quot;rules&quot;,
+  &quot;reranker_enabled&quot;: true,
+  &quot;trace_level&quot;: &quot;简洁&quot;,
+  &quot;top_k&quot;: 3,
+  &quot;web_max_results&quot;: 2
+}</pre></td>
+          <td><pre>{
+  &quot;planner_mode&quot;: &quot;autonomous_runtime&quot;,
+  &quot;tools&quot;: [],
+  &quot;source_types&quot;: [
+    &quot;web&quot;
+  ],
+  &quot;extra&quot;: {},
+  &quot;answer_preview&quot;: &quot;Tool Agent 更偏向在单次任务中调用工具完成动作，Autonomous Agent 更偏向围绕目标拆任务、循环推进和自检。参考来源：AI Agent trends web。&quot;,
+  &quot;elapsed_ms&quot;: 0,
+  &quot;error&quot;: &quot;&quot;
+}</pre></td>
+        </tr>
+        
+        <tr>
+          <td>路由模式</td>
+          <td>规则路由</td>
+          <td class="pass">通过</td>
+          <td>你能做些什么</td>
+          <td><pre>{
+  &quot;run_mode&quot;: &quot;normal&quot;,
+  &quot;router_mode&quot;: &quot;rules&quot;,
+  &quot;source_strategy&quot;: &quot;auto&quot;,
+  &quot;retrieval_strategy&quot;: &quot;vector_bm25_rrf&quot;,
+  &quot;context_packing_strategy&quot;: &quot;strict_budget&quot;,
+  &quot;chunking_strategy&quot;: &quot;parent_child&quot;,
+  &quot;planner_type&quot;: &quot;fallback_mixed&quot;,
+  &quot;evaluator_type&quot;: &quot;rules&quot;,
+  &quot;reranker_enabled&quot;: true,
+  &quot;trace_level&quot;: &quot;简洁&quot;,
+  &quot;top_k&quot;: 3,
+  &quot;web_max_results&quot;: 2
+}</pre></td>
+          <td><pre>{
+  &quot;planner_mode&quot;: &quot;pro_runtime&quot;,
+  &quot;tools&quot;: [
+    &quot;intent_classifier&quot;,
+    &quot;planner&quot;,
+    &quot;orchestrator&quot;,
+    &quot;dag_runtime&quot;,
+    &quot;direct_answer&quot;
+  ],
+  &quot;source_types&quot;: [],
+  &quot;extra&quot;: {},
+  &quot;answer_preview&quot;: &quot;我可以帮你上传资料问答、联网收集公开信息，并学习 RAG、Tool Agent、Autonomous Agent 和 Agent Eval。&quot;,
+  &quot;elapsed_ms&quot;: 0,
+  &quot;error&quot;: &quot;&quot;
+}</pre></td>
+        </tr>
+        
+        <tr>
+          <td>路由模式</td>
+          <td>规则-LLM-规则路由</td>
+          <td class="pass">通过</td>
+          <td>你能做些什么</td>
+          <td><pre>{
+  &quot;run_mode&quot;: &quot;normal&quot;,
+  &quot;router_mode&quot;: &quot;hybrid&quot;,
+  &quot;source_strategy&quot;: &quot;auto&quot;,
+  &quot;retrieval_strategy&quot;: &quot;vector_bm25_rrf&quot;,
+  &quot;context_packing_strategy&quot;: &quot;strict_budget&quot;,
+  &quot;chunking_strategy&quot;: &quot;parent_child&quot;,
+  &quot;planner_type&quot;: &quot;fallback_mixed&quot;,
+  &quot;evaluator_type&quot;: &quot;rules&quot;,
+  &quot;reranker_enabled&quot;: true,
+  &quot;trace_level&quot;: &quot;简洁&quot;,
+  &quot;top_k&quot;: 3,
+  &quot;web_max_results&quot;: 2
+}</pre></td>
+          <td><pre>{
+  &quot;planner_mode&quot;: &quot;pro_runtime&quot;,
+  &quot;tools&quot;: [
+    &quot;intent_classifier&quot;,
+    &quot;planner&quot;,
+    &quot;orchestrator&quot;,
+    &quot;dag_runtime&quot;,
+    &quot;direct_answer&quot;
+  ],
+  &quot;source_types&quot;: [],
+  &quot;extra&quot;: {},
+  &quot;answer_preview&quot;: &quot;我可以帮你上传资料问答、联网收集公开信息，并学习 RAG、Tool Agent、Autonomous Agent 和 Agent Eval。&quot;,
+  &quot;elapsed_ms&quot;: 0,
+  &quot;error&quot;: &quot;&quot;
+}</pre></td>
+        </tr>
+        
+        <tr>
+          <td>资料来源策略</td>
+          <td>自动判断</td>
+          <td class="pass">通过</td>
+          <td>RAG 是什么？</td>
+          <td><pre>{
+  &quot;run_mode&quot;: &quot;normal&quot;,
+  &quot;router_mode&quot;: &quot;rules&quot;,
+  &quot;source_strategy&quot;: &quot;auto&quot;,
+  &quot;retrieval_strategy&quot;: &quot;vector_bm25_rrf&quot;,
+  &quot;context_packing_strategy&quot;: &quot;strict_budget&quot;,
+  &quot;chunking_strategy&quot;: &quot;parent_child&quot;,
+  &quot;planner_type&quot;: &quot;fallback_mixed&quot;,
+  &quot;evaluator_type&quot;: &quot;rules&quot;,
+  &quot;reranker_enabled&quot;: true,
+  &quot;trace_level&quot;: &quot;简洁&quot;,
+  &quot;top_k&quot;: 3,
+  &quot;web_max_results&quot;: 2
+}</pre></td>
+          <td><pre>{
+  &quot;planner_mode&quot;: &quot;pro_runtime&quot;,
+  &quot;tools&quot;: [
+    &quot;intent_classifier&quot;,
+    &quot;planner&quot;,
+    &quot;orchestrator&quot;,
+    &quot;dag_runtime&quot;,
+    &quot;web_collect&quot;,
+    &quot;dag_runtime&quot;,
+    &quot;rag_search&quot;,
+    &quot;aggregator&quot;,
+    &quot;evaluator&quot;,
+    &quot;generate_answer&quot;,
+    &quot;answer_validator&quot;
+  ],
+  &quot;source_types&quot;: [
+    &quot;local&quot;
+  ],
+  &quot;extra&quot;: {},
+  &quot;answer_preview&quot;: &quot;RAG 是检索增强生成：先检索相关资料，再让大模型基于资料回答。参考来源：我的AI学习笔记。&quot;,
+  &quot;elapsed_ms&quot;: 0,
+  &quot;error&quot;: &quot;&quot;
+}</pre></td>
+        </tr>
+        
+        <tr>
+          <td>资料来源策略</td>
+          <td>仅上传资料</td>
+          <td class="pass">通过</td>
+          <td>总结这份资料的核心观点</td>
+          <td><pre>{
+  &quot;run_mode&quot;: &quot;normal&quot;,
+  &quot;router_mode&quot;: &quot;rules&quot;,
+  &quot;source_strategy&quot;: &quot;upload_only&quot;,
+  &quot;retrieval_strategy&quot;: &quot;vector_bm25_rrf&quot;,
+  &quot;context_packing_strategy&quot;: &quot;strict_budget&quot;,
+  &quot;chunking_strategy&quot;: &quot;parent_child&quot;,
+  &quot;planner_type&quot;: &quot;fallback_mixed&quot;,
+  &quot;evaluator_type&quot;: &quot;rules&quot;,
+  &quot;reranker_enabled&quot;: true,
+  &quot;trace_level&quot;: &quot;简洁&quot;,
+  &quot;top_k&quot;: 3,
+  &quot;web_max_results&quot;: 2
+}</pre></td>
+          <td><pre>{
+  &quot;planner_mode&quot;: &quot;pro_runtime&quot;,
+  &quot;tools&quot;: [
+    &quot;intent_classifier&quot;,
+    &quot;planner&quot;,
+    &quot;orchestrator&quot;,
+    &quot;dag_runtime&quot;,
+    &quot;rag_search&quot;,
+    &quot;aggregator&quot;,
+    &quot;evaluator&quot;,
+    &quot;generate_answer&quot;,
+    &quot;answer_validator&quot;
+  ],
+  &quot;source_types&quot;: [
+    &quot;upload&quot;
+  ],
+  &quot;extra&quot;: {},
+  &quot;answer_preview&quot;: &quot;基于当前资料，可以给出初步回答。参考来源：上传：AI产品经理学习笔记.md。&quot;,
+  &quot;elapsed_ms&quot;: 0,
+  &quot;error&quot;: &quot;&quot;
+}</pre></td>
+        </tr>
+        
+        <tr>
+          <td>资料来源策略</td>
+          <td>仅联网资料</td>
+          <td class="pass">通过</td>
+          <td>最近 AI Agent 有什么新趋势？</td>
+          <td><pre>{
+  &quot;run_mode&quot;: &quot;normal&quot;,
+  &quot;router_mode&quot;: &quot;rules&quot;,
+  &quot;source_strategy&quot;: &quot;web_only&quot;,
+  &quot;retrieval_strategy&quot;: &quot;vector_bm25_rrf&quot;,
+  &quot;context_packing_strategy&quot;: &quot;strict_budget&quot;,
+  &quot;chunking_strategy&quot;: &quot;parent_child&quot;,
+  &quot;planner_type&quot;: &quot;fallback_mixed&quot;,
+  &quot;evaluator_type&quot;: &quot;rules&quot;,
+  &quot;reranker_enabled&quot;: true,
+  &quot;trace_level&quot;: &quot;简洁&quot;,
+  &quot;top_k&quot;: 3,
+  &quot;web_max_results&quot;: 2
+}</pre></td>
+          <td><pre>{
+  &quot;planner_mode&quot;: &quot;pro_runtime&quot;,
+  &quot;tools&quot;: [
+    &quot;intent_classifier&quot;,
+    &quot;planner&quot;,
+    &quot;orchestrator&quot;,
+    &quot;dag_runtime&quot;,
+    &quot;web_collect&quot;,
+    &quot;dag_runtime&quot;,
+    &quot;rag_search&quot;,
+    &quot;aggregator&quot;,
+    &quot;evaluator&quot;,
+    &quot;generate_answer&quot;,
+    &quot;answer_validator&quot;
+  ],
+  &quot;source_types&quot;: [
+    &quot;web&quot;
+  ],
+  &quot;extra&quot;: {},
+  &quot;answer_preview&quot;: &quot;结论：AI Agent 正在从单轮工具调用走向任务级自主推进。关键趋势包括多工具编排、可观测运行时、评估体系和更严格的数据权限控制。参考来源：AI Agent trends web。&quot;,
+  &quot;elapsed_ms&quot;: 0,
+  &quot;error&quot;: &quot;&quot;
+}</pre></td>
+        </tr>
+        
+        <tr>
+          <td>资料来源策略</td>
+          <td>上传资料 + 联网并行</td>
+          <td class="pass">通过</td>
+          <td>结合我上传的资料，再查一下最近有没有类似案例</td>
+          <td><pre>{
+  &quot;run_mode&quot;: &quot;normal&quot;,
+  &quot;router_mode&quot;: &quot;rules&quot;,
+  &quot;source_strategy&quot;: &quot;upload_and_web&quot;,
+  &quot;retrieval_strategy&quot;: &quot;vector_bm25_rrf&quot;,
+  &quot;context_packing_strategy&quot;: &quot;strict_budget&quot;,
+  &quot;chunking_strategy&quot;: &quot;parent_child&quot;,
+  &quot;planner_type&quot;: &quot;fallback_mixed&quot;,
+  &quot;evaluator_type&quot;: &quot;rules&quot;,
+  &quot;reranker_enabled&quot;: true,
+  &quot;trace_level&quot;: &quot;简洁&quot;,
+  &quot;top_k&quot;: 3,
+  &quot;web_max_results&quot;: 2
+}</pre></td>
+          <td><pre>{
+  &quot;planner_mode&quot;: &quot;pro_runtime&quot;,
+  &quot;tools&quot;: [
+    &quot;intent_classifier&quot;,
+    &quot;planner&quot;,
+    &quot;orchestrator&quot;,
+    &quot;dag_runtime&quot;,
+    &quot;web_collect&quot;,
+    &quot;dag_runtime&quot;,
+    &quot;rag_search&quot;,
+    &quot;aggregator&quot;,
+    &quot;evaluator&quot;,
+    &quot;generate_answer&quot;,
+    &quot;answer_validator&quot;
+  ],
+  &quot;source_types&quot;: [
+    &quot;upload&quot;,
+    &quot;web&quot;
+  ],
+  &quot;extra&quot;: {},
+  &quot;answer_preview&quot;: &quot;基于当前资料，可以给出初步回答。参考来源：上传：AI产品经理学习笔记.md、AI Agent trends web。&quot;,
+  &quot;elapsed_ms&quot;: 0,
+  &quot;error&quot;: &quot;&quot;
+}</pre></td>
+        </tr>
+        
+        <tr>
+          <td>检索策略</td>
+          <td>仅向量检索</td>
+          <td class="pass">通过</td>
+          <td>BM25 和向量检索有什么区别？</td>
+          <td><pre>{
+  &quot;run_mode&quot;: &quot;normal&quot;,
+  &quot;router_mode&quot;: &quot;rules&quot;,
+  &quot;source_strategy&quot;: &quot;auto&quot;,
+  &quot;retrieval_strategy&quot;: &quot;vector_only&quot;,
+  &quot;context_packing_strategy&quot;: &quot;strict_budget&quot;,
+  &quot;chunking_strategy&quot;: &quot;parent_child&quot;,
+  &quot;planner_type&quot;: &quot;fallback_mixed&quot;,
+  &quot;evaluator_type&quot;: &quot;rules&quot;,
+  &quot;reranker_enabled&quot;: true,
+  &quot;trace_level&quot;: &quot;简洁&quot;,
+  &quot;top_k&quot;: 3,
+  &quot;web_max_results&quot;: 2
+}</pre></td>
+          <td><pre>{
+  &quot;planner_mode&quot;: &quot;pro_runtime&quot;,
+  &quot;tools&quot;: [
+    &quot;intent_classifier&quot;,
+    &quot;planner&quot;,
+    &quot;orchestrator&quot;,
+    &quot;dag_runtime&quot;,
+    &quot;web_collect&quot;,
+    &quot;dag_runtime&quot;,
+    &quot;rag_search&quot;,
+    &quot;aggregator&quot;,
+    &quot;evaluator&quot;,
+    &quot;generate_answer&quot;,
+    &quot;answer_validator&quot;
+  ],
+  &quot;source_types&quot;: [
+    &quot;local&quot;
+  ],
+  &quot;extra&quot;: {},
+  &quot;answer_preview&quot;: &quot;基于当前资料，可以给出初步回答。参考来源：我的AI学习笔记。&quot;,
+  &quot;elapsed_ms&quot;: 0,
+  &quot;error&quot;: &quot;&quot;
+}</pre></td>
+        </tr>
+        
+        <tr>
+          <td>检索策略</td>
+          <td>向量 + BM25</td>
+          <td class="pass">通过</td>
+          <td>BM25 和向量检索有什么区别？</td>
+          <td><pre>{
+  &quot;run_mode&quot;: &quot;normal&quot;,
+  &quot;router_mode&quot;: &quot;rules&quot;,
+  &quot;source_strategy&quot;: &quot;auto&quot;,
+  &quot;retrieval_strategy&quot;: &quot;vector_bm25&quot;,
+  &quot;context_packing_strategy&quot;: &quot;strict_budget&quot;,
+  &quot;chunking_strategy&quot;: &quot;parent_child&quot;,
+  &quot;planner_type&quot;: &quot;fallback_mixed&quot;,
+  &quot;evaluator_type&quot;: &quot;rules&quot;,
+  &quot;reranker_enabled&quot;: true,
+  &quot;trace_level&quot;: &quot;简洁&quot;,
+  &quot;top_k&quot;: 3,
+  &quot;web_max_results&quot;: 2
+}</pre></td>
+          <td><pre>{
+  &quot;planner_mode&quot;: &quot;pro_runtime&quot;,
+  &quot;tools&quot;: [
+    &quot;intent_classifier&quot;,
+    &quot;planner&quot;,
+    &quot;orchestrator&quot;,
+    &quot;dag_runtime&quot;,
+    &quot;web_collect&quot;,
+    &quot;dag_runtime&quot;,
+    &quot;rag_search&quot;,
+    &quot;aggregator&quot;,
+    &quot;evaluator&quot;,
+    &quot;generate_answer&quot;,
+    &quot;answer_validator&quot;
+  ],
+  &quot;source_types&quot;: [
+    &quot;local&quot;
+  ],
+  &quot;extra&quot;: {},
+  &quot;answer_preview&quot;: &quot;基于当前资料，可以给出初步回答。参考来源：我的AI学习笔记。&quot;,
+  &quot;elapsed_ms&quot;: 0,
+  &quot;error&quot;: &quot;&quot;
+}</pre></td>
+        </tr>
+        
+        <tr>
+          <td>检索策略</td>
+          <td>向量 + BM25 + RRF</td>
+          <td class="pass">通过</td>
+          <td>BM25 和向量检索有什么区别？</td>
+          <td><pre>{
+  &quot;run_mode&quot;: &quot;normal&quot;,
+  &quot;router_mode&quot;: &quot;rules&quot;,
+  &quot;source_strategy&quot;: &quot;auto&quot;,
+  &quot;retrieval_strategy&quot;: &quot;vector_bm25_rrf&quot;,
+  &quot;context_packing_strategy&quot;: &quot;strict_budget&quot;,
+  &quot;chunking_strategy&quot;: &quot;parent_child&quot;,
+  &quot;planner_type&quot;: &quot;fallback_mixed&quot;,
+  &quot;evaluator_type&quot;: &quot;rules&quot;,
+  &quot;reranker_enabled&quot;: true,
+  &quot;trace_level&quot;: &quot;简洁&quot;,
+  &quot;top_k&quot;: 3,
+  &quot;web_max_results&quot;: 2
+}</pre></td>
+          <td><pre>{
+  &quot;planner_mode&quot;: &quot;pro_runtime&quot;,
+  &quot;tools&quot;: [
+    &quot;intent_classifier&quot;,
+    &quot;planner&quot;,
+    &quot;orchestrator&quot;,
+    &quot;dag_runtime&quot;,
+    &quot;web_collect&quot;,
+    &quot;dag_runtime&quot;,
+    &quot;rag_search&quot;,
+    &quot;aggregator&quot;,
+    &quot;evaluator&quot;,
+    &quot;generate_answer&quot;,
+    &quot;answer_validator&quot;
+  ],
+  &quot;source_types&quot;: [
+    &quot;local&quot;
+  ],
+  &quot;extra&quot;: {},
+  &quot;answer_preview&quot;: &quot;基于当前资料，可以给出初步回答。参考来源：我的AI学习笔记。&quot;,
+  &quot;elapsed_ms&quot;: 0,
+  &quot;error&quot;: &quot;&quot;
+}</pre></td>
+        </tr>
+        
+        <tr>
+          <td>Context Packing</td>
+          <td>简单 TopK</td>
+          <td class="pass">通过</td>
+          <td>总结这份资料的核心观点</td>
+          <td><pre>{
+  &quot;run_mode&quot;: &quot;normal&quot;,
+  &quot;router_mode&quot;: &quot;rules&quot;,
+  &quot;source_strategy&quot;: &quot;auto&quot;,
+  &quot;retrieval_strategy&quot;: &quot;vector_bm25_rrf&quot;,
+  &quot;context_packing_strategy&quot;: &quot;simple_topk&quot;,
+  &quot;chunking_strategy&quot;: &quot;parent_child&quot;,
+  &quot;planner_type&quot;: &quot;fallback_mixed&quot;,
+  &quot;evaluator_type&quot;: &quot;rules&quot;,
+  &quot;reranker_enabled&quot;: true,
+  &quot;trace_level&quot;: &quot;简洁&quot;,
+  &quot;top_k&quot;: 3,
+  &quot;web_max_results&quot;: 2
+}</pre></td>
+          <td><pre>{
+  &quot;planner_mode&quot;: &quot;pro_runtime&quot;,
+  &quot;tools&quot;: [
+    &quot;intent_classifier&quot;,
+    &quot;planner&quot;,
+    &quot;orchestrator&quot;,
+    &quot;dag_runtime&quot;,
+    &quot;rag_search&quot;,
+    &quot;aggregator&quot;,
+    &quot;evaluator&quot;,
+    &quot;generate_answer&quot;,
+    &quot;answer_validator&quot;
+  ],
+  &quot;source_types&quot;: [
+    &quot;upload&quot;
+  ],
+  &quot;extra&quot;: {},
+  &quot;answer_preview&quot;: &quot;基于当前资料，可以给出初步回答。参考来源：上传：AI产品经理学习笔记.md。&quot;,
+  &quot;elapsed_ms&quot;: 0,
+  &quot;error&quot;: &quot;&quot;
+}</pre></td>
+        </tr>
+        
+        <tr>
+          <td>Context Packing</td>
+          <td>来源优先</td>
+          <td class="pass">通过</td>
+          <td>总结这份资料的核心观点</td>
+          <td><pre>{
+  &quot;run_mode&quot;: &quot;normal&quot;,
+  &quot;router_mode&quot;: &quot;rules&quot;,
+  &quot;source_strategy&quot;: &quot;auto&quot;,
+  &quot;retrieval_strategy&quot;: &quot;vector_bm25_rrf&quot;,
+  &quot;context_packing_strategy&quot;: &quot;source_priority&quot;,
+  &quot;chunking_strategy&quot;: &quot;parent_child&quot;,
+  &quot;planner_type&quot;: &quot;fallback_mixed&quot;,
+  &quot;evaluator_type&quot;: &quot;rules&quot;,
+  &quot;reranker_enabled&quot;: true,
+  &quot;trace_level&quot;: &quot;简洁&quot;,
+  &quot;top_k&quot;: 3,
+  &quot;web_max_results&quot;: 2
+}</pre></td>
+          <td><pre>{
+  &quot;planner_mode&quot;: &quot;pro_runtime&quot;,
+  &quot;tools&quot;: [
+    &quot;intent_classifier&quot;,
+    &quot;planner&quot;,
+    &quot;orchestrator&quot;,
+    &quot;dag_runtime&quot;,
+    &quot;rag_search&quot;,
+    &quot;aggregator&quot;,
+    &quot;evaluator&quot;,
+    &quot;generate_answer&quot;,
+    &quot;answer_validator&quot;
+  ],
+  &quot;source_types&quot;: [
+    &quot;upload&quot;
+  ],
+  &quot;extra&quot;: {},
+  &quot;answer_preview&quot;: &quot;基于当前资料，可以给出初步回答。参考来源：上传：AI产品经理学习笔记.md。&quot;,
+  &quot;elapsed_ms&quot;: 0,
+  &quot;error&quot;: &quot;&quot;
+}</pre></td>
+        </tr>
+        
+        <tr>
+          <td>Context Packing</td>
+          <td>去重 + 新鲜度 + 来源权重</td>
+          <td class="pass">通过</td>
+          <td>结合我上传的资料，再查一下最近有没有类似案例</td>
+          <td><pre>{
+  &quot;run_mode&quot;: &quot;normal&quot;,
+  &quot;router_mode&quot;: &quot;rules&quot;,
+  &quot;source_strategy&quot;: &quot;auto&quot;,
+  &quot;retrieval_strategy&quot;: &quot;vector_bm25_rrf&quot;,
+  &quot;context_packing_strategy&quot;: &quot;weighted&quot;,
+  &quot;chunking_strategy&quot;: &quot;parent_child&quot;,
+  &quot;planner_type&quot;: &quot;fallback_mixed&quot;,
+  &quot;evaluator_type&quot;: &quot;rules&quot;,
+  &quot;reranker_enabled&quot;: true,
+  &quot;trace_level&quot;: &quot;简洁&quot;,
+  &quot;top_k&quot;: 3,
+  &quot;web_max_results&quot;: 2
+}</pre></td>
+          <td><pre>{
+  &quot;planner_mode&quot;: &quot;pro_runtime&quot;,
+  &quot;tools&quot;: [
+    &quot;intent_classifier&quot;,
+    &quot;planner&quot;,
+    &quot;orchestrator&quot;,
+    &quot;dag_runtime&quot;,
+    &quot;web_collect&quot;,
+    &quot;dag_runtime&quot;,
+    &quot;rag_search&quot;,
+    &quot;aggregator&quot;,
+    &quot;evaluator&quot;,
+    &quot;generate_answer&quot;,
+    &quot;answer_validator&quot;
+  ],
+  &quot;source_types&quot;: [
+    &quot;upload&quot;,
+    &quot;web&quot;
+  ],
+  &quot;extra&quot;: {},
+  &quot;answer_preview&quot;: &quot;基于当前资料，可以给出初步回答。参考来源：上传：AI产品经理学习笔记.md、AI Agent trends web。&quot;,
+  &quot;elapsed_ms&quot;: 0,
+  &quot;error&quot;: &quot;&quot;
+}</pre></td>
+        </tr>
+        
+        <tr>
+          <td>Context Packing</td>
+          <td>严格 token budget</td>
+          <td class="pass">通过</td>
+          <td>结合我上传的资料，再查一下最近有没有类似案例</td>
+          <td><pre>{
+  &quot;run_mode&quot;: &quot;normal&quot;,
+  &quot;router_mode&quot;: &quot;rules&quot;,
+  &quot;source_strategy&quot;: &quot;auto&quot;,
+  &quot;retrieval_strategy&quot;: &quot;vector_bm25_rrf&quot;,
+  &quot;context_packing_strategy&quot;: &quot;strict_budget&quot;,
+  &quot;chunking_strategy&quot;: &quot;parent_child&quot;,
+  &quot;planner_type&quot;: &quot;fallback_mixed&quot;,
+  &quot;evaluator_type&quot;: &quot;rules&quot;,
+  &quot;reranker_enabled&quot;: true,
+  &quot;trace_level&quot;: &quot;简洁&quot;,
+  &quot;top_k&quot;: 3,
+  &quot;web_max_results&quot;: 2
+}</pre></td>
+          <td><pre>{
+  &quot;planner_mode&quot;: &quot;pro_runtime&quot;,
+  &quot;tools&quot;: [
+    &quot;intent_classifier&quot;,
+    &quot;planner&quot;,
+    &quot;orchestrator&quot;,
+    &quot;dag_runtime&quot;,
+    &quot;web_collect&quot;,
+    &quot;dag_runtime&quot;,
+    &quot;rag_search&quot;,
+    &quot;aggregator&quot;,
+    &quot;evaluator&quot;,
+    &quot;generate_answer&quot;,
+    &quot;answer_validator&quot;
+  ],
+  &quot;source_types&quot;: [
+    &quot;upload&quot;,
+    &quot;web&quot;
+  ],
+  &quot;extra&quot;: {},
+  &quot;answer_preview&quot;: &quot;基于当前资料，可以给出初步回答。参考来源：上传：AI产品经理学习笔记.md、AI Agent trends web。&quot;,
+  &quot;elapsed_ms&quot;: 0,
+  &quot;error&quot;: &quot;&quot;
+}</pre></td>
+        </tr>
+        
+        <tr>
+          <td>Chunking</td>
+          <td>普通文本切分</td>
+          <td class="pass">通过</td>
+          <td>上传同一份长文档后问：第二部分讲了什么？</td>
+          <td><pre>{
+  &quot;run_mode&quot;: &quot;normal&quot;,
+  &quot;router_mode&quot;: &quot;rules&quot;,
+  &quot;source_strategy&quot;: &quot;auto&quot;,
+  &quot;retrieval_strategy&quot;: &quot;vector_bm25_rrf&quot;,
+  &quot;context_packing_strategy&quot;: &quot;strict_budget&quot;,
+  &quot;chunking_strategy&quot;: &quot;plain&quot;,
+  &quot;planner_type&quot;: &quot;fallback_mixed&quot;,
+  &quot;evaluator_type&quot;: &quot;rules&quot;,
+  &quot;reranker_enabled&quot;: true,
+  &quot;trace_level&quot;: &quot;简洁&quot;,
+  &quot;top_k&quot;: 3,
+  &quot;web_max_results&quot;: 2
+}</pre></td>
+          <td><pre>{
+  &quot;planner_mode&quot;: &quot;chunking_eval&quot;,
+  &quot;tools&quot;: [],
+  &quot;source_types&quot;: [],
+  &quot;extra&quot;: {
+    &quot;chunk_count&quot;: 1,
+    &quot;chunk_types&quot;: [
+      &quot;plain&quot;
+    ],
+    &quot;sample&quot;: &quot;标题：Agent 教学材料\n第一部分：Agent 需要先识别目标。\n\n第二部分：RAG 需要先解析、切分、入库，再检索和生成。\n\n第三部分：Eval 用来保证改动不破坏主链路。&quot;
+  },
+  &quot;answer_preview&quot;: &quot;标题：Agent 教学材料\n第一部分：Agent 需要先识别目标。\n\n第二部分：RAG 需要先解析、切分、入库，再检索和生成。\n\n第三部分：Eval 用来保证改动不破坏主链路。&quot;,
+  &quot;elapsed_ms&quot;: 0,
+  &quot;error&quot;: &quot;&quot;
+}</pre></td>
+        </tr>
+        
+        <tr>
+          <td>Chunking</td>
+          <td>Parent-child</td>
+          <td class="pass">通过</td>
+          <td>上传同一份长文档后问：第二部分讲了什么？</td>
+          <td><pre>{
+  &quot;run_mode&quot;: &quot;normal&quot;,
+  &quot;router_mode&quot;: &quot;rules&quot;,
+  &quot;source_strategy&quot;: &quot;auto&quot;,
+  &quot;retrieval_strategy&quot;: &quot;vector_bm25_rrf&quot;,
+  &quot;context_packing_strategy&quot;: &quot;strict_budget&quot;,
+  &quot;chunking_strategy&quot;: &quot;parent_child&quot;,
+  &quot;planner_type&quot;: &quot;fallback_mixed&quot;,
+  &quot;evaluator_type&quot;: &quot;rules&quot;,
+  &quot;reranker_enabled&quot;: true,
+  &quot;trace_level&quot;: &quot;简洁&quot;,
+  &quot;top_k&quot;: 3,
+  &quot;web_max_results&quot;: 2
+}</pre></td>
+          <td><pre>{
+  &quot;planner_mode&quot;: &quot;chunking_eval&quot;,
+  &quot;tools&quot;: [],
+  &quot;source_types&quot;: [],
+  &quot;extra&quot;: {
+    &quot;chunk_count&quot;: 1,
+    &quot;chunk_types&quot;: [
+      &quot;child&quot;
+    ],
+    &quot;sample&quot;: &quot;标题：Agent 教学材料\n第一部分：Agent 需要先识别目标。\n\n第二部分：RAG 需要先解析、切分、入库，再检索和生成。\n\n第三部分：Eval 用来保证改动不破坏主链路。&quot;
+  },
+  &quot;answer_preview&quot;: &quot;标题：Agent 教学材料\n第一部分：Agent 需要先识别目标。\n\n第二部分：RAG 需要先解析、切分、入库，再检索和生成。\n\n第三部分：Eval 用来保证改动不破坏主链路。&quot;,
+  &quot;elapsed_ms&quot;: 0,
+  &quot;error&quot;: &quot;&quot;
+}</pre></td>
+        </tr>
+        
+        <tr>
+          <td>Chunking</td>
+          <td>表格专用</td>
+          <td class="pass">通过</td>
+          <td>上传 CSV 后问：第 2 行的状态是什么？</td>
+          <td><pre>{
+  &quot;run_mode&quot;: &quot;normal&quot;,
+  &quot;router_mode&quot;: &quot;rules&quot;,
+  &quot;source_strategy&quot;: &quot;auto&quot;,
+  &quot;retrieval_strategy&quot;: &quot;vector_bm25_rrf&quot;,
+  &quot;context_packing_strategy&quot;: &quot;strict_budget&quot;,
+  &quot;chunking_strategy&quot;: &quot;table&quot;,
+  &quot;planner_type&quot;: &quot;fallback_mixed&quot;,
+  &quot;evaluator_type&quot;: &quot;rules&quot;,
+  &quot;reranker_enabled&quot;: true,
+  &quot;trace_level&quot;: &quot;简洁&quot;,
+  &quot;top_k&quot;: 3,
+  &quot;web_max_results&quot;: 2
+}</pre></td>
+          <td><pre>{
+  &quot;planner_mode&quot;: &quot;chunking_eval&quot;,
+  &quot;tools&quot;: [],
+  &quot;source_types&quot;: [],
+  &quot;extra&quot;: {
+    &quot;chunk_count&quot;: 1,
+    &quot;chunk_types&quot;: [
+      &quot;table&quot;
+    ],
+    &quot;sample&quot;: &quot;标题：测试表格\n工作表：Sheet1\n行号：1-4\n表头：姓名 | 状态 | 分数\nA | 通过 | 90\nB | 待确认 | 70\nC | 失败 | 40&quot;
+  },
+  &quot;answer_preview&quot;: &quot;标题：测试表格\n工作表：Sheet1\n行号：1-4\n表头：姓名 | 状态 | 分数\nA | 通过 | 90\nB | 待确认 | 70\nC | 失败 | 40&quot;,
+  &quot;elapsed_ms&quot;: 0,
+  &quot;error&quot;: &quot;&quot;
+}</pre></td>
+        </tr>
+        
+        <tr>
+          <td>Chunking</td>
+          <td>摘要 chunk</td>
+          <td class="pass">通过</td>
+          <td>上传长文档后问：全文核心结论是什么？</td>
+          <td><pre>{
+  &quot;run_mode&quot;: &quot;normal&quot;,
+  &quot;router_mode&quot;: &quot;rules&quot;,
+  &quot;source_strategy&quot;: &quot;auto&quot;,
+  &quot;retrieval_strategy&quot;: &quot;vector_bm25_rrf&quot;,
+  &quot;context_packing_strategy&quot;: &quot;strict_budget&quot;,
+  &quot;chunking_strategy&quot;: &quot;summary&quot;,
+  &quot;planner_type&quot;: &quot;fallback_mixed&quot;,
+  &quot;evaluator_type&quot;: &quot;rules&quot;,
+  &quot;reranker_enabled&quot;: true,
+  &quot;trace_level&quot;: &quot;简洁&quot;,
+  &quot;top_k&quot;: 3,
+  &quot;web_max_results&quot;: 2
+}</pre></td>
+          <td><pre>{
+  &quot;planner_mode&quot;: &quot;chunking_eval&quot;,
+  &quot;tools&quot;: [],
+  &quot;source_types&quot;: [],
+  &quot;extra&quot;: {
+    &quot;chunk_count&quot;: 1,
+    &quot;chunk_types&quot;: [
+      &quot;child&quot;
+    ],
+    &quot;sample&quot;: &quot;标题：Agent 教学材料\n第一部分：Agent 需要先识别目标。\n\n第二部分：RAG 需要先解析、切分、入库，再检索和生成。\n\n第三部分：Eval 用来保证改动不破坏主链路。&quot;
+  },
+  &quot;answer_preview&quot;: &quot;标题：Agent 教学材料\n第一部分：Agent 需要先识别目标。\n\n第二部分：RAG 需要先解析、切分、入库，再检索和生成。\n\n第三部分：Eval 用来保证改动不破坏主链路。&quot;,
+  &quot;elapsed_ms&quot;: 0,
+  &quot;error&quot;: &quot;&quot;
+}</pre></td>
+        </tr>
+        
+        <tr>
+          <td>Planner 类型</td>
+          <td>规则 Planner</td>
+          <td class="pass">通过</td>
+          <td>最近 AI Agent 有什么新趋势？</td>
+          <td><pre>{
+  &quot;run_mode&quot;: &quot;normal&quot;,
+  &quot;router_mode&quot;: &quot;rules&quot;,
+  &quot;source_strategy&quot;: &quot;auto&quot;,
+  &quot;retrieval_strategy&quot;: &quot;vector_bm25_rrf&quot;,
+  &quot;context_packing_strategy&quot;: &quot;strict_budget&quot;,
+  &quot;chunking_strategy&quot;: &quot;parent_child&quot;,
+  &quot;planner_type&quot;: &quot;rules&quot;,
+  &quot;evaluator_type&quot;: &quot;rules&quot;,
+  &quot;reranker_enabled&quot;: true,
+  &quot;trace_level&quot;: &quot;简洁&quot;,
+  &quot;top_k&quot;: 3,
+  &quot;web_max_results&quot;: 2
+}</pre></td>
+          <td><pre>{
+  &quot;planner_mode&quot;: &quot;pro_runtime&quot;,
+  &quot;tools&quot;: [
+    &quot;intent_classifier&quot;,
+    &quot;planner&quot;,
+    &quot;orchestrator&quot;,
+    &quot;dag_runtime&quot;,
+    &quot;web_collect&quot;,
+    &quot;dag_runtime&quot;,
+    &quot;rag_search&quot;,
+    &quot;aggregator&quot;,
+    &quot;evaluator&quot;,
+    &quot;generate_answer&quot;,
+    &quot;answer_validator&quot;
+  ],
+  &quot;source_types&quot;: [
+    &quot;web&quot;
+  ],
+  &quot;extra&quot;: {},
+  &quot;answer_preview&quot;: &quot;结论：AI Agent 正在从单轮工具调用走向任务级自主推进。关键趋势包括多工具编排、可观测运行时、评估体系和更严格的数据权限控制。参考来源：AI Agent trends web。&quot;,
+  &quot;elapsed_ms&quot;: 0,
+  &quot;error&quot;: &quot;&quot;
+}</pre></td>
+        </tr>
+        
+        <tr>
+          <td>Planner 类型</td>
+          <td>LLM Tool Calling Planner</td>
+          <td class="pass">通过</td>
+          <td>最近 AI Agent 有什么新趋势？</td>
+          <td><pre>{
+  &quot;run_mode&quot;: &quot;normal&quot;,
+  &quot;router_mode&quot;: &quot;rules&quot;,
+  &quot;source_strategy&quot;: &quot;auto&quot;,
+  &quot;retrieval_strategy&quot;: &quot;vector_bm25_rrf&quot;,
+  &quot;context_packing_strategy&quot;: &quot;strict_budget&quot;,
+  &quot;chunking_strategy&quot;: &quot;parent_child&quot;,
+  &quot;planner_type&quot;: &quot;llm_tool_calling&quot;,
+  &quot;evaluator_type&quot;: &quot;rules&quot;,
+  &quot;reranker_enabled&quot;: true,
+  &quot;trace_level&quot;: &quot;简洁&quot;,
+  &quot;top_k&quot;: 3,
+  &quot;web_max_results&quot;: 2
+}</pre></td>
+          <td><pre>{
+  &quot;planner_mode&quot;: &quot;rule_based&quot;,
+  &quot;tools&quot;: [
+    &quot;web_collect&quot;,
+    &quot;rag_search&quot;,
+    &quot;generate_answer&quot;
+  ],
+  &quot;source_types&quot;: [
+    &quot;web&quot;
+  ],
+  &quot;extra&quot;: {},
+  &quot;answer_preview&quot;: &quot;结论：AI Agent 正在从单轮工具调用走向任务级自主推进。关键趋势包括多工具编排、可观测运行时、评估体系和更严格的数据权限控制。参考来源：AI Agent trends web。&quot;,
+  &quot;elapsed_ms&quot;: 0,
+  &quot;error&quot;: &quot;&quot;
+}</pre></td>
+        </tr>
+        
+        <tr>
+          <td>Planner 类型</td>
+          <td>fallback 混合 Planner</td>
+          <td class="pass">通过</td>
+          <td>最近 AI Agent 有什么新趋势？</td>
+          <td><pre>{
+  &quot;run_mode&quot;: &quot;normal&quot;,
+  &quot;router_mode&quot;: &quot;rules&quot;,
+  &quot;source_strategy&quot;: &quot;auto&quot;,
+  &quot;retrieval_strategy&quot;: &quot;vector_bm25_rrf&quot;,
+  &quot;context_packing_strategy&quot;: &quot;strict_budget&quot;,
+  &quot;chunking_strategy&quot;: &quot;parent_child&quot;,
+  &quot;planner_type&quot;: &quot;fallback_mixed&quot;,
+  &quot;evaluator_type&quot;: &quot;rules&quot;,
+  &quot;reranker_enabled&quot;: true,
+  &quot;trace_level&quot;: &quot;简洁&quot;,
+  &quot;top_k&quot;: 3,
+  &quot;web_max_results&quot;: 2
+}</pre></td>
+          <td><pre>{
+  &quot;planner_mode&quot;: &quot;pro_runtime&quot;,
+  &quot;tools&quot;: [
+    &quot;intent_classifier&quot;,
+    &quot;planner&quot;,
+    &quot;orchestrator&quot;,
+    &quot;dag_runtime&quot;,
+    &quot;web_collect&quot;,
+    &quot;dag_runtime&quot;,
+    &quot;rag_search&quot;,
+    &quot;aggregator&quot;,
+    &quot;evaluator&quot;,
+    &quot;generate_answer&quot;,
+    &quot;answer_validator&quot;
+  ],
+  &quot;source_types&quot;: [
+    &quot;web&quot;
+  ],
+  &quot;extra&quot;: {},
+  &quot;answer_preview&quot;: &quot;结论：AI Agent 正在从单轮工具调用走向任务级自主推进。关键趋势包括多工具编排、可观测运行时、评估体系和更严格的数据权限控制。参考来源：AI Agent trends web。&quot;,
+  &quot;elapsed_ms&quot;: 0,
+  &quot;error&quot;: &quot;&quot;
+}</pre></td>
+        </tr>
+        
+        <tr>
+          <td>Evaluator / Critic</td>
+          <td>关闭</td>
+          <td class="pass">通过</td>
+          <td>RAG 是什么？</td>
+          <td><pre>{
+  &quot;run_mode&quot;: &quot;normal&quot;,
+  &quot;router_mode&quot;: &quot;rules&quot;,
+  &quot;source_strategy&quot;: &quot;auto&quot;,
+  &quot;retrieval_strategy&quot;: &quot;vector_bm25_rrf&quot;,
+  &quot;context_packing_strategy&quot;: &quot;strict_budget&quot;,
+  &quot;chunking_strategy&quot;: &quot;parent_child&quot;,
+  &quot;planner_type&quot;: &quot;fallback_mixed&quot;,
+  &quot;evaluator_type&quot;: &quot;off&quot;,
+  &quot;reranker_enabled&quot;: true,
+  &quot;trace_level&quot;: &quot;简洁&quot;,
+  &quot;top_k&quot;: 3,
+  &quot;web_max_results&quot;: 2
+}</pre></td>
+          <td><pre>{
+  &quot;planner_mode&quot;: &quot;pro_runtime&quot;,
+  &quot;tools&quot;: [
+    &quot;intent_classifier&quot;,
+    &quot;planner&quot;,
+    &quot;orchestrator&quot;,
+    &quot;dag_runtime&quot;,
+    &quot;web_collect&quot;,
+    &quot;dag_runtime&quot;,
+    &quot;rag_search&quot;,
+    &quot;aggregator&quot;,
+    &quot;evaluator&quot;,
+    &quot;generate_answer&quot;,
+    &quot;answer_validator&quot;
+  ],
+  &quot;source_types&quot;: [
+    &quot;local&quot;
+  ],
+  &quot;extra&quot;: {},
+  &quot;answer_preview&quot;: &quot;RAG 是检索增强生成：先检索相关资料，再让大模型基于资料回答。参考来源：我的AI学习笔记。&quot;,
+  &quot;elapsed_ms&quot;: 0,
+  &quot;error&quot;: &quot;&quot;
+}</pre></td>
+        </tr>
+        
+        <tr>
+          <td>Evaluator / Critic</td>
+          <td>规则评估</td>
+          <td class="pass">通过</td>
+          <td>RAG 是什么？</td>
+          <td><pre>{
+  &quot;run_mode&quot;: &quot;normal&quot;,
+  &quot;router_mode&quot;: &quot;rules&quot;,
+  &quot;source_strategy&quot;: &quot;auto&quot;,
+  &quot;retrieval_strategy&quot;: &quot;vector_bm25_rrf&quot;,
+  &quot;context_packing_strategy&quot;: &quot;strict_budget&quot;,
+  &quot;chunking_strategy&quot;: &quot;parent_child&quot;,
+  &quot;planner_type&quot;: &quot;fallback_mixed&quot;,
+  &quot;evaluator_type&quot;: &quot;rules&quot;,
+  &quot;reranker_enabled&quot;: true,
+  &quot;trace_level&quot;: &quot;简洁&quot;,
+  &quot;top_k&quot;: 3,
+  &quot;web_max_results&quot;: 2
+}</pre></td>
+          <td><pre>{
+  &quot;planner_mode&quot;: &quot;pro_runtime&quot;,
+  &quot;tools&quot;: [
+    &quot;intent_classifier&quot;,
+    &quot;planner&quot;,
+    &quot;orchestrator&quot;,
+    &quot;dag_runtime&quot;,
+    &quot;web_collect&quot;,
+    &quot;dag_runtime&quot;,
+    &quot;rag_search&quot;,
+    &quot;aggregator&quot;,
+    &quot;evaluator&quot;,
+    &quot;generate_answer&quot;,
+    &quot;answer_validator&quot;
+  ],
+  &quot;source_types&quot;: [
+    &quot;local&quot;
+  ],
+  &quot;extra&quot;: {},
+  &quot;answer_preview&quot;: &quot;RAG 是检索增强生成：先检索相关资料，再让大模型基于资料回答。参考来源：我的AI学习笔记。&quot;,
+  &quot;elapsed_ms&quot;: 0,
+  &quot;error&quot;: &quot;&quot;
+}</pre></td>
+        </tr>
+        
+        <tr>
+          <td>Reranker</td>
+          <td>关闭</td>
+          <td class="pass">通过</td>
+          <td>RAG 是什么？</td>
+          <td><pre>{
+  &quot;run_mode&quot;: &quot;normal&quot;,
+  &quot;router_mode&quot;: &quot;rules&quot;,
+  &quot;source_strategy&quot;: &quot;auto&quot;,
+  &quot;retrieval_strategy&quot;: &quot;vector_bm25_rrf&quot;,
+  &quot;context_packing_strategy&quot;: &quot;strict_budget&quot;,
+  &quot;chunking_strategy&quot;: &quot;parent_child&quot;,
+  &quot;planner_type&quot;: &quot;fallback_mixed&quot;,
+  &quot;evaluator_type&quot;: &quot;rules&quot;,
+  &quot;reranker_enabled&quot;: false,
+  &quot;trace_level&quot;: &quot;简洁&quot;,
+  &quot;top_k&quot;: 3,
+  &quot;web_max_results&quot;: 2
+}</pre></td>
+          <td><pre>{
+  &quot;planner_mode&quot;: &quot;pro_runtime&quot;,
+  &quot;tools&quot;: [
+    &quot;intent_classifier&quot;,
+    &quot;planner&quot;,
+    &quot;orchestrator&quot;,
+    &quot;dag_runtime&quot;,
+    &quot;web_collect&quot;,
+    &quot;dag_runtime&quot;,
+    &quot;rag_search&quot;,
+    &quot;aggregator&quot;,
+    &quot;evaluator&quot;,
+    &quot;generate_answer&quot;,
+    &quot;answer_validator&quot;
+  ],
+  &quot;source_types&quot;: [
+    &quot;local&quot;
+  ],
+  &quot;extra&quot;: {},
+  &quot;answer_preview&quot;: &quot;RAG 是检索增强生成：先检索相关资料，再让大模型基于资料回答。参考来源：我的AI学习笔记。&quot;,
+  &quot;elapsed_ms&quot;: 0,
+  &quot;error&quot;: &quot;&quot;
+}</pre></td>
+        </tr>
+        
+        <tr>
+          <td>Reranker</td>
+          <td>开启</td>
+          <td class="pass">通过</td>
+          <td>RAG 是什么？</td>
+          <td><pre>{
+  &quot;run_mode&quot;: &quot;normal&quot;,
+  &quot;router_mode&quot;: &quot;rules&quot;,
+  &quot;source_strategy&quot;: &quot;auto&quot;,
+  &quot;retrieval_strategy&quot;: &quot;vector_bm25_rrf&quot;,
+  &quot;context_packing_strategy&quot;: &quot;strict_budget&quot;,
+  &quot;chunking_strategy&quot;: &quot;parent_child&quot;,
+  &quot;planner_type&quot;: &quot;fallback_mixed&quot;,
+  &quot;evaluator_type&quot;: &quot;rules&quot;,
+  &quot;reranker_enabled&quot;: true,
+  &quot;trace_level&quot;: &quot;简洁&quot;,
+  &quot;top_k&quot;: 3,
+  &quot;web_max_results&quot;: 2
+}</pre></td>
+          <td><pre>{
+  &quot;planner_mode&quot;: &quot;pro_runtime&quot;,
+  &quot;tools&quot;: [
+    &quot;intent_classifier&quot;,
+    &quot;planner&quot;,
+    &quot;orchestrator&quot;,
+    &quot;dag_runtime&quot;,
+    &quot;web_collect&quot;,
+    &quot;dag_runtime&quot;,
+    &quot;rag_search&quot;,
+    &quot;aggregator&quot;,
+    &quot;evaluator&quot;,
+    &quot;generate_answer&quot;,
+    &quot;answer_validator&quot;
+  ],
+  &quot;source_types&quot;: [
+    &quot;local&quot;
+  ],
+  &quot;extra&quot;: {},
+  &quot;answer_preview&quot;: &quot;RAG 是检索增强生成：先检索相关资料，再让大模型基于资料回答。参考来源：我的AI学习笔记。&quot;,
+  &quot;elapsed_ms&quot;: 0,
+  &quot;error&quot;: &quot;&quot;
+}</pre></td>
+        </tr>
+        
+        <tr>
+          <td>Trace 展示级别</td>
+          <td>隐藏</td>
+          <td class="pass">通过</td>
+          <td>你能做些什么</td>
+          <td><pre>{
+  &quot;run_mode&quot;: &quot;normal&quot;,
+  &quot;router_mode&quot;: &quot;rules&quot;,
+  &quot;source_strategy&quot;: &quot;auto&quot;,
+  &quot;retrieval_strategy&quot;: &quot;vector_bm25_rrf&quot;,
+  &quot;context_packing_strategy&quot;: &quot;strict_budget&quot;,
+  &quot;chunking_strategy&quot;: &quot;parent_child&quot;,
+  &quot;planner_type&quot;: &quot;fallback_mixed&quot;,
+  &quot;evaluator_type&quot;: &quot;rules&quot;,
+  &quot;reranker_enabled&quot;: true,
+  &quot;trace_level&quot;: &quot;隐藏&quot;,
+  &quot;top_k&quot;: 3,
+  &quot;web_max_results&quot;: 2
+}</pre></td>
+          <td><pre>{
+  &quot;planner_mode&quot;: &quot;pro_runtime&quot;,
+  &quot;tools&quot;: [
+    &quot;intent_classifier&quot;,
+    &quot;planner&quot;,
+    &quot;orchestrator&quot;,
+    &quot;dag_runtime&quot;,
+    &quot;direct_answer&quot;
+  ],
+  &quot;source_types&quot;: [],
+  &quot;extra&quot;: {},
+  &quot;answer_preview&quot;: &quot;我可以帮你上传资料问答、联网收集公开信息，并学习 RAG、Tool Agent、Autonomous Agent 和 Agent Eval。&quot;,
+  &quot;elapsed_ms&quot;: 0,
+  &quot;error&quot;: &quot;&quot;
+}</pre></td>
+        </tr>
+        
+        <tr>
+          <td>Trace 展示级别</td>
+          <td>简洁</td>
+          <td class="pass">通过</td>
+          <td>你能做些什么</td>
+          <td><pre>{
+  &quot;run_mode&quot;: &quot;normal&quot;,
+  &quot;router_mode&quot;: &quot;rules&quot;,
+  &quot;source_strategy&quot;: &quot;auto&quot;,
+  &quot;retrieval_strategy&quot;: &quot;vector_bm25_rrf&quot;,
+  &quot;context_packing_strategy&quot;: &quot;strict_budget&quot;,
+  &quot;chunking_strategy&quot;: &quot;parent_child&quot;,
+  &quot;planner_type&quot;: &quot;fallback_mixed&quot;,
+  &quot;evaluator_type&quot;: &quot;rules&quot;,
+  &quot;reranker_enabled&quot;: true,
+  &quot;trace_level&quot;: &quot;简洁&quot;,
+  &quot;top_k&quot;: 3,
+  &quot;web_max_results&quot;: 2
+}</pre></td>
+          <td><pre>{
+  &quot;planner_mode&quot;: &quot;pro_runtime&quot;,
+  &quot;tools&quot;: [
+    &quot;intent_classifier&quot;,
+    &quot;planner&quot;,
+    &quot;orchestrator&quot;,
+    &quot;dag_runtime&quot;,
+    &quot;direct_answer&quot;
+  ],
+  &quot;source_types&quot;: [],
+  &quot;extra&quot;: {},
+  &quot;answer_preview&quot;: &quot;我可以帮你上传资料问答、联网收集公开信息，并学习 RAG、Tool Agent、Autonomous Agent 和 Agent Eval。&quot;,
+  &quot;elapsed_ms&quot;: 0,
+  &quot;error&quot;: &quot;&quot;
+}</pre></td>
+        </tr>
+        
+        <tr>
+          <td>Trace 展示级别</td>
+          <td>完整</td>
+          <td class="pass">通过</td>
+          <td>你能做些什么</td>
+          <td><pre>{
+  &quot;run_mode&quot;: &quot;normal&quot;,
+  &quot;router_mode&quot;: &quot;rules&quot;,
+  &quot;source_strategy&quot;: &quot;auto&quot;,
+  &quot;retrieval_strategy&quot;: &quot;vector_bm25_rrf&quot;,
+  &quot;context_packing_strategy&quot;: &quot;strict_budget&quot;,
+  &quot;chunking_strategy&quot;: &quot;parent_child&quot;,
+  &quot;planner_type&quot;: &quot;fallback_mixed&quot;,
+  &quot;evaluator_type&quot;: &quot;rules&quot;,
+  &quot;reranker_enabled&quot;: true,
+  &quot;trace_level&quot;: &quot;完整&quot;,
+  &quot;top_k&quot;: 3,
+  &quot;web_max_results&quot;: 2
+}</pre></td>
+          <td><pre>{
+  &quot;planner_mode&quot;: &quot;pro_runtime&quot;,
+  &quot;tools&quot;: [
+    &quot;intent_classifier&quot;,
+    &quot;planner&quot;,
+    &quot;orchestrator&quot;,
+    &quot;dag_runtime&quot;,
+    &quot;direct_answer&quot;
+  ],
+  &quot;source_types&quot;: [],
+  &quot;extra&quot;: {},
+  &quot;answer_preview&quot;: &quot;我可以帮你上传资料问答、联网收集公开信息，并学习 RAG、Tool Agent、Autonomous Agent 和 Agent Eval。&quot;,
+  &quot;elapsed_ms&quot;: 0,
+  &quot;error&quot;: &quot;&quot;
+}</pre></td>
+        </tr>
+        
+        <tr>
+          <td>资料条数</td>
+          <td>TopK=1</td>
+          <td class="pass">通过</td>
+          <td>RAG 是什么？</td>
+          <td><pre>{
+  &quot;run_mode&quot;: &quot;normal&quot;,
+  &quot;router_mode&quot;: &quot;rules&quot;,
+  &quot;source_strategy&quot;: &quot;auto&quot;,
+  &quot;retrieval_strategy&quot;: &quot;vector_bm25_rrf&quot;,
+  &quot;context_packing_strategy&quot;: &quot;strict_budget&quot;,
+  &quot;chunking_strategy&quot;: &quot;parent_child&quot;,
+  &quot;planner_type&quot;: &quot;fallback_mixed&quot;,
+  &quot;evaluator_type&quot;: &quot;rules&quot;,
+  &quot;reranker_enabled&quot;: true,
+  &quot;trace_level&quot;: &quot;简洁&quot;,
+  &quot;top_k&quot;: 1,
+  &quot;web_max_results&quot;: 2
+}</pre></td>
+          <td><pre>{
+  &quot;planner_mode&quot;: &quot;pro_runtime&quot;,
+  &quot;tools&quot;: [
+    &quot;intent_classifier&quot;,
+    &quot;planner&quot;,
+    &quot;orchestrator&quot;,
+    &quot;dag_runtime&quot;,
+    &quot;web_collect&quot;,
+    &quot;dag_runtime&quot;,
+    &quot;rag_search&quot;,
+    &quot;aggregator&quot;,
+    &quot;evaluator&quot;,
+    &quot;generate_answer&quot;,
+    &quot;answer_validator&quot;
+  ],
+  &quot;source_types&quot;: [
+    &quot;local&quot;
+  ],
+  &quot;extra&quot;: {},
+  &quot;answer_preview&quot;: &quot;RAG 是检索增强生成：先检索相关资料，再让大模型基于资料回答。参考来源：我的AI学习笔记。&quot;,
+  &quot;elapsed_ms&quot;: 0,
+  &quot;error&quot;: &quot;&quot;
+}</pre></td>
+        </tr>
+        
+        <tr>
+          <td>资料条数</td>
+          <td>TopK=5</td>
+          <td class="pass">通过</td>
+          <td>RAG 是什么？</td>
+          <td><pre>{
+  &quot;run_mode&quot;: &quot;normal&quot;,
+  &quot;router_mode&quot;: &quot;rules&quot;,
+  &quot;source_strategy&quot;: &quot;auto&quot;,
+  &quot;retrieval_strategy&quot;: &quot;vector_bm25_rrf&quot;,
+  &quot;context_packing_strategy&quot;: &quot;strict_budget&quot;,
+  &quot;chunking_strategy&quot;: &quot;parent_child&quot;,
+  &quot;planner_type&quot;: &quot;fallback_mixed&quot;,
+  &quot;evaluator_type&quot;: &quot;rules&quot;,
+  &quot;reranker_enabled&quot;: true,
+  &quot;trace_level&quot;: &quot;简洁&quot;,
+  &quot;top_k&quot;: 5,
+  &quot;web_max_results&quot;: 2
+}</pre></td>
+          <td><pre>{
+  &quot;planner_mode&quot;: &quot;pro_runtime&quot;,
+  &quot;tools&quot;: [
+    &quot;intent_classifier&quot;,
+    &quot;planner&quot;,
+    &quot;orchestrator&quot;,
+    &quot;dag_runtime&quot;,
+    &quot;web_collect&quot;,
+    &quot;dag_runtime&quot;,
+    &quot;rag_search&quot;,
+    &quot;aggregator&quot;,
+    &quot;evaluator&quot;,
+    &quot;generate_answer&quot;,
+    &quot;answer_validator&quot;
+  ],
+  &quot;source_types&quot;: [
+    &quot;local&quot;
+  ],
+  &quot;extra&quot;: {},
+  &quot;answer_preview&quot;: &quot;RAG 是检索增强生成：先检索相关资料，再让大模型基于资料回答。参考来源：我的AI学习笔记。&quot;,
+  &quot;elapsed_ms&quot;: 0,
+  &quot;error&quot;: &quot;&quot;
+}</pre></td>
+        </tr>
+        
+        <tr>
+          <td>网页结果数</td>
+          <td>web=1</td>
+          <td class="pass">通过</td>
+          <td>最近 AI Agent 有什么新趋势？</td>
+          <td><pre>{
+  &quot;run_mode&quot;: &quot;normal&quot;,
+  &quot;router_mode&quot;: &quot;rules&quot;,
+  &quot;source_strategy&quot;: &quot;auto&quot;,
+  &quot;retrieval_strategy&quot;: &quot;vector_bm25_rrf&quot;,
+  &quot;context_packing_strategy&quot;: &quot;strict_budget&quot;,
+  &quot;chunking_strategy&quot;: &quot;parent_child&quot;,
+  &quot;planner_type&quot;: &quot;fallback_mixed&quot;,
+  &quot;evaluator_type&quot;: &quot;rules&quot;,
+  &quot;reranker_enabled&quot;: true,
+  &quot;trace_level&quot;: &quot;简洁&quot;,
+  &quot;top_k&quot;: 3,
+  &quot;web_max_results&quot;: 1
+}</pre></td>
+          <td><pre>{
+  &quot;planner_mode&quot;: &quot;pro_runtime&quot;,
+  &quot;tools&quot;: [
+    &quot;intent_classifier&quot;,
+    &quot;planner&quot;,
+    &quot;orchestrator&quot;,
+    &quot;dag_runtime&quot;,
+    &quot;web_collect&quot;,
+    &quot;dag_runtime&quot;,
+    &quot;rag_search&quot;,
+    &quot;aggregator&quot;,
+    &quot;evaluator&quot;,
+    &quot;generate_answer&quot;,
+    &quot;answer_validator&quot;
+  ],
+  &quot;source_types&quot;: [
+    &quot;web&quot;
+  ],
+  &quot;extra&quot;: {},
+  &quot;answer_preview&quot;: &quot;结论：AI Agent 正在从单轮工具调用走向任务级自主推进。关键趋势包括多工具编排、可观测运行时、评估体系和更严格的数据权限控制。参考来源：AI Agent trends web。&quot;,
+  &quot;elapsed_ms&quot;: 0,
+  &quot;error&quot;: &quot;&quot;
+}</pre></td>
+        </tr>
+        
+        <tr>
+          <td>网页结果数</td>
+          <td>web=5</td>
+          <td class="pass">通过</td>
+          <td>最近 AI Agent 有什么新趋势？</td>
+          <td><pre>{
+  &quot;run_mode&quot;: &quot;normal&quot;,
+  &quot;router_mode&quot;: &quot;rules&quot;,
+  &quot;source_strategy&quot;: &quot;auto&quot;,
+  &quot;retrieval_strategy&quot;: &quot;vector_bm25_rrf&quot;,
+  &quot;context_packing_strategy&quot;: &quot;strict_budget&quot;,
+  &quot;chunking_strategy&quot;: &quot;parent_child&quot;,
+  &quot;planner_type&quot;: &quot;fallback_mixed&quot;,
+  &quot;evaluator_type&quot;: &quot;rules&quot;,
+  &quot;reranker_enabled&quot;: true,
+  &quot;trace_level&quot;: &quot;简洁&quot;,
+  &quot;top_k&quot;: 3,
+  &quot;web_max_results&quot;: 5
+}</pre></td>
+          <td><pre>{
+  &quot;planner_mode&quot;: &quot;pro_runtime&quot;,
+  &quot;tools&quot;: [
+    &quot;intent_classifier&quot;,
+    &quot;planner&quot;,
+    &quot;orchestrator&quot;,
+    &quot;dag_runtime&quot;,
+    &quot;web_collect&quot;,
+    &quot;dag_runtime&quot;,
+    &quot;rag_search&quot;,
+    &quot;aggregator&quot;,
+    &quot;evaluator&quot;,
+    &quot;generate_answer&quot;,
+    &quot;answer_validator&quot;
+  ],
+  &quot;source_types&quot;: [
+    &quot;web&quot;
+  ],
+  &quot;extra&quot;: {},
+  &quot;answer_preview&quot;: &quot;结论：AI Agent 正在从单轮工具调用走向任务级自主推进。关键趋势包括多工具编排、可观测运行时、评估体系和更严格的数据权限控制。参考来源：AI Agent trends web。&quot;,
+  &quot;elapsed_ms&quot;: 0,
+  &quot;error&quot;: &quot;&quot;
+}</pre></td>
+        </tr>
+        
+    </tbody>
+  </table>
+</body>
+</html>
