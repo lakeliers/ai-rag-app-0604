@@ -29,8 +29,7 @@ PLANNER_FALLBACK_MIXED = "fallback_mixed"
 PLANNER_TYPES = {PLANNER_RULES, PLANNER_LLM_TOOL_CALLING, PLANNER_FALLBACK_MIXED}
 EVALUATOR_OFF = "off"
 EVALUATOR_RULES = "rules"
-EVALUATOR_LLM_JUDGE = "llm_judge"
-EVALUATOR_TYPES = {EVALUATOR_OFF, EVALUATOR_RULES, EVALUATOR_LLM_JUDGE}
+EVALUATOR_TYPES = {EVALUATOR_OFF, EVALUATOR_RULES}
 
 GREETING_PATTERNS = [
     r"^(你好|您好|嗨|hello|hi)(呀|啊|哈|，|,|。|！|!|\s)*$",
@@ -1750,19 +1749,16 @@ def run_agent_pro(
         )
     else:
         evaluation = evaluate_context(intent.intent, aggregated)
-        if evaluator_type == EVALUATOR_LLM_JUDGE:
-            evaluation["llm_judge_note"] = "线上聊天暂用规则评估占位；完整 LLM-as-Judge 在 eval 脚本中执行，避免每次聊天额外消耗 judge 成本。"
         trace.append(
             make_stage_trace(
                 name="资料评估",
-                tool="evaluator" if evaluator_type == EVALUATOR_RULES else "llm_as_judge_placeholder",
+                tool="evaluator",
                 reason="判断当前资料是否足够支撑最终回答。",
                 summary=(
                     f"资料是否足够：{'是' if evaluation['sufficient'] else '否'}；"
                     f"资料数：{evaluation['source_count']}；"
                     f"置信度：{evaluation['confidence']:.2f}；"
                     f"建议动作：{evaluation['next_action']}。{evaluation['reason']}"
-                    + (f" {evaluation.get('llm_judge_note', '')}" if evaluator_type == EVALUATOR_LLM_JUDGE else "")
                 ),
                 elapsed_ms=int((time.time() - started_at) * 1000),
             )

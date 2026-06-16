@@ -165,7 +165,6 @@ PLANNER_TYPE_LABELS = {
 EVALUATOR_TYPE_LABELS = {
     "关闭": "off",
     "规则评估": "rules",
-    "LLM-as-Judge": "llm_judge",
 }
 
 
@@ -229,7 +228,7 @@ with st.sidebar:
         "Evaluator / Critic",
         list(EVALUATOR_TYPE_LABELS.keys()),
         index=1,
-        help="关闭会跳过资料充分性判断；规则评估适合线上低成本运行；LLM-as-Judge 目前在线上聊天中仅做占位提示，完整版本在 eval 脚本运行。",
+        help="控制 C 端回答链路中的资料充分性判断。关闭会跳过评估；规则评估会检查资料数量、来源和引用可用性。",
     )
     evaluator_type = EVALUATOR_TYPE_LABELS[evaluator_type_label]
 
