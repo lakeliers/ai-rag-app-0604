@@ -159,6 +159,16 @@ with st.sidebar:
         ["普通问答", "自主任务"],
         help="普通问答走 Tool Agent；自主任务会先拆任务，再逐步调用 Tool Agent 推进。",
     )
+    router_mode_label = st.radio(
+        "路由模式",
+        ["规则路由", "规则-LLM-规则路由"],
+        help="规则路由更快更稳定；规则-LLM-规则路由会在规则不确定时调用模型做语义分类，再由规则复核。",
+    )
+    router_mode = (
+        agent_runtime.ROUTER_MODE_HYBRID
+        if router_mode_label == "规则-LLM-规则路由"
+        else agent_runtime.ROUTER_MODE_RULES
+    )
     max_autonomous_steps = st.slider("自主任务最大步数", 1, 5, 3)
 
     st.divider()
@@ -169,6 +179,7 @@ with st.sidebar:
     st.write("Reranker:", reranker_status)
     planner_status = "行业主流Runtime雏形"
     st.write("Planner:", planner_status)
+    st.write("Router:", router_mode_label)
 
     if "upload_status" in st.session_state and st.session_state.upload_status:
         st.divider()
@@ -215,7 +226,10 @@ if prompt:
                 use_autonomous_mode = False
                 autonomous_route_reason = ""
                 if run_mode == "自主任务":
-                    use_autonomous_mode, autonomous_route_reason = autonomous_agent.should_use_autonomous_mode(prompt)
+                    use_autonomous_mode, autonomous_route_reason = autonomous_agent.should_use_autonomous_mode(
+                        prompt,
+                        router_mode=router_mode,
+                    )
 
                 if run_mode == "自主任务" and use_autonomous_mode:
                     result = autonomous_agent.run_autonomous_agent(
@@ -224,6 +238,7 @@ if prompt:
                         web_max_results=web_max_results,
                         max_steps=max_autonomous_steps,
                         preferred_sources=uploaded_sources,
+                        router_mode=router_mode,
                     )
                 else:
                     result = agent_runtime.run_agent_pro(
@@ -232,6 +247,7 @@ if prompt:
                         top_k=top_k,
                         web_max_results=web_max_results,
                         preferred_sources=uploaded_sources,
+                        router_mode=router_mode,
                     )
                     if run_mode == "自主任务":
                         result["planner_mode"] = "autonomous_fallback"

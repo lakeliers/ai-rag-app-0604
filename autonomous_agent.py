@@ -62,12 +62,18 @@ class AutonomousState:
     sources: list[dict[str, Any]] = field(default_factory=list)
 
 
-def should_use_autonomous_mode(user_request: str) -> tuple[bool, str]:
+def should_use_autonomous_mode(
+    user_request: str,
+    router_mode: str = agent_runtime.ROUTER_MODE_RULES,
+) -> tuple[bool, str]:
     stripped_request = user_request.strip()
-    lightweight_intent = agent_runtime.classify_intent(stripped_request, [])
+    lightweight_intent = agent_runtime.classify_intent(stripped_request, [], router_mode=router_mode)
 
     if lightweight_intent.intent in {"chitchat", "capability_intro", "upload_status"}:
         return False, f"{lightweight_intent.reason}不属于需要任务队列推进的目标。"
+
+    if lightweight_intent.constraints.get("should_use_autonomous"):
+        return True, "路由器判断该请求是多步骤目标，适合进入 Autonomous Agent。"
 
     if any(word in stripped_request for word in AUTONOMOUS_TRIGGER_WORDS):
         return True, "输入包含调研、分析、报告、计划等目标型任务信号。"
@@ -197,6 +203,7 @@ def execute_task_with_tool_agent(
         top_k=state.goal.constraints.get("top_k", 3),
         web_max_results=state.goal.constraints.get("web_max_results", 2),
         preferred_sources=preferred_sources,
+        router_mode=state.goal.constraints.get("router_mode", agent_runtime.ROUTER_MODE_RULES),
     )
     return {
         "success": bool(result.get("answer")),
@@ -348,10 +355,12 @@ def run_autonomous_agent(
     web_max_results: int = 2,
     max_steps: int = 3,
     preferred_sources: list[str] | None = None,
+    router_mode: str = agent_runtime.ROUTER_MODE_RULES,
     tool_agent_runner: Callable[..., dict[str, Any]] = agent_runtime.run_agent_pro,
 ) -> dict[str, Any]:
     preferred_sources = preferred_sources or []
     goal = create_goal(user_request, max_steps=max_steps, top_k=top_k, web_max_results=web_max_results)
+    goal.constraints["router_mode"] = router_mode
     state = AutonomousState(goal=goal, tasks=create_initial_tasks(goal))
 
     while not state.done:

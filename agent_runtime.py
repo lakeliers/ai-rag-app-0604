@@ -10,6 +10,9 @@ import rag_agent_core as agent
 
 ENABLE_LLM_PLANNER = os.getenv("ENABLE_LLM_PLANNER", "1") == "1"
 PLANNER_MODEL = os.getenv("PLANNER_MODEL", agent.DEEPSEEK_MODEL)
+ROUTER_MODE_RULES = "rules"
+ROUTER_MODE_HYBRID = "hybrid"
+ROUTER_MODES = {ROUTER_MODE_RULES, ROUTER_MODE_HYBRID}
 
 GREETING_PATTERNS = [
     r"^(你好|您好|嗨|hello|hi)(呀|啊|哈|，|,|。|！|!|\s)*$",
@@ -124,6 +127,22 @@ def is_lightweight_direct_intent(question: str) -> tuple[bool, str, str]:
     return False, "", ""
 
 
+def extract_json_object(text: str) -> dict[str, Any]:
+    stripped = text.strip()
+    if stripped.startswith("```"):
+        stripped = stripped.strip("`")
+        if stripped.startswith("json"):
+            stripped = stripped[4:].strip()
+    try:
+        return json.loads(stripped)
+    except json.JSONDecodeError:
+        start = stripped.find("{")
+        end = stripped.rfind("}")
+        if start >= 0 and end > start:
+            return json.loads(stripped[start:end + 1])
+        raise
+
+
 def tool_web_collect(question: str, max_results: int) -> ToolResult:
     ingested = agent.web_collect(question, max_results=max_results)
     return ToolResult(
@@ -175,7 +194,7 @@ def tool_rag_search(question: str, top_k: int, preferred_sources: list[str]) -> 
     )
 
 
-def classify_intent(question: str, preferred_sources: list[str]) -> IntentResult:
+def classify_intent_by_rules(question: str, preferred_sources: list[str]) -> IntentResult:
     stripped_question = question.strip()
     lowered_question = stripped_question.lower()
     entities = preferred_sources[:]
@@ -208,9 +227,20 @@ def classify_intent(question: str, preferred_sources: list[str]) -> IntentResult
         )
 
     latest_words = ["最近", "最新", "今天", "现在", "趋势", "新闻", "动态", "current", "latest"]
+    upload_qa_words = ["总结", "提取", "分析", "资料", "文档", "pdf", "文件", "这份"]
     if any(word in lowered_question for word in latest_words):
         constraints["needs_freshness"] = True
         constraints["needs_web_context"] = True
+        if preferred_sources and any(word in lowered_question for word in upload_qa_words):
+            constraints["needs_upload_context"] = True
+            return IntentResult(
+                intent="hybrid_rag",
+                confidence=0.72,
+                reason="用户同时提到上传资料和近期信息，规则识别为复合 RAG 意图，建议交给语义分类细化。",
+                suggested_action="collect_context",
+                entities=entities,
+                constraints=constraints,
+            )
         return IntentResult(
             intent="latest_research",
             confidence=0.82,
@@ -220,7 +250,6 @@ def classify_intent(question: str, preferred_sources: list[str]) -> IntentResult
             constraints=constraints,
         )
 
-    upload_qa_words = ["总结", "提取", "分析", "资料", "文档", "pdf", "文件", "这份"]
     if preferred_sources and any(word in lowered_question for word in upload_qa_words):
         constraints["needs_upload_context"] = True
         return IntentResult(
@@ -242,6 +271,173 @@ def classify_intent(question: str, preferred_sources: list[str]) -> IntentResult
     )
 
 
+def intent_to_constraints(intent_name: str, preferred_sources: list[str], raw_constraints: dict[str, Any] | None = None) -> dict[str, Any]:
+    constraints = {
+        "has_uploads": bool(preferred_sources),
+        "needs_freshness": False,
+        "needs_upload_context": False,
+        "needs_web_context": False,
+        "should_use_autonomous": False,
+    }
+    constraints.update(raw_constraints or {})
+
+    if intent_name in {"latest_research", "hybrid_rag"}:
+        constraints["needs_freshness"] = True
+        constraints["needs_web_context"] = True
+    if intent_name in {"document_qa", "hybrid_rag"}:
+        constraints["needs_upload_context"] = bool(preferred_sources)
+    if intent_name == "autonomous_task":
+        constraints["should_use_autonomous"] = True
+        constraints["needs_web_context"] = True
+
+    return constraints
+
+
+def classify_intent_by_llm(question: str, preferred_sources: list[str], rule_result: IntentResult) -> IntentResult:
+    client = agent.get_deepseek_client()
+    if client is None:
+        rule_result.reason += " LLM 路由未启用：缺少 DEEPSEEK_API_KEY，已回退规则结果。"
+        return rule_result
+
+    payload = {
+        "question": question,
+        "has_uploads": bool(preferred_sources),
+        "preferred_sources": preferred_sources[:5],
+        "rule_result": {
+            "intent": rule_result.intent,
+            "confidence": rule_result.confidence,
+            "reason": rule_result.reason,
+            "constraints": rule_result.constraints,
+        },
+        "allowed_intents": [
+            "chitchat",
+            "capability_intro",
+            "upload_status",
+            "document_qa",
+            "latest_research",
+            "hybrid_rag",
+            "autonomous_task",
+            "general_qa",
+        ],
+        "allowed_actions": [
+            "direct_answer",
+            "read_upload_status",
+            "collect_context",
+        ],
+        "output_schema": {
+            "intent": "one allowed intent",
+            "suggested_action": "one allowed action",
+            "needs_upload_context": "boolean",
+            "needs_web_context": "boolean",
+            "needs_freshness": "boolean",
+            "should_use_autonomous": "boolean",
+            "confidence": "0-1 number",
+            "reason": "short Chinese reason",
+        },
+    }
+
+    response = client.chat.completions.create(
+        model=PLANNER_MODEL,
+        messages=[
+            {
+                "role": "system",
+                "content": (
+                    "你是 Agent 路由意图分类器。只输出合法 JSON。"
+                    "不要执行任务，只判断用户请求应该进入哪类链路。"
+                    "如果用户只是问能力、身份、能做什么，必须输出 capability_intro/direct_answer。"
+                    "如果用户要求调研、整理方案、输出报告等多步骤目标，输出 autonomous_task。"
+                    "如果用户同时要求结合上传资料和联网近期信息，输出 hybrid_rag。"
+                ),
+            },
+            {"role": "user", "content": json.dumps(payload, ensure_ascii=False)},
+        ],
+        temperature=0,
+        max_tokens=500,
+    )
+    parsed = extract_json_object(response.choices[0].message.content or "{}")
+    allowed_intents = set(payload["allowed_intents"])
+    allowed_actions = set(payload["allowed_actions"])
+
+    intent_name = str(parsed.get("intent", rule_result.intent))
+    if intent_name not in allowed_intents:
+        intent_name = rule_result.intent
+
+    suggested_action = str(parsed.get("suggested_action", rule_result.suggested_action))
+    if suggested_action not in allowed_actions:
+        suggested_action = rule_result.suggested_action
+
+    try:
+        confidence = float(parsed.get("confidence", rule_result.confidence))
+    except (TypeError, ValueError):
+        confidence = rule_result.confidence
+    confidence = max(0.0, min(1.0, confidence))
+
+    raw_constraints = {
+        "needs_upload_context": bool(parsed.get("needs_upload_context", False)),
+        "needs_web_context": bool(parsed.get("needs_web_context", False)),
+        "needs_freshness": bool(parsed.get("needs_freshness", False)),
+        "should_use_autonomous": bool(parsed.get("should_use_autonomous", False)),
+    }
+    return IntentResult(
+        intent=intent_name,
+        confidence=confidence,
+        reason=f"LLM 语义分类：{parsed.get('reason', '')}",
+        suggested_action=suggested_action,
+        entities=preferred_sources[:],
+        constraints=intent_to_constraints(intent_name, preferred_sources, raw_constraints),
+    )
+
+
+def validate_intent_by_rules(question: str, preferred_sources: list[str], intent: IntentResult) -> IntentResult:
+    if is_upload_status_question(question):
+        return classify_intent_by_rules(question, preferred_sources)
+
+    is_direct_intent, direct_intent, direct_reason = is_lightweight_direct_intent(question)
+    if is_direct_intent:
+        return IntentResult(
+            intent=direct_intent,
+            confidence=max(intent.confidence, 0.9),
+            reason=f"{direct_reason} 规则复核覆盖 LLM 分类。",
+            suggested_action="direct_answer",
+            entities=preferred_sources[:],
+            constraints=intent_to_constraints(direct_intent, preferred_sources),
+        )
+
+    normalized = normalize_user_text(question)
+    has_concrete_task = any(word in normalized for word in CONCRETE_TASK_WORDS)
+    if intent.suggested_action == "direct_answer" and has_concrete_task:
+        intent.intent = "general_qa"
+        intent.suggested_action = "collect_context"
+        intent.confidence = min(intent.confidence, 0.72)
+        intent.reason += " 规则复核：检测到具体任务词，禁止直接闲聊回复。"
+
+    if intent.intent == "document_qa" and not preferred_sources:
+        intent.intent = "general_qa"
+        intent.constraints["needs_upload_context"] = False
+        intent.reason += " 规则复核：当前没有上传资料，不能强行判为文档问答。"
+
+    return intent
+
+
+def classify_intent(
+    question: str,
+    preferred_sources: list[str],
+    router_mode: str = ROUTER_MODE_RULES,
+) -> IntentResult:
+    if router_mode not in ROUTER_MODES:
+        router_mode = ROUTER_MODE_RULES
+
+    rule_result = classify_intent_by_rules(question, preferred_sources)
+    if router_mode == ROUTER_MODE_RULES or rule_result.confidence >= 0.85:
+        rule_result.constraints["router_mode"] = ROUTER_MODE_RULES
+        return rule_result
+
+    llm_result = classify_intent_by_llm(question, preferred_sources, rule_result)
+    final_result = validate_intent_by_rules(question, preferred_sources, llm_result)
+    final_result.constraints["router_mode"] = ROUTER_MODE_HYBRID
+    return final_result
+
+
 def plan_high_level_action(intent: IntentResult, preferred_sources: list[str], use_web: bool) -> PlanResult:
     if intent.intent in {"chitchat", "capability_intro"}:
         return PlanResult(
@@ -259,11 +455,22 @@ def plan_high_level_action(intent: IntentResult, preferred_sources: list[str], u
             params={"needs_web": False, "needs_upload": False},
         )
 
-    if intent.intent == "latest_research" and use_web:
+    if intent.intent in {"latest_research", "hybrid_rag"} and use_web:
         return PlanResult(
             action="collect_context",
-            reason="问题涉及最新外部信息，需要联网资料和本地资料共同进入上下文。",
+            reason="问题涉及外部信息或复合资料需求，需要收集上下文。",
             confidence=0.84,
+            params={
+                "needs_web": intent.constraints.get("needs_web_context", True),
+                "needs_upload": intent.constraints.get("needs_upload_context", bool(preferred_sources)),
+            },
+        )
+
+    if intent.intent == "autonomous_task":
+        return PlanResult(
+            action="collect_context",
+            reason="用户请求更像多步骤目标，普通问答模式下先收集上下文；自主模式会进入任务级循环。",
+            confidence=0.8,
             params={"needs_web": True, "needs_upload": bool(preferred_sources)},
         )
 
@@ -1134,31 +1341,34 @@ def plan_agent_steps(
 
 
 def is_upload_status_question(question: str) -> bool:
-    upload_words = ["上传", "资料", "文件", "pdf", "文档"]
-    content_question_words = ["有没有提到", "是否提到", "有没有包含", "讲了什么", "说了什么"]
-    status_words = [
-        "看到",
-        "看得到",
-        "看不到",
-        "看见",
-        "看不见",
-        "读到",
-        "读得到",
-        "读不到",
-        "收到",
-        "有没有",
-        "能不能",
-        "可以看到",
-        "识别",
-        "读取",
-        "成功",
+    normalized = normalize_user_text(question)
+    content_or_task_words = [
+        "有没有提到",
+        "是否提到",
+        "有没有包含",
+        "讲了什么",
+        "说了什么",
+        "结合",
+        "查询",
+        "查一下",
+        "案例",
+        "总结",
+        "分析",
+        "提取",
+        "对比",
+        "最近",
+        "最新",
     ]
-    lower_question = question.lower()
-    if any(word in lower_question for word in content_question_words):
+    if any(word in normalized for word in content_or_task_words):
         return False
-    return any(word in lower_question for word in upload_words) and any(
-        word in lower_question for word in status_words
-    )
+
+    status_patterns = [
+        r"(你|系统|agent|助手).{0,8}(能|可以)?(看到|看见|看得到|看不到|读到|读得到|读不到|识别|收到).{0,8}(上传|资料|文件|pdf|文档)",
+        r"(上传|资料|文件|pdf|文档).{0,12}(你|系统|agent|助手).{0,8}(能|可以)?(看到|看见|看得到|看不到|读到|读得到|读不到|识别|收到)",
+        r"(上传|资料|文件|pdf|文档).{0,8}(成功|好了吗|好了没|完成了吗|入库了吗|到了吗)",
+        r"(我).{0,4}(上传).{0,8}(成功|好了吗|好了没|你.*(看到|收到|读到))",
+    ]
+    return matches_any_pattern(normalized, status_patterns)
 
 
 def run_tool(step: AgentStep, state: dict[str, Any]) -> ToolResult:
@@ -1275,6 +1485,7 @@ def run_agent_pro(
     top_k: int = 3,
     web_max_results: int = 3,
     preferred_sources: list[str] | None = None,
+    router_mode: str = ROUTER_MODE_RULES,
 ) -> dict[str, Any]:
     preferred_sources = preferred_sources or []
     trace: list[dict[str, Any]] = []
@@ -1283,7 +1494,7 @@ def run_agent_pro(
     search_results: list[dict[str, Any]] = []
 
     started_at = time.time()
-    intent = classify_intent(question, preferred_sources)
+    intent = classify_intent(question, preferred_sources, router_mode=router_mode)
     trace.append(
         make_stage_trace(
             name="意图分类",

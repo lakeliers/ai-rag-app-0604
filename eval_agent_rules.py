@@ -283,13 +283,13 @@ def restore_tools(original_tools: dict[str, Any]) -> None:
     agent_runtime.TOOLS.update(original_tools)
 
 
-def run_case(case: dict[str, Any]) -> dict[str, Any]:
+def run_case(case: dict[str, Any], router_mode: str = agent_runtime.ROUTER_MODE_RULES) -> dict[str, Any]:
     selected_mode = case.get("selected_mode", "normal")
     preferred_sources = case.get("preferred_sources", [])
     user_input = case["user_input"]
 
     if selected_mode == "autonomous":
-        use_autonomous, reason = autonomous_agent.should_use_autonomous_mode(user_input)
+        use_autonomous, reason = autonomous_agent.should_use_autonomous_mode(user_input, router_mode=router_mode)
         if use_autonomous:
             return autonomous_agent.run_autonomous_agent(
                 user_input,
@@ -297,6 +297,7 @@ def run_case(case: dict[str, Any]) -> dict[str, Any]:
                 web_max_results=2,
                 max_steps=3,
                 preferred_sources=preferred_sources,
+                router_mode=router_mode,
             )
 
         result = agent_runtime.run_agent_pro(
@@ -305,6 +306,7 @@ def run_case(case: dict[str, Any]) -> dict[str, Any]:
             top_k=3,
             web_max_results=2,
             preferred_sources=preferred_sources,
+            router_mode=router_mode,
         )
         result["planner_mode"] = "autonomous_fallback"
         result["steps"] = [
@@ -327,6 +329,7 @@ def run_case(case: dict[str, Any]) -> dict[str, Any]:
         top_k=3,
         web_max_results=2,
         preferred_sources=preferred_sources,
+        router_mode=router_mode,
     )
 
 
@@ -375,10 +378,14 @@ def error_result(case: dict[str, Any], error: Exception) -> dict[str, Any]:
     }
 
 
-def run_case_safely(case: dict[str, Any], case_timeout: int) -> dict[str, Any]:
+def run_case_safely(
+    case: dict[str, Any],
+    case_timeout: int,
+    router_mode: str = agent_runtime.ROUTER_MODE_RULES,
+) -> dict[str, Any]:
     if case_timeout <= 0:
         try:
-            return run_case(case)
+            return run_case(case, router_mode=router_mode)
         except Exception as error:
             return error_result(case, error)
 
@@ -388,7 +395,7 @@ def run_case_safely(case: dict[str, Any], case_timeout: int) -> dict[str, Any]:
     previous_handler = signal.signal(signal.SIGALRM, handle_timeout)
     signal.alarm(case_timeout)
     try:
-        return run_case(case)
+        return run_case(case, router_mode=router_mode)
     except TimeoutError as error:
         return timeout_result(case, str(error))
     except Exception as error:
@@ -398,17 +405,21 @@ def run_case_safely(case: dict[str, Any], case_timeout: int) -> dict[str, Any]:
         signal.signal(signal.SIGALRM, previous_handler)
 
 
-def run_case_child(case: dict[str, Any], queue: Any) -> None:
+def run_case_child(case: dict[str, Any], queue: Any, router_mode: str) -> None:
     try:
-        queue.put({"ok": True, "result": run_case(case)})
+        queue.put({"ok": True, "result": run_case(case, router_mode=router_mode)})
     except Exception as error:
         queue.put({"ok": False, "result": error_result(case, error)})
 
 
-def run_case_isolated(case: dict[str, Any], case_timeout: int) -> dict[str, Any]:
+def run_case_isolated(
+    case: dict[str, Any],
+    case_timeout: int,
+    router_mode: str = agent_runtime.ROUTER_MODE_RULES,
+) -> dict[str, Any]:
     context = mp.get_context("spawn")
     queue = context.Queue()
-    process = context.Process(target=run_case_child, args=(case, queue))
+    process = context.Process(target=run_case_child, args=(case, queue, router_mode))
     process.start()
     process.join(case_timeout if case_timeout > 0 else None)
 
@@ -717,6 +728,7 @@ def run_eval(
     case_timeout: int = 120,
     isolate_cases: bool = False,
     judge: bool = False,
+    router_mode: str = agent_runtime.ROUTER_MODE_RULES,
 ) -> dict[str, Any]:
     original_tools = install_fake_tools() if mode == "mock" else None
     rows = []
@@ -724,9 +736,9 @@ def run_eval(
         for index, case in enumerate(cases, start=1):
             print(f"[{index}/{len(cases)}] running {case['case_id']} ({case.get('category', 'unknown')})")
             if isolate_cases:
-                result = run_case_isolated(case, case_timeout)
+                result = run_case_isolated(case, case_timeout, router_mode=router_mode)
             else:
-                result = run_case_safely(case, case_timeout)
+                result = run_case_safely(case, case_timeout, router_mode=router_mode)
             evaluation = evaluate_case(case, result)
             if judge:
                 evaluation = attach_judge_result(case, evaluation)
@@ -758,6 +770,7 @@ def run_eval(
         "mode": mode,
         "judge_enabled": judge,
         "judge_model": JUDGE_MODEL if judge else "",
+        "router_mode": router_mode,
         "by_category": dict(by_category),
         "failed_check_counts": dict(failed_check_counter),
         "rows": rows,
@@ -846,7 +859,7 @@ def render_report(report: dict[str, Any], output_path: Path) -> None:
 <body>
 <main>
   <h1>Agent Eval 报告</h1>
-  <div class="sub">运行模式：{esc(report.get('mode', 'mock'))}。Judge：{esc('已启用 ' + report.get('judge_model', '') if report.get('judge_enabled') else '未启用')}。规则检查系统是否跑对；LLM-as-Judge 检查语义质量、资料忠实度和来源使用。</div>
+  <div class="sub">运行模式：{esc(report.get('mode', 'mock'))}。路由模式：{esc(report.get('router_mode', 'rules'))}。Judge：{esc('已启用 ' + report.get('judge_model', '') if report.get('judge_enabled') else '未启用')}。规则检查系统是否跑对；LLM-as-Judge 检查语义质量、资料忠实度和来源使用。</div>
 
   <section class="grid">
     <div class="card"><div class="metric">{report['total']}</div><div>总样本</div></div>
@@ -885,6 +898,7 @@ def main() -> None:
     parser.add_argument("--case-timeout", type=int, default=120, help="单条 case 的超时时间，单位秒；<=0 表示不限制。")
     parser.add_argument("--isolate-cases", action="store_true", help="每条 case 使用隔离子进程执行，适合真实 API benchmark。")
     parser.add_argument("--judge", action="store_true", help="启用 LLM-as-Judge 语义质量评分。")
+    parser.add_argument("--router-mode", choices=sorted(agent_runtime.ROUTER_MODES), default=agent_runtime.ROUTER_MODE_RULES)
     args = parser.parse_args()
 
     cases = load_cases(Path(args.cases))
@@ -903,6 +917,7 @@ def main() -> None:
         case_timeout=args.case_timeout,
         isolate_cases=args.isolate_cases,
         judge=args.judge,
+        router_mode=args.router_mode,
     )
     render_report(report, Path(args.report))
 
@@ -912,6 +927,7 @@ def main() -> None:
     print(f"Failed: {report['failed']}")
     print(f"Pass rate: {report['pass_rate']:.0%}")
     print(f"Judge: {'enabled' if report['judge_enabled'] else 'disabled'}")
+    print(f"Router mode: {report['router_mode']}")
     print(f"Report: {Path(args.report).resolve()}")
 
 
