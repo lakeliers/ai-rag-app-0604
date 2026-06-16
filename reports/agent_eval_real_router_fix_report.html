@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Agent Eval 报告</title>
+  <style>
+    body { margin: 0; background: #f6f7fb; color: #202431; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; line-height: 1.6; }
+    main { max-width: 1280px; margin: 0 auto; padding: 40px 24px 72px; }
+    h1 { margin: 0 0 8px; font-size: 34px; }
+    h2 { margin: 32px 0 14px; font-size: 22px; }
+    .sub { color: #667085; margin-bottom: 28px; }
+    .grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; }
+    .card { background: #fff; border: 1px solid #e5e7ef; border-radius: 8px; padding: 18px; }
+    .metric { font-size: 30px; font-weight: 760; }
+    .pass { color: #047857; font-weight: 700; }
+    .fail { color: #dc2626; font-weight: 700; }
+    table { width: 100%; border-collapse: collapse; background: #fff; border: 1px solid #e5e7ef; border-radius: 8px; overflow: hidden; }
+    th, td { padding: 12px 14px; border-bottom: 1px solid #e5e7ef; text-align: left; vertical-align: top; font-size: 14px; }
+    th { background: #f1f5f9; }
+    tr:last-child td { border-bottom: none; }
+    pre { margin: 0; white-space: pre-wrap; font-size: 12px; background: #f8fafc; border: 1px solid #e5e7eb; border-radius: 6px; padding: 8px; max-height: 260px; overflow: auto; }
+    .note { border-left: 4px solid #2563eb; background: #eff6ff; color: #1e3a8a; padding: 12px 14px; border-radius: 6px; }
+    @media (max-width: 900px) { .grid { grid-template-columns: 1fr; } main { padding: 28px 16px 56px; } }
+  </style>
+</head>
+<body>
+<main>
+  <h1>Agent Eval 报告</h1>
+  <div class="sub">运行模式：real。Judge：未启用。规则检查系统是否跑对；LLM-as-Judge 检查语义质量、资料忠实度和来源使用。</div>
+
+  <section class="grid">
+    <div class="card"><div class="metric">2</div><div>总样本</div></div>
+    <div class="card"><div class="metric pass">2</div><div>通过</div></div>
+    <div class="card"><div class="metric fail">0</div><div>失败</div></div>
+    <div class="card"><div class="metric">100%</div><div>通过率</div></div>
+  </section>
+
+  <h2>分场景通过率</h2>
+  <table><thead><tr><th>场景</th><th>通过 / 总数</th><th>通过率</th></tr></thead><tbody><tr><td>autonomous_fallback</td><td>1/1</td><td>100%</td></tr>
+<tr><td>chitchat</td><td>1/1</td><td>100%</td></tr></tbody></table>
+
+  <h2>失败检查项</h2>
+  <table><thead><tr><th>检查项</th><th>失败次数</th></tr></thead><tbody><tr><td>无</td><td>0</td></tr></tbody></table>
+
+  <h2>逐 Case 明细</h2>
+  <table>
+    <thead><tr><th>Case</th><th>输入</th><th>最终结果</th><th>规则检查</th><th>Judge 语义评分</th><th>实际输出摘要</th></tr></thead>
+    <tbody>
+        <tr>
+          <td><strong>auto_fallback_003</strong><br><span>autonomous_fallback</span></td>
+          <td>你能做些什么</td>
+          <td class="pass">通过</td>
+          <td><pre>expected_mode: 通过
+expected_tools: 通过
+forbidden_tools: 通过
+sources: 通过
+required_tasks: 通过
+task_completion: 通过
+stop_reason: 通过
+answer: 通过</pre></td>
+          <td><pre>未启用</pre></td>
+          <td><pre>{
+  &quot;planner_mode&quot;: &quot;autonomous_fallback&quot;,
+  &quot;tools&quot;: [
+    &quot;goal_router&quot;,
+    &quot;intent_classifier&quot;,
+    &quot;planner&quot;,
+    &quot;orchestrator&quot;,
+    &quot;dag_runtime&quot;,
+    &quot;direct_answer&quot;
+  ],
+  &quot;tasks&quot;: [],
+  &quot;stop_reason&quot;: &quot;&quot;,
+  &quot;sources&quot;: [],
+  &quot;answer&quot;: &quot;我可以帮你做三类事情：\n\n1. 基于你上传的资料做总结、提取要点、问答和对比分析。\n2. 联网收集公开信息，再结合本地资料做 RAG 回答。\n3. 帮你学习和实操 AI 产品经理相关主题，比如 RAG、Tool Agent、Autonomous Agent 和 Agent Eval。\n\n你可以直接上传文件，或者问我一个具体问题。&quot;
+}</pre></td>
+        </tr>
+        
+        <tr>
+          <td><strong>chat_005</strong><br><span>chitchat</span></td>
+          <td>你可以帮我做啥？</td>
+          <td class="pass">通过</td>
+          <td><pre>expected_mode: 通过
+expected_tools: 通过
+forbidden_tools: 通过
+sources: 通过
+required_tasks: 通过
+task_completion: 通过
+stop_reason: 通过
+answer: 通过</pre></td>
+          <td><pre>未启用</pre></td>
+          <td><pre>{
+  &quot;planner_mode&quot;: &quot;pro_runtime&quot;,
+  &quot;tools&quot;: [
+    &quot;intent_classifier&quot;,
+    &quot;planner&quot;,
+    &quot;orchestrator&quot;,
+    &quot;dag_runtime&quot;,
+    &quot;direct_answer&quot;
+  ],
+  &quot;tasks&quot;: [],
+  &quot;stop_reason&quot;: &quot;&quot;,
+  &quot;sources&quot;: [],
+  &quot;answer&quot;: &quot;我可以帮你做三类事情：\n\n1. 基于你上传的资料做总结、提取要点、问答和对比分析。\n2. 联网收集公开信息，再结合本地资料做 RAG 回答。\n3. 帮你学习和实操 AI 产品经理相关主题，比如 RAG、Tool Agent、Autonomous Agent 和 Agent Eval。\n\n你可以直接上传文件，或者问我一个具体问题。&quot;
+}</pre></td>
+        </tr>
+        </tbody>
+  </table>
+
+  <h2>结论</h2>
+  <div class="note">这版 Eval 同时支持规则校验和 LLM-as-Judge。规则负责硬边界，Judge 负责语义质量；最终结果要求两者都通过。</div>
+</main>
+</body>
+</html>

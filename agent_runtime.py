@@ -1,5 +1,6 @@
 import json
 import os
+import re
 import time
 from dataclasses import dataclass, field
 from typing import Any, Callable
@@ -9,6 +10,38 @@ import rag_agent_core as agent
 
 ENABLE_LLM_PLANNER = os.getenv("ENABLE_LLM_PLANNER", "1") == "1"
 PLANNER_MODEL = os.getenv("PLANNER_MODEL", agent.DEEPSEEK_MODEL)
+
+GREETING_PATTERNS = [
+    r"^(你好|您好|嗨|hello|hi)(呀|啊|哈|，|,|。|！|!|\s)*$",
+    r"^(你好|您好|嗨|hello|hi).{0,8}(我是|我叫)",
+    r"^(我是|我叫).{1,12}$",
+    r"^(认识一下|打个招呼)$",
+]
+CAPABILITY_PATTERNS = [
+    r"(你|你们|助手|agent|这个agent|这个助手).{0,8}(能|可以|会|擅长|支持).{0,8}(做什么|做些?什么|做哪些|干什么|干嘛|帮我什么|帮我做什么|帮我啥|做啥)",
+    r"(你|你们|助手|agent|这个agent|这个助手).{0,8}(会什么|擅长什么|支持什么)",
+    r"(你|你们|助手|agent|这个agent|这个助手).{0,8}(有什么|有哪些).{0,4}(功能|能力|用处|用)",
+    r"(怎么用|如何使用).{0,8}(你|这个agent|这个助手|agent|助手)",
+    r"(你|你们|助手|agent|这个agent|这个助手).{0,8}(是谁|自我介绍|介绍一下)",
+]
+CONCRETE_TASK_WORDS = [
+    "调研",
+    "研究",
+    "对比",
+    "报告",
+    "计划",
+    "方案",
+    "梳理",
+    "整理",
+    "分析",
+    "追踪",
+    "总结",
+    "提取",
+    "生成",
+    "输出",
+    "写一份",
+    "做一份",
+]
 
 
 @dataclass
@@ -63,6 +96,32 @@ class TaskNode:
 @dataclass
 class TaskGraph:
     nodes: list[TaskNode]
+
+
+def normalize_user_text(text: str) -> str:
+    return re.sub(r"\s+", "", text.strip().lower())
+
+
+def matches_any_pattern(text: str, patterns: list[str]) -> bool:
+    normalized = normalize_user_text(text)
+    return any(re.search(pattern, normalized) for pattern in patterns)
+
+
+def asks_for_capability_intro(question: str) -> bool:
+    normalized = normalize_user_text(question)
+    if any(word in normalized for word in CONCRETE_TASK_WORDS):
+        return False
+    return matches_any_pattern(normalized, CAPABILITY_PATTERNS)
+
+
+def is_lightweight_direct_intent(question: str) -> tuple[bool, str, str]:
+    if asks_for_capability_intro(question):
+        return True, "capability_intro", "用户在询问 Agent 能力边界，应该直接说明可用能力。"
+
+    if len(question.strip()) <= 30 and matches_any_pattern(question, GREETING_PATTERNS):
+        return True, "chitchat", "用户输入更像寒暄、自我介绍或普通对话。"
+
+    return False, "", ""
 
 
 def tool_web_collect(question: str, max_results: int) -> ToolResult:
@@ -137,30 +196,12 @@ def classify_intent(question: str, preferred_sources: list[str]) -> IntentResult
             constraints=constraints,
         )
 
-    chitchat_words = [
-        "你好",
-        "您好",
-        "嗨",
-        "hello",
-        "hi",
-        "我是",
-        "认识一下",
-        "你是谁",
-        "介绍一下你自己",
-        "你能做什么",
-        "你能做些什么",
-        "你能做哪些事",
-        "你会什么",
-        "你擅长什么",
-        "能帮我什么",
-        "可以帮我什么",
-        "能帮我做什么",
-    ]
-    if len(stripped_question) <= 30 and any(word in lowered_question for word in chitchat_words):
+    is_direct_intent, direct_intent, direct_reason = is_lightweight_direct_intent(stripped_question)
+    if is_direct_intent:
         return IntentResult(
-            intent="chitchat",
+            intent=direct_intent,
             confidence=0.9,
-            reason="用户输入更像寒暄、自我介绍或普通对话。",
+            reason=direct_reason,
             suggested_action="direct_answer",
             entities=entities,
             constraints=constraints,
@@ -202,7 +243,7 @@ def classify_intent(question: str, preferred_sources: list[str]) -> IntentResult
 
 
 def plan_high_level_action(intent: IntentResult, preferred_sources: list[str], use_web: bool) -> PlanResult:
-    if intent.intent == "chitchat":
+    if intent.intent in {"chitchat", "capability_intro"}:
         return PlanResult(
             action="direct_answer",
             reason="寒暄或普通对话不需要检索资料，直接回复即可。",
@@ -631,17 +672,7 @@ def tool_generate_answer(question: str, search_results: list[dict[str, Any]]) ->
 
 
 def tool_direct_answer(question: str) -> ToolResult:
-    capability_question_words = [
-        "你能做什么",
-        "你能做些什么",
-        "你能做哪些事",
-        "你会什么",
-        "你擅长什么",
-        "能帮我什么",
-        "可以帮我什么",
-        "能帮我做什么",
-    ]
-    if any(word in question for word in capability_question_words):
+    if asks_for_capability_intro(question):
         answer = (
             "我可以帮你做三类事情：\n\n"
             "1. 基于你上传的资料做总结、提取要点、问答和对比分析。\n"
