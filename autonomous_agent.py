@@ -204,6 +204,7 @@ def execute_task_with_tool_agent(
         web_max_results=state.goal.constraints.get("web_max_results", 2),
         preferred_sources=preferred_sources,
         router_mode=state.goal.constraints.get("router_mode", agent_runtime.ROUTER_MODE_RULES),
+        source_strategy=state.goal.constraints.get("source_strategy", agent_runtime.SOURCE_STRATEGY_AUTO),
     )
     return {
         "success": bool(result.get("answer")),
@@ -356,11 +357,13 @@ def run_autonomous_agent(
     max_steps: int = 3,
     preferred_sources: list[str] | None = None,
     router_mode: str = agent_runtime.ROUTER_MODE_RULES,
+    source_strategy: str = agent_runtime.SOURCE_STRATEGY_AUTO,
     tool_agent_runner: Callable[..., dict[str, Any]] = agent_runtime.run_agent_pro,
 ) -> dict[str, Any]:
     preferred_sources = preferred_sources or []
     goal = create_goal(user_request, max_steps=max_steps, top_k=top_k, web_max_results=web_max_results)
     goal.constraints["router_mode"] = router_mode
+    goal.constraints["source_strategy"] = source_strategy
     state = AutonomousState(goal=goal, tasks=create_initial_tasks(goal))
 
     while not state.done:

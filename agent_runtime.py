@@ -13,6 +13,16 @@ PLANNER_MODEL = os.getenv("PLANNER_MODEL", agent.DEEPSEEK_MODEL)
 ROUTER_MODE_RULES = "rules"
 ROUTER_MODE_HYBRID = "hybrid"
 ROUTER_MODES = {ROUTER_MODE_RULES, ROUTER_MODE_HYBRID}
+SOURCE_STRATEGY_AUTO = "auto"
+SOURCE_STRATEGY_UPLOAD_ONLY = "upload_only"
+SOURCE_STRATEGY_WEB_ONLY = "web_only"
+SOURCE_STRATEGY_UPLOAD_AND_WEB = "upload_and_web"
+SOURCE_STRATEGIES = {
+    SOURCE_STRATEGY_AUTO,
+    SOURCE_STRATEGY_UPLOAD_ONLY,
+    SOURCE_STRATEGY_WEB_ONLY,
+    SOURCE_STRATEGY_UPLOAD_AND_WEB,
+}
 
 GREETING_PATTERNS = [
     r"^(你好|您好|嗨|hello|hi)(呀|啊|哈|，|,|。|！|!|\s)*$",
@@ -177,14 +187,34 @@ def is_strict_upload_context_question(question: str, preferred_sources: list[str
     )
 
 
-def tool_rag_search(question: str, top_k: int, preferred_sources: list[str]) -> ToolResult:
-    preferred_only = is_strict_upload_context_question(question, preferred_sources)
+def tool_rag_search(
+    question: str,
+    top_k: int,
+    preferred_sources: list[str],
+    source_strategy: str = SOURCE_STRATEGY_AUTO,
+) -> ToolResult:
+    if source_strategy == SOURCE_STRATEGY_UPLOAD_ONLY and not preferred_sources:
+        return ToolResult(
+            status="success",
+            summary="当前配置为仅上传资料，但没有可用上传资料。",
+            data=[],
+        )
+
+    preferred_only = (
+        source_strategy == SOURCE_STRATEGY_UPLOAD_ONLY
+        or is_strict_upload_context_question(question, preferred_sources)
+    )
     results = agent.search_chroma(
         question,
         top_k=top_k,
         preferred_sources=preferred_sources,
         preferred_only=preferred_only,
     )
+    if source_strategy == SOURCE_STRATEGY_WEB_ONLY:
+        results = [item for item in results if item.get("source_type") == "web"]
+    elif source_strategy == SOURCE_STRATEGY_UPLOAD_ONLY:
+        results = [item for item in results if item.get("source_type") == "upload"]
+
     upload_count = sum(1 for item in results if item.get("source_type") == "upload")
     web_count = sum(1 for item in results if item.get("source_type") == "web")
     return ToolResult(
@@ -498,6 +528,7 @@ def orchestrate_action(
     top_k: int,
     web_max_results: int,
     preferred_sources: list[str],
+    source_strategy: str = SOURCE_STRATEGY_AUTO,
 ) -> list[AgentStep]:
     if action == "direct_answer":
         return [
@@ -521,6 +552,12 @@ def orchestrate_action(
 
     steps: list[AgentStep] = []
     should_collect_web = use_web and (intent == "latest_research" or not preferred_sources)
+    if source_strategy == SOURCE_STRATEGY_UPLOAD_AND_WEB:
+        should_collect_web = use_web
+    elif source_strategy == SOURCE_STRATEGY_UPLOAD_ONLY:
+        should_collect_web = False
+    elif source_strategy == SOURCE_STRATEGY_WEB_ONLY:
+        should_collect_web = use_web
     if should_collect_web:
         steps.append(
             AgentStep(
@@ -540,6 +577,7 @@ def orchestrate_action(
                 "question": question,
                 "top_k": top_k,
                 "preferred_sources": preferred_sources,
+                "source_strategy": source_strategy,
             },
         )
     )
@@ -554,6 +592,7 @@ def build_task_graph(
     top_k: int,
     web_max_results: int,
     preferred_sources: list[str],
+    source_strategy: str = SOURCE_STRATEGY_AUTO,
 ) -> TaskGraph:
     if plan.action == "direct_answer":
         return TaskGraph(nodes=[
@@ -585,6 +624,12 @@ def build_task_graph(
         or not preferred_sources
         or plan.params.get("needs_web", False)
     )
+    if source_strategy == SOURCE_STRATEGY_UPLOAD_AND_WEB:
+        should_collect_web = use_web
+    elif source_strategy == SOURCE_STRATEGY_UPLOAD_ONLY:
+        should_collect_web = False
+    elif source_strategy == SOURCE_STRATEGY_WEB_ONLY:
+        should_collect_web = use_web
 
     if should_collect_web:
         nodes.append(
@@ -610,6 +655,7 @@ def build_task_graph(
                 "question": question,
                 "top_k": top_k,
                 "preferred_sources": preferred_sources,
+                "source_strategy": source_strategy,
             },
             depends_on=["web_collect"] if should_collect_web else [],
             output_key="rag_search",
@@ -1486,15 +1532,20 @@ def run_agent_pro(
     web_max_results: int = 3,
     preferred_sources: list[str] | None = None,
     router_mode: str = ROUTER_MODE_RULES,
+    source_strategy: str = SOURCE_STRATEGY_AUTO,
 ) -> dict[str, Any]:
+    if source_strategy not in SOURCE_STRATEGIES:
+        source_strategy = SOURCE_STRATEGY_AUTO
     preferred_sources = preferred_sources or []
+    effective_preferred_sources = [] if source_strategy == SOURCE_STRATEGY_WEB_ONLY else preferred_sources
+    effective_use_web = use_web and source_strategy != SOURCE_STRATEGY_UPLOAD_ONLY
     trace: list[dict[str, Any]] = []
     tool_results: dict[str, ToolResult] = {}
     answer = ""
     search_results: list[dict[str, Any]] = []
 
     started_at = time.time()
-    intent = classify_intent(question, preferred_sources, router_mode=router_mode)
+    intent = classify_intent(question, effective_preferred_sources, router_mode=router_mode)
     trace.append(
         make_stage_trace(
             name="意图分类",
@@ -1506,7 +1557,16 @@ def run_agent_pro(
     )
 
     started_at = time.time()
-    plan = plan_high_level_action(intent, preferred_sources, use_web)
+    plan = plan_high_level_action(intent, effective_preferred_sources, effective_use_web)
+    if source_strategy == SOURCE_STRATEGY_UPLOAD_AND_WEB:
+        plan.params["needs_web"] = True
+        plan.params["needs_upload"] = bool(effective_preferred_sources)
+    elif source_strategy == SOURCE_STRATEGY_WEB_ONLY:
+        plan.params["needs_web"] = True
+        plan.params["needs_upload"] = False
+    elif source_strategy == SOURCE_STRATEGY_UPLOAD_ONLY:
+        plan.params["needs_web"] = False
+        plan.params["needs_upload"] = bool(effective_preferred_sources)
     trace.append(
         make_stage_trace(
             name="高层规划",
@@ -1522,10 +1582,11 @@ def run_agent_pro(
         plan=plan,
         question=question,
         intent=intent,
-        use_web=use_web,
+        use_web=effective_use_web,
         top_k=top_k,
         web_max_results=web_max_results,
-        preferred_sources=preferred_sources,
+        preferred_sources=effective_preferred_sources,
+        source_strategy=source_strategy,
     )
     trace.append(
         make_stage_trace(

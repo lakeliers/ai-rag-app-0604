@@ -131,6 +131,14 @@ def source_label(source):
     return "其他资料｜参考"
 
 
+SOURCE_STRATEGY_LABELS = {
+    "自动判断": agent_runtime.SOURCE_STRATEGY_AUTO,
+    "仅上传资料": agent_runtime.SOURCE_STRATEGY_UPLOAD_ONLY,
+    "仅联网资料": agent_runtime.SOURCE_STRATEGY_WEB_ONLY,
+    "上传资料 + 联网并行": agent_runtime.SOURCE_STRATEGY_UPLOAD_AND_WEB,
+}
+
+
 with st.sidebar:
     st.header("资料")
     uploaded_files = st.file_uploader(
@@ -152,8 +160,8 @@ with st.sidebar:
         accept_multiple_files=True,
     )
 
-    top_k = st.slider("资料条数", 1, 5, 3)
-    web_max_results = st.slider("网页结果数", 1, 5, 2)
+    st.divider()
+    st.subheader("Agent 配置")
     run_mode = st.radio(
         "运行模式",
         ["普通问答", "自主任务"],
@@ -172,6 +180,31 @@ with st.sidebar:
     max_autonomous_steps = st.slider("自主任务最大步数", 1, 5, 3)
 
     st.divider()
+    st.subheader("RAG 配置")
+    source_strategy_label = st.radio(
+        "资料来源策略",
+        list(SOURCE_STRATEGY_LABELS.keys()),
+        help="用于观察上传资料、网页资料和自动策略对结果的影响。",
+    )
+    source_strategy = SOURCE_STRATEGY_LABELS[source_strategy_label]
+    top_k = st.slider("资料条数", 1, 5, 3)
+    web_max_results = st.slider("网页结果数", 1, 5, 2)
+    reranker_enabled = st.toggle(
+        "启用 Reranker",
+        value=agent.ENABLE_RERANKER,
+        help="关闭后只使用向量、关键词和融合分；开启后增加精排模型。",
+    )
+    agent.ENABLE_RERANKER = reranker_enabled
+
+    st.divider()
+    st.subheader("可观测性")
+    trace_level = st.radio(
+        "Trace 展示级别",
+        ["简洁", "完整", "隐藏"],
+        help="控制是否展示 Agent 执行步骤、工具、原因和耗时。",
+    )
+
+    st.divider()
     st.caption("Agent 会自动使用上传资料，并联网补充资料；没有上传资料时，会直接联网收集。")
     st.write("DeepSeek:", "已配置" if deepseek_key else "未配置")
     st.write("通义百炼:", "已配置" if dashscope_key else "未配置")
@@ -180,6 +213,7 @@ with st.sidebar:
     planner_status = "行业主流Runtime雏形"
     st.write("Planner:", planner_status)
     st.write("Router:", router_mode_label)
+    st.write("Source:", source_strategy_label)
 
     if "upload_status" in st.session_state and st.session_state.upload_status:
         st.divider()
@@ -239,6 +273,7 @@ if prompt:
                         max_steps=max_autonomous_steps,
                         preferred_sources=uploaded_sources,
                         router_mode=router_mode,
+                        source_strategy=source_strategy,
                     )
                 else:
                     result = agent_runtime.run_agent_pro(
@@ -248,6 +283,7 @@ if prompt:
                         web_max_results=web_max_results,
                         preferred_sources=uploaded_sources,
                         router_mode=router_mode,
+                        source_strategy=source_strategy,
                     )
                     if run_mode == "自主任务":
                         result["planner_mode"] = "autonomous_fallback"
@@ -271,36 +307,40 @@ if prompt:
             })
             st.session_state.last_sources = result["sources"]
 
-            with st.expander("查看 Agent 执行步骤"):
-                planner_label = (
-                    "Autonomous Runtime"
-                    if result.get("planner_mode") == "autonomous_runtime"
-                    else
-                    "LLM Tool Calling"
-                    if result.get("planner_mode") == "llm_tool_calling"
-                    else "自主模式回退普通问答"
-                    if result.get("planner_mode") == "autonomous_fallback"
-                    else "行业主流Runtime雏形"
-                    if result.get("planner_mode") == "pro_runtime"
-                    else "规则兜底"
-                )
-                st.caption(f"Planner来源：{planner_label}")
-                for index, step in enumerate(result.get("steps", []), start=1):
-                    status_map = {
-                        "success": "成功",
-                        "warning": "提示",
-                        "failed": "失败",
-                    }
-                    status = status_map.get(step["status"], step["status"])
-                    st.markdown(f"**{index}. {step['name']}**")
-                    st.caption(
-                        f"工具：{step['tool']} | 状态：{status} | 耗时：{step['elapsed_ms']} ms"
+            if trace_level != "隐藏":
+                with st.expander("查看 Agent 执行步骤"):
+                    planner_label = (
+                        "Autonomous Runtime"
+                        if result.get("planner_mode") == "autonomous_runtime"
+                        else
+                        "LLM Tool Calling"
+                        if result.get("planner_mode") == "llm_tool_calling"
+                        else "自主模式回退普通问答"
+                        if result.get("planner_mode") == "autonomous_fallback"
+                        else "行业主流Runtime雏形"
+                        if result.get("planner_mode") == "pro_runtime"
+                        else "规则兜底"
                     )
-                    st.write(step["reason"])
-                    st.write(step["summary"])
-                    if step.get("error"):
-                        st.error(step["error"])
-                    st.divider()
+                    st.caption(f"Planner来源：{planner_label}｜Router：{router_mode_label}｜Source：{source_strategy_label}")
+                    for index, step in enumerate(result.get("steps", []), start=1):
+                        status_map = {
+                            "success": "成功",
+                            "warning": "提示",
+                            "failed": "失败",
+                        }
+                        status = status_map.get(step["status"], step["status"])
+                        st.markdown(f"**{index}. {step['name']}**")
+                        st.caption(
+                            f"工具：{step['tool']} | 状态：{status} | 耗时：{step['elapsed_ms']} ms"
+                        )
+                        if trace_level == "完整":
+                            st.write(step["reason"])
+                            st.write(step["summary"])
+                        else:
+                            st.write(step["summary"])
+                        if step.get("error"):
+                            st.error(step["error"])
+                        st.divider()
 
             if result.get("planner_mode") == "autonomous_runtime":
                 with st.expander("查看自主任务状态"):
