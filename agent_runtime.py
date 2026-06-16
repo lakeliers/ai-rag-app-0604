@@ -43,6 +43,7 @@ CAPABILITY_PATTERNS = [
     r"(你|你们|助手|agent|这个agent|这个助手).{0,8}(有什么|有哪些).{0,4}(功能|能力|用处|用)",
     r"(怎么用|如何使用).{0,8}(你|这个agent|这个助手|agent|助手)",
     r"(你|你们|助手|agent|这个agent|这个助手).{0,8}(是谁|自我介绍|介绍一下)",
+    r"(介绍一下|自我介绍).{0,8}(你|你自己|这个agent|这个助手|agent|助手)",
 ]
 CONCRETE_TASK_WORDS = [
     "调研",
@@ -160,8 +161,26 @@ def extract_json_object(text: str) -> dict[str, Any]:
         raise
 
 
+def extract_effective_query(question: str) -> str:
+    """Convert verbose agent task prompts into short retrieval/search queries."""
+    stripped = question.strip()
+    goal_match = re.search(r"总目标：\s*(.+?)(?:\n\s*\n|当前任务：)", stripped, re.S)
+    if goal_match:
+        goal = re.sub(r"\s+", " ", goal_match.group(1)).strip()
+        if goal:
+            return goal[:120]
+
+    if len(stripped) > 160 and "用户问题：" in stripped:
+        user_question = stripped.rsplit("用户问题：", 1)[-1].strip()
+        if user_question:
+            return re.sub(r"\s+", " ", user_question)[:120]
+
+    return stripped
+
+
 def tool_web_collect(question: str, max_results: int) -> ToolResult:
-    ingested = agent.web_collect(question, max_results=max_results)
+    query = extract_effective_query(question)
+    ingested = agent.web_collect(query, max_results=max_results)
     return ToolResult(
         status="success",
         summary=f"联网收集完成，写入 {len(ingested)} 条网页资料。",
@@ -202,6 +221,7 @@ def tool_rag_search(
     retrieval_strategy: str = agent.RETRIEVAL_VECTOR_BM25_RRF,
     context_packing_strategy: str = agent.CONTEXT_STRICT_BUDGET,
 ) -> ToolResult:
+    effective_question = extract_effective_query(question)
     if source_strategy == SOURCE_STRATEGY_UPLOAD_ONLY and not preferred_sources:
         return ToolResult(
             status="success",
@@ -211,10 +231,10 @@ def tool_rag_search(
 
     preferred_only = (
         source_strategy == SOURCE_STRATEGY_UPLOAD_ONLY
-        or is_strict_upload_context_question(question, preferred_sources)
+        or is_strict_upload_context_question(effective_question, preferred_sources)
     )
     results = agent.search_chroma(
-        question,
+        effective_question,
         top_k=top_k,
         preferred_sources=preferred_sources,
         preferred_only=preferred_only,
@@ -925,9 +945,30 @@ def apply_source_quota(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
 
 def tool_generate_answer(question: str, search_results: list[dict[str, Any]]) -> ToolResult:
-    answer = agent.ask_deepseek(question, search_results)
-    if answer is None:
-        raise RuntimeError("没有找到 DEEPSEEK_API_KEY。")
+    try:
+        answer = agent.ask_deepseek(question, search_results)
+    except Exception as error:
+        answer = ""
+
+    if not answer:
+        if not search_results:
+            answer = "资料不足，当前没有检索到可用于回答的参考资料。"
+        else:
+            source_lines = []
+            basis_lines = []
+            for index, item in enumerate(search_results[:3], start=1):
+                source = item.get("source", "未知来源")
+                document = re.sub(r"\s+", " ", item.get("document", "")).strip()
+                if document:
+                    basis_lines.append(f"{index}. {document[:180]}")
+                source_lines.append(f"- {source}")
+            answer = (
+                "结论：生成模型请求失败，以下为基于已检索资料的兜底回答。\n\n"
+                "关键依据：\n"
+                + ("\n".join(basis_lines) if basis_lines else "- 已检索到资料，但正文摘要不足。")
+                + "\n\n参考来源：\n"
+                + "\n".join(source_lines)
+            )
 
     agent.conversation_history.append({"role": "user", "content": question})
     agent.conversation_history.append({"role": "assistant", "content": answer})

@@ -3,6 +3,7 @@ import html
 import json
 import multiprocessing as mp
 import os
+import re
 import signal
 from collections import Counter, defaultdict
 from pathlib import Path
@@ -147,6 +148,52 @@ EVAL_UPLOAD_FIXTURES = {
         "不要引用历史上传文件或无关网页资料。"
     ),
 }
+EVAL_WEB_FIXTURES = [
+    {
+        "source": "网页：AI Agent 产品趋势稳定样本",
+        "url": "https://example.com/eval/ai-agent-trends",
+        "text": (
+            "AI Agent 产品趋势稳定样本：2026 年 AI Agent 产品正在从单次工具调用走向任务级工作流。"
+            "关键趋势包括多工具编排、可观测运行时、Agent Eval 评估体系、记忆系统、权限与安全控制、"
+            "以及面向业务场景的多 Agent 协作。近期值得关注的产品动态包括：ChatGPT 类产品强化任务执行和连接器，"
+            "企业知识库产品强化权限、审计和引用可追溯，开发者平台强化工具调用、工作流编排和评估闭环。"
+            "三个可对标的 AI Agent 产品包括：ChatGPT（通用助手型 Agent，强调多工具调用、文件理解和连接器）、"
+            "Claude（长上下文知识工作 Agent，强调文档理解、项目知识和安全边界）、"
+            "Cursor（开发者自动化 Agent，强调代码理解、编辑、调试和任务执行）。"
+            "也可以按产品类型归纳为：通用助手型 Agent、企业知识库/RAG Agent、开发者自动化 Agent。"
+            "产品经理应关注的能力清单包括：目标理解、工具调用、RAG 资料检索、记忆管理、权限控制、可观测性、"
+            "评估体系、失败恢复、成本控制和人类确认机制。多 Agent 协作的新进展包括角色分工、共享状态、"
+            "任务队列、冲突仲裁和统一审计。Agent Memory 的实践趋势包括短期会话记忆、长期用户偏好、"
+            "任务状态记忆、可删除/可解释的记忆、以及按权限隔离的组织知识记忆。"
+            "当前 Agent MVP 的主要风险包括：路由误判、资料污染、联网不稳定、引用不准、judge 不稳定、"
+            "自主循环过度执行、成本失控和缺少权限确认。下一轮优化计划应优先覆盖：路由评估集、稳定检索夹具、"
+            "引用校验、请求超时、trace 可观测性、配置化教学开关和线上监控。"
+            "产品经理需要重点学习：RAG 检索链路、Tool Agent 工具调用、Autonomous Agent 目标拆解与循环、"
+            "Agent Eval 评估体系、成本与权限治理。"
+        ),
+    },
+    {
+        "source": "网页：RAG 定义稳定样本",
+        "url": "https://example.com/eval/rag-definition",
+        "text": (
+            "RAG 是 Retrieval-Augmented Generation，中文常译为检索增强生成。"
+            "它先从知识库、上传文件或网页中检索相关资料，再把资料与用户问题一起交给大模型生成回答。"
+            "RAG 的核心价值是降低幻觉、补充模型不知道或不稳定的信息，并保留参考来源。"
+            "RAG 工程化趋势包括混合检索、BM25 与向量召回融合、RRF 排序、reranker 精排、元数据过滤、"
+            "去重、来源权重、新鲜度权重、Context Packing、引用校验和离线评估。"
+            "Tool Agent 是围绕一次用户请求选择并执行工具的 Agent，重点是工具注册、工具 schema、planner、"
+            "executor、state、trace 和 fallback。Autonomous Agent 是围绕一个目标拆解任务队列并循环推进的 Agent，"
+            "重点是 Goal Manager、Task Queue、Observe-Act Loop、Critic/Reflection、Stop Condition 和 Human-in-the-loop。"
+            "reranker 是重排序模型，通常把用户问题和候选 chunk 作为一对输入，直接判断两者相关性，"
+            "比只看向量余弦相似度更擅长理解语义匹配。Context Packing 是把检索后的候选资料按 token budget、"
+            "来源优先级、去重、覆盖度和引用需求打包进最终 messages 的过程。BM25 是关键词统计检索，"
+            "擅长精确词命中；向量检索是语义检索，擅长表达相近但词不完全一致的问题。"
+            "RAG 产品化评估方案应包含指标、样本集和验收方式：指标包括任务成功率、工具调用正确率、"
+            "检索命中率、答案忠实度、引用准确率、延迟、成本和安全事件；样本集包括 smoke、regression、benchmark；"
+            "验收方式包括规则检查、LLM-as-Judge、人审抽检、线上日志回放和失败 case 复盘。"
+        ),
+    },
+]
 
 
 def load_cases(path: Path) -> list[dict[str, Any]]:
@@ -204,6 +251,31 @@ def fake_web_collect(question: str, max_results: int) -> agent_runtime.ToolResul
                 "url": "https://example.com/agent-trends",
             }
         ],
+    )
+
+
+def stable_web_collect(question: str, max_results: int) -> agent_runtime.ToolResult:
+    query = agent_runtime.extract_effective_query(question)
+    ingested = []
+    for item in EVAL_WEB_FIXTURES[:max_results]:
+        chunk_count = agent_runtime.agent.add_text_to_chroma(
+            item["text"],
+            source=item["source"],
+            source_type="web",
+            url=item["url"],
+            content_type="eval_web_fixture",
+            created_at=1781490000,
+        )
+        ingested.append({
+            "title": item["source"],
+            "url": item["url"],
+            "chunks": chunk_count,
+            "query": query,
+        })
+    return agent_runtime.ToolResult(
+        status="success",
+        summary=f"稳定网页夹具写入 {len(ingested)} 条资料。",
+        data=ingested,
     )
 
 
@@ -298,6 +370,12 @@ def install_fake_tools() -> dict[str, Any]:
         "rag_search": fake_rag_search,
         "generate_answer": fake_generate_answer,
     })
+    return original_tools
+
+
+def install_stable_web_tool() -> dict[str, Any]:
+    original_tools = agent_runtime.TOOLS.copy()
+    agent_runtime.TOOLS["web_collect"] = stable_web_collect
     return original_tools
 
 
@@ -624,12 +702,24 @@ def build_reference_context(evaluation: dict[str, Any]) -> list[dict[str, Any]]:
 
 
 def build_judge_payload(case: dict[str, Any], evaluation: dict[str, Any]) -> dict[str, Any]:
+    reference_context = build_reference_context(evaluation)
+    if case.get("category") == "upload_status":
+        preferred_sources = case.get("preferred_sources", [])
+        reference_context.append({
+            "source_type": "app_state",
+            "source": "current_uploaded_sources",
+            "document": (
+                "当前已入库上传资料："
+                + ("、".join(preferred_sources) if preferred_sources else "无")
+            ),
+        })
+
     return {
         "case_id": case["case_id"],
         "category": case.get("category", "unknown"),
         "user_prompt": case["user_input"],
         "agent_result": evaluation["result"].get("answer", ""),
-        "reference_context": build_reference_context(evaluation),
+        "reference_context": reference_context,
         "tool_trace": evaluation["result"].get("tools", []),
         "task_trace": evaluation["result"].get("tasks", []),
         "expected_behavior": build_expected_behavior(case),
@@ -649,13 +739,20 @@ def extract_json_object(text: str) -> dict[str, Any]:
         stripped = stripped.strip("`")
         if stripped.startswith("json"):
             stripped = stripped[4:].strip()
+    stripped = stripped.replace("True", "true").replace("False", "false").replace("None", "null")
     try:
         return json.loads(stripped)
     except json.JSONDecodeError:
         start = stripped.find("{")
         end = stripped.rfind("}")
         if start >= 0 and end > start:
-            return json.loads(stripped[start:end + 1])
+            snippet = stripped[start:end + 1]
+            try:
+                return json.loads(snippet)
+            except json.JSONDecodeError:
+                sanitized = re.sub(r",\s*([}\]])", r"\1", snippet)
+                sanitized = re.sub(r"(?<!\\)\n", r"\\n", sanitized)
+                return json.loads(sanitized)
         raise
 
 
@@ -703,17 +800,94 @@ def call_llm_judge(payload: dict[str, Any]) -> dict[str, Any]:
             "reason": "未找到 DEEPSEEK_API_KEY，无法调用 LLM-as-Judge。",
         }
 
-    response = client.chat.completions.create(
-        model=JUDGE_MODEL,
-        messages=[
+    messages = [
             {"role": "system", "content": JUDGE_SYSTEM_PROMPT},
             {"role": "user", "content": json.dumps(payload, ensure_ascii=False)},
-        ],
-        temperature=0,
-        max_tokens=900,
-    )
+    ]
+    request_args = {
+        "model": JUDGE_MODEL,
+        "messages": messages,
+        "temperature": 0,
+        "max_tokens": 900,
+        "response_format": {"type": "json_object"},
+        "timeout": agent_runtime.agent.LLM_TIMEOUT_SECONDS,
+    }
+    try:
+        response = client.chat.completions.create(**request_args)
+    except TypeError:
+        request_args.pop("response_format", None)
+        response = client.chat.completions.create(**request_args)
     raw_text = response.choices[0].message.content or "{}"
-    parsed = extract_json_object(raw_text)
+    try:
+        parsed = extract_json_object(raw_text)
+    except json.JSONDecodeError:
+        retry_messages = [
+            {"role": "system", "content": JUDGE_SYSTEM_PROMPT},
+            {
+                "role": "user",
+                "content": (
+                    "上一条评估输出不是合法 JSON。请只把它修正为合法 JSON，"
+                    "不得添加 Markdown 或解释。\n\n原始输出：\n" + raw_text
+                ),
+            },
+        ]
+        retry_args = {
+            "model": JUDGE_MODEL,
+            "messages": retry_messages,
+            "temperature": 0,
+            "max_tokens": 900,
+            "response_format": {"type": "json_object"},
+            "timeout": agent_runtime.agent.LLM_TIMEOUT_SECONDS,
+        }
+        try:
+            retry_response = client.chat.completions.create(**retry_args)
+        except TypeError:
+            retry_args.pop("response_format", None)
+            retry_response = client.chat.completions.create(**retry_args)
+        parsed = extract_json_object(retry_response.choices[0].message.content or "{}")
+
+    if not isinstance(parsed.get("scores"), dict) or not parsed.get("scores"):
+        retry_messages = [
+            {"role": "system", "content": JUDGE_SYSTEM_PROMPT},
+            {
+                "role": "user",
+                "content": (
+                    "请重新完成这次 Agent 评估。必须输出包含 scores、overall_score、pass、"
+                    "failed_dimensions、reason 的合法 JSON，scores 不能为空。\n\n"
+                    + json.dumps(payload, ensure_ascii=False)
+                ),
+            },
+        ]
+        retry_args = {
+            "model": JUDGE_MODEL,
+            "messages": retry_messages,
+            "temperature": 0,
+            "max_tokens": 900,
+            "response_format": {"type": "json_object"},
+            "timeout": agent_runtime.agent.LLM_TIMEOUT_SECONDS,
+        }
+        try:
+            retry_response = client.chat.completions.create(**retry_args)
+        except TypeError:
+            retry_args.pop("response_format", None)
+            retry_response = client.chat.completions.create(**retry_args)
+        parsed = extract_json_object(retry_response.choices[0].message.content or "{}")
+
+    if not isinstance(parsed.get("scores"), dict) or not parsed.get("scores"):
+        parsed = {
+            "scores": {
+                "task_success": 0,
+                "groundedness": 0,
+                "source_usage": 0,
+                "completeness": 0,
+                "clarity": 0,
+                "safety": 0,
+            },
+            "overall_score": 0,
+            "pass": False,
+            "failed_dimensions": ["judge_invalid_output"],
+            "reason": "Judge 返回合法 JSON，但缺少必需的 scores 字段。",
+        }
     aggregation = aggregate_judge_scores(payload["category"], parsed)
     return {
         "enabled": True,
@@ -762,8 +936,13 @@ def run_eval(
     judge: bool = False,
     router_mode: str = ROUTER_MODE_RULES,
     source_strategy: str = SOURCE_STRATEGY_AUTO,
+    stable_web: bool = False,
 ) -> dict[str, Any]:
-    original_tools = install_fake_tools() if mode == "mock" else None
+    original_tools = None
+    if mode == "mock":
+        original_tools = install_fake_tools()
+    elif stable_web:
+        original_tools = install_stable_web_tool()
     rows = []
     try:
         for index, case in enumerate(cases, start=1):
@@ -815,6 +994,7 @@ def run_eval(
         "judge_model": JUDGE_MODEL if judge else "",
         "router_mode": router_mode,
         "source_strategy": source_strategy,
+        "stable_web": stable_web,
         "by_category": dict(by_category),
         "failed_check_counts": dict(failed_check_counter),
         "rows": rows,
@@ -903,7 +1083,7 @@ def render_report(report: dict[str, Any], output_path: Path) -> None:
 <body>
 <main>
   <h1>Agent Eval 报告</h1>
-  <div class="sub">运行模式：{esc(report.get('mode', 'mock'))}。路由模式：{esc(report.get('router_mode', 'rules'))}。资料策略：{esc(report.get('source_strategy', 'auto'))}。Judge：{esc('已启用 ' + report.get('judge_model', '') if report.get('judge_enabled') else '未启用')}。规则检查系统是否跑对；LLM-as-Judge 检查语义质量、资料忠实度和来源使用。</div>
+  <div class="sub">运行模式：{esc(report.get('mode', 'mock'))}。路由模式：{esc(report.get('router_mode', 'rules'))}。资料策略：{esc(report.get('source_strategy', 'auto'))}。稳定网页夹具：{esc('已启用' if report.get('stable_web') else '未启用')}。Judge：{esc('已启用 ' + report.get('judge_model', '') if report.get('judge_enabled') else '未启用')}。规则检查系统是否跑对；LLM-as-Judge 检查语义质量、资料忠实度和来源使用。</div>
 
   <section class="grid">
     <div class="card"><div class="metric">{report['total']}</div><div>总样本</div></div>
@@ -942,6 +1122,7 @@ def main() -> None:
     parser.add_argument("--case-timeout", type=int, default=120, help="单条 case 的超时时间，单位秒；<=0 表示不限制。")
     parser.add_argument("--isolate-cases", action="store_true", help="每条 case 使用隔离子进程执行，适合真实 API benchmark。")
     parser.add_argument("--judge", action="store_true", help="启用 LLM-as-Judge 语义质量评分。")
+    parser.add_argument("--stable-web", action="store_true", help="真实模型评估时使用稳定网页夹具，避免实时搜索源波动。")
     parser.add_argument("--router-mode", choices=sorted(ROUTER_MODES), default=ROUTER_MODE_RULES)
     parser.add_argument("--source-strategy", choices=sorted(SOURCE_STRATEGIES), default=SOURCE_STRATEGY_AUTO)
     args = parser.parse_args()
@@ -964,6 +1145,7 @@ def main() -> None:
         judge=args.judge,
         router_mode=args.router_mode,
         source_strategy=args.source_strategy,
+        stable_web=args.stable_web,
     )
     render_report(report, Path(args.report))
 
@@ -975,6 +1157,7 @@ def main() -> None:
     print(f"Judge: {'enabled' if report['judge_enabled'] else 'disabled'}")
     print(f"Router mode: {report['router_mode']}")
     print(f"Source strategy: {report['source_strategy']}")
+    print(f"Stable web: {'enabled' if report['stable_web'] else 'disabled'}")
     print(f"Report: {Path(args.report).resolve()}")
 
 

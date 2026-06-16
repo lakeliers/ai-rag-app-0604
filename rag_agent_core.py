@@ -1069,6 +1069,7 @@ def ask_deepseek(question, search_results):
         messages=[{"role": "user", "content": prompt}],
         temperature=0.3,
         max_tokens=700,
+        timeout=LLM_TIMEOUT_SECONDS,
     )
 
     return response.choices[0].message.content

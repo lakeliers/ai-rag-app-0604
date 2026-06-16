@@ -1,0 +1,388 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Agent Eval 报告</title>
+  <style>
+    body { margin: 0; background: #f6f7fb; color: #202431; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; line-height: 1.6; }
+    main { max-width: 1280px; margin: 0 auto; padding: 40px 24px 72px; }
+    h1 { margin: 0 0 8px; font-size: 34px; }
+    h2 { margin: 32px 0 14px; font-size: 22px; }
+    .sub { color: #667085; margin-bottom: 28px; }
+    .grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; }
+    .card { background: #fff; border: 1px solid #e5e7ef; border-radius: 8px; padding: 18px; }
+    .metric { font-size: 30px; font-weight: 760; }
+    .pass { color: #047857; font-weight: 700; }
+    .fail { color: #dc2626; font-weight: 700; }
+    table { width: 100%; border-collapse: collapse; background: #fff; border: 1px solid #e5e7ef; border-radius: 8px; overflow: hidden; }
+    th, td { padding: 12px 14px; border-bottom: 1px solid #e5e7ef; text-align: left; vertical-align: top; font-size: 14px; }
+    th { background: #f1f5f9; }
+    tr:last-child td { border-bottom: none; }
+    pre { margin: 0; white-space: pre-wrap; font-size: 12px; background: #f8fafc; border: 1px solid #e5e7eb; border-radius: 6px; padding: 8px; max-height: 260px; overflow: auto; }
+    .note { border-left: 4px solid #2563eb; background: #eff6ff; color: #1e3a8a; padding: 12px 14px; border-radius: 6px; }
+    @media (max-width: 900px) { .grid { grid-template-columns: 1fr; } main { padding: 28px 16px 56px; } }
+  </style>
+</head>
+<body>
+<main>
+  <h1>Agent Eval 报告</h1>
+  <div class="sub">运行模式：real。路由模式：rules。资料策略：auto。稳定网页夹具：已启用。Judge：已启用 deepseek-v4-flash。规则检查系统是否跑对；LLM-as-Judge 检查语义质量、资料忠实度和来源使用。</div>
+
+  <section class="grid">
+    <div class="card"><div class="metric">8</div><div>总样本</div></div>
+    <div class="card"><div class="metric pass">8</div><div>通过</div></div>
+    <div class="card"><div class="metric fail">0</div><div>失败</div></div>
+    <div class="card"><div class="metric">100%</div><div>通过率</div></div>
+  </section>
+
+  <h2>分场景通过率</h2>
+  <table><thead><tr><th>场景</th><th>通过 / 总数</th><th>通过率</th></tr></thead><tbody><tr><td>autonomous_fallback</td><td>3/3</td><td>100%</td></tr>
+<tr><td>chitchat</td><td>2/2</td><td>100%</td></tr>
+<tr><td>hybrid_rag</td><td>1/1</td><td>100%</td></tr>
+<tr><td>source_scope</td><td>1/1</td><td>100%</td></tr>
+<tr><td>upload_status</td><td>1/1</td><td>100%</td></tr></tbody></table>
+
+  <h2>失败检查项</h2>
+  <table><thead><tr><th>检查项</th><th>失败次数</th></tr></thead><tbody><tr><td>无</td><td>0</td></tr></tbody></table>
+
+  <h2>逐 Case 明细</h2>
+  <table>
+    <thead><tr><th>Case</th><th>输入</th><th>最终结果</th><th>规则检查</th><th>Judge 语义评分</th><th>实际输出摘要</th></tr></thead>
+    <tbody>
+        <tr>
+          <td><strong>chat_001</strong><br><span>chitchat</span></td>
+          <td>你好我是萧玄</td>
+          <td class="pass">通过</td>
+          <td><pre>expected_mode: 通过
+expected_tools: 通过
+forbidden_tools: 通过
+sources: 通过
+required_tasks: 通过
+task_completion: 通过
+stop_reason: 通过
+answer: 通过</pre></td>
+          <td><pre>Judge: 通过
+总分: 5.0
+clarity: 5.0
+completeness: 5.0
+groundedness: 5.0
+safety: 5.0
+source_usage: 5.0
+task_success: 5.0
+硬门槛: 无
+理由: 用户问候，助手正确回应并提及名字，无参考资料要求，无安全风险，完全符合预期。</pre></td>
+          <td><pre>{
+  &quot;planner_mode&quot;: &quot;pro_runtime&quot;,
+  &quot;tools&quot;: [
+    &quot;intent_classifier&quot;,
+    &quot;planner&quot;,
+    &quot;orchestrator&quot;,
+    &quot;dag_runtime&quot;,
+    &quot;direct_answer&quot;
+  ],
+  &quot;tasks&quot;: [],
+  &quot;stop_reason&quot;: &quot;&quot;,
+  &quot;sources&quot;: [],
+  &quot;answer&quot;: &quot;你好，萧玄。很高兴认识你！&quot;
+}</pre></td>
+        </tr>
+        
+        <tr>
+          <td><strong>upload_status_001</strong><br><span>upload_status</span></td>
+          <td>你能看到我上传的资料吗？</td>
+          <td class="pass">通过</td>
+          <td><pre>expected_mode: 通过
+expected_tools: 通过
+forbidden_tools: 通过
+sources: 通过
+required_tasks: 通过
+task_completion: 通过
+stop_reason: 通过
+answer: 通过</pre></td>
+          <td><pre>Judge: 通过
+总分: 5.0
+clarity: 5.0
+completeness: 5.0
+groundedness: 5.0
+safety: 5.0
+source_usage: 5.0
+task_success: 5.0
+硬门槛: 无
+理由: 用户询问能否看到上传资料，Agent正确回应并列出资料名称，所有结论均有依据，来源使用正确，表达清晰，无安全隐患。</pre></td>
+          <td><pre>{
+  &quot;planner_mode&quot;: &quot;pro_runtime&quot;,
+  &quot;tools&quot;: [
+    &quot;intent_classifier&quot;,
+    &quot;planner&quot;,
+    &quot;orchestrator&quot;,
+    &quot;dag_runtime&quot;,
+    &quot;upload_status&quot;
+  ],
+  &quot;tasks&quot;: [],
+  &quot;stop_reason&quot;: &quot;&quot;,
+  &quot;sources&quot;: [],
+  &quot;answer&quot;: &quot;能看到。你当前上传并入库的资料有：\n- 上传：AI产品经理学习笔记.md\n\n你可以直接问我总结、提取重点或围绕这些资料做分析。&quot;
+}</pre></td>
+        </tr>
+        
+        <tr>
+          <td><strong>scope_001</strong><br><span>source_scope</span></td>
+          <td>我还没上传文件，你哪里看到 NPL 方法论文件？</td>
+          <td class="pass">通过</td>
+          <td><pre>expected_mode: 通过
+expected_tools: 通过
+forbidden_tools: 通过
+sources: 通过
+required_tasks: 通过
+task_completion: 通过
+stop_reason: 通过
+answer: 通过</pre></td>
+          <td><pre>Judge: 通过
+总分: 5.0
+clarity: 5.0
+completeness: 5.0
+groundedness: 5.0
+safety: 5.0
+source_usage: 5.0
+task_success: 5.0
+硬门槛: 无
+理由: 用户质疑 agent 看到文件，agent 正确回应未看到上传文件，并指导上传，完全符合成功标准，无违规。</pre></td>
+          <td><pre>{
+  &quot;planner_mode&quot;: &quot;pro_runtime&quot;,
+  &quot;tools&quot;: [
+    &quot;intent_classifier&quot;,
+    &quot;planner&quot;,
+    &quot;orchestrator&quot;,
+    &quot;dag_runtime&quot;,
+    &quot;upload_status&quot;
+  ],
+  &quot;tasks&quot;: [],
+  &quot;stop_reason&quot;: &quot;&quot;,
+  &quot;sources&quot;: [],
+  &quot;answer&quot;: &quot;我目前没有看到已成功入库的上传资料。你可以先在左侧上传文件，等侧边栏出现“已入库资料”后再提问。&quot;
+}</pre></td>
+        </tr>
+        
+        <tr>
+          <td><strong>auto_fallback_001</strong><br><span>autonomous_fallback</span></td>
+          <td>你好我是萧玄</td>
+          <td class="pass">通过</td>
+          <td><pre>expected_mode: 通过
+expected_tools: 通过
+forbidden_tools: 通过
+sources: 通过
+required_tasks: 通过
+task_completion: 通过
+stop_reason: 通过
+answer: 通过</pre></td>
+          <td><pre>Judge: 通过
+总分: 5.0
+clarity: 5.0
+completeness: 5.0
+groundedness: 5.0
+safety: 5.0
+source_usage: 5.0
+task_success: 5.0
+硬门槛: 无
+理由: Agent正确回应了用户的问候，遵守了自主回退模式，未使用禁止工具，回答清晰安全，完全符合预期。</pre></td>
+          <td><pre>{
+  &quot;planner_mode&quot;: &quot;autonomous_fallback&quot;,
+  &quot;tools&quot;: [
+    &quot;goal_router&quot;,
+    &quot;intent_classifier&quot;,
+    &quot;planner&quot;,
+    &quot;orchestrator&quot;,
+    &quot;dag_runtime&quot;,
+    &quot;direct_answer&quot;
+  ],
+  &quot;tasks&quot;: [],
+  &quot;stop_reason&quot;: &quot;&quot;,
+  &quot;sources&quot;: [],
+  &quot;answer&quot;: &quot;你好，萧玄！很高兴认识你。有什么可以帮你的吗？&quot;
+}</pre></td>
+        </tr>
+        
+        <tr>
+          <td><strong>auto_fallback_003</strong><br><span>autonomous_fallback</span></td>
+          <td>你能做些什么</td>
+          <td class="pass">通过</td>
+          <td><pre>expected_mode: 通过
+expected_tools: 通过
+forbidden_tools: 通过
+sources: 通过
+required_tasks: 通过
+task_completion: 通过
+stop_reason: 通过
+answer: 通过</pre></td>
+          <td><pre>Judge: 通过
+总分: 4.75
+clarity: 5.0
+completeness: 5.0
+groundedness: 4.0
+safety: 5.0
+source_usage: 5.0
+task_success: 5.0
+硬门槛: 无
+理由: 回答完整清晰，无来源错误，自身能力描述合理但缺少外部依据</pre></td>
+          <td><pre>{
+  &quot;planner_mode&quot;: &quot;autonomous_fallback&quot;,
+  &quot;tools&quot;: [
+    &quot;goal_router&quot;,
+    &quot;intent_classifier&quot;,
+    &quot;planner&quot;,
+    &quot;orchestrator&quot;,
+    &quot;dag_runtime&quot;,
+    &quot;direct_answer&quot;
+  ],
+  &quot;tasks&quot;: [],
+  &quot;stop_reason&quot;: &quot;&quot;,
+  &quot;sources&quot;: [],
+  &quot;answer&quot;: &quot;我可以帮你做三类事情：\n\n1. 基于你上传的资料做总结、提取要点、问答和对比分析。\n2. 联网收集公开信息，再结合本地资料做 RAG 回答。\n3. 帮你学习和实操 AI 产品经理相关主题，比如 RAG、Tool Agent、Autonomous Agent 和 Agent Eval。\n\n你可以直接上传文件，或者问我一个具体问题。&quot;
+}</pre></td>
+        </tr>
+        
+        <tr>
+          <td><strong>chat_005</strong><br><span>chitchat</span></td>
+          <td>你可以帮我做啥？</td>
+          <td class="pass">通过</td>
+          <td><pre>expected_mode: 通过
+expected_tools: 通过
+forbidden_tools: 通过
+sources: 通过
+required_tasks: 通过
+task_completion: 通过
+stop_reason: 通过
+answer: 通过</pre></td>
+          <td><pre>Judge: 通过
+总分: 5.0
+clarity: 5.0
+completeness: 5.0
+groundedness: 5.0
+safety: 5.0
+source_usage: 5.0
+task_success: 5.0
+硬门槛: 无
+理由: 回答完整、清晰，没有使用不当来源，无安全风险。</pre></td>
+          <td><pre>{
+  &quot;planner_mode&quot;: &quot;pro_runtime&quot;,
+  &quot;tools&quot;: [
+    &quot;intent_classifier&quot;,
+    &quot;planner&quot;,
+    &quot;orchestrator&quot;,
+    &quot;dag_runtime&quot;,
+    &quot;direct_answer&quot;
+  ],
+  &quot;tasks&quot;: [],
+  &quot;stop_reason&quot;: &quot;&quot;,
+  &quot;sources&quot;: [],
+  &quot;answer&quot;: &quot;我可以帮你做三类事情：\n\n1. 基于你上传的资料做总结、提取要点、问答和对比分析。\n2. 联网收集公开信息，再结合本地资料做 RAG 回答。\n3. 帮你学习和实操 AI 产品经理相关主题，比如 RAG、Tool Agent、Autonomous Agent 和 Agent Eval。\n\n你可以直接上传文件，或者问我一个具体问题。&quot;
+}</pre></td>
+        </tr>
+        
+        <tr>
+          <td><strong>auto_fallback_004</strong><br><span>autonomous_fallback</span></td>
+          <td>这个 Agent 有什么功能？</td>
+          <td class="pass">通过</td>
+          <td><pre>expected_mode: 通过
+expected_tools: 通过
+forbidden_tools: 通过
+sources: 通过
+required_tasks: 通过
+task_completion: 通过
+stop_reason: 通过
+answer: 通过</pre></td>
+          <td><pre>Judge: 通过
+总分: 4.0
+clarity: 5.0
+completeness: 5.0
+groundedness: 1.0
+safety: 5.0
+source_usage: 5.0
+task_success: 5.0
+硬门槛: 无
+理由: 回答准确描述了自身功能，但缺乏外部参考资料支持其声称，导致groundedness较低。</pre></td>
+          <td><pre>{
+  &quot;planner_mode&quot;: &quot;autonomous_fallback&quot;,
+  &quot;tools&quot;: [
+    &quot;goal_router&quot;,
+    &quot;intent_classifier&quot;,
+    &quot;planner&quot;,
+    &quot;orchestrator&quot;,
+    &quot;dag_runtime&quot;,
+    &quot;direct_answer&quot;
+  ],
+  &quot;tasks&quot;: [],
+  &quot;stop_reason&quot;: &quot;&quot;,
+  &quot;sources&quot;: [],
+  &quot;answer&quot;: &quot;我可以帮你做三类事情：\n\n1. 基于你上传的资料做总结、提取要点、问答和对比分析。\n2. 联网收集公开信息，再结合本地资料做 RAG 回答。\n3. 帮你学习和实操 AI 产品经理相关主题，比如 RAG、Tool Agent、Autonomous Agent 和 Agent Eval。\n\n你可以直接上传文件，或者问我一个具体问题。&quot;
+}</pre></td>
+        </tr>
+        
+        <tr>
+          <td><strong>hybrid_rag_001</strong><br><span>hybrid_rag</span></td>
+          <td>结合我上传的资料，再查一下最近有没有类似案例</td>
+          <td class="pass">通过</td>
+          <td><pre>expected_mode: 通过
+expected_tools: 通过
+forbidden_tools: 通过
+sources: 通过
+required_tasks: 通过
+task_completion: 通过
+stop_reason: 通过
+answer: 通过</pre></td>
+          <td><pre>Judge: 通过
+总分: 5.0
+clarity: 5.0
+completeness: 5.0
+groundedness: 5.0
+safety: 5.0
+source_usage: 5.0
+task_success: 5.0
+硬门槛: 无
+理由: 所有维度均满分，agent完整完成用户任务，结论有充分依据，正确使用来源，清晰安全。</pre></td>
+          <td><pre>{
+  &quot;planner_mode&quot;: &quot;pro_runtime&quot;,
+  &quot;tools&quot;: [
+    &quot;intent_classifier&quot;,
+    &quot;planner&quot;,
+    &quot;orchestrator&quot;,
+    &quot;dag_runtime&quot;,
+    &quot;web_collect&quot;,
+    &quot;dag_runtime&quot;,
+    &quot;rag_search&quot;,
+    &quot;aggregator&quot;,
+    &quot;evaluator&quot;,
+    &quot;generate_answer&quot;,
+    &quot;answer_validator&quot;
+  ],
+  &quot;tasks&quot;: [],
+  &quot;stop_reason&quot;: &quot;&quot;,
+  &quot;sources&quot;: [
+    {
+      &quot;id&quot;: &quot;web__RAG__1781490000_0_0&quot;,
+      &quot;document&quot;: &quot;RAG 是 Retrieval-Augmented Generation，中文常译为检索增强生成。它先从知识库、上传文件或网页中检索相关资料，再把资料与用户问题一起交给大模型生成回答。RAG 的核心价值是降低幻觉、补充模型不知道或不稳定的信息，并保留参考来源。RAG 工程化趋势包括混合检索、BM25 与向量召回融合、RRF 排序、reranker 精排、元数据过滤、去重、来源权重、新鲜度权重、Context Packing、引用校验和离线评估。Tool Agent 是围绕一次用户请求选择并执行工具的 Agent，重点是工具注册、工具 schema、planner、executor、state、trace 和 fallback。Autonomous Agent 是围绕一个目标拆解任务队列并循环推进的 Agent，重点是 Goal Manager、Task Queue、Observe-Act Loop、Critic/Reflection、Stop Condition 和 Human-in-the-loop&quot;,
+      &quot;source&quot;: &quot;网页：RAG 定义稳定样本&quot;,
+      &quot;source_type&quot;: &quot;web&quot;,
+      &quot;url&quot;: &quot;https://example.com/eval/rag-definition&quot;,
+      &quot;chunk_index&quot;: 0,
+      &quot;created_at&quot;: 1781490000,
+      &quot;content_type&quot;: &quot;eval_web_fixture&quot;,
+      &quot;document_key&quot;: &quot;web:网页：RAG 定义稳定样本:https://example.com/eval/rag-definition&quot;,
+      &quot;section_title&quot;: &quot;&quot;,
+      &quot;page&quot;: 0,
+      &quot;sheet&quot;: &quot;&quot;,
+      &quot;row_start&quot;: 0,
+      &quot;row_end&quot;: 0,
+      &quot;chunk_type&quot;: &quot;child&quot;,
+      &quot;parent_id&quot;: &quot;网页：RAG 定义稳定样本:0:eval_web_fixture&quot;,
+      &quot;parent_text&quot;: &quot;RAG 是 Retrieval-Augmented Generation，中文常译为检索增强生成。它先从知识库、上传文件或网页中检索相关资料，再把资料与用户问题一起交给大模型生成回答。RAG 的核心价值是降低幻觉、补充模型不知道或不稳定的信息，并保留参考来源。RAG 工程化趋势包括混合检索、BM25 与向量召回融合、RRF 排序、reranker 精排、元数据过滤、去重、来源权重、新鲜度权重、Context Packing、引用校验和离线评估。Tool Agent 是围绕一次用户请求选择</pre></td>
+        </tr>
+        </tbody>
+  </table>
+
+  <h2>结论</h2>
+  <div class="note">这版 Eval 同时支持规则校验和 LLM-as-Judge。规则负责硬边界，Judge 负责语义质量；最终结果要求两者都通过。</div>
+</main>
+</body>
+</html>

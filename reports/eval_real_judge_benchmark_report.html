@@ -1,0 +1,1644 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Agent Eval 报告</title>
+  <style>
+    body { margin: 0; background: #f6f7fb; color: #202431; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; line-height: 1.6; }
+    main { max-width: 1280px; margin: 0 auto; padding: 40px 24px 72px; }
+    h1 { margin: 0 0 8px; font-size: 34px; }
+    h2 { margin: 32px 0 14px; font-size: 22px; }
+    .sub { color: #667085; margin-bottom: 28px; }
+    .grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; }
+    .card { background: #fff; border: 1px solid #e5e7ef; border-radius: 8px; padding: 18px; }
+    .metric { font-size: 30px; font-weight: 760; }
+    .pass { color: #047857; font-weight: 700; }
+    .fail { color: #dc2626; font-weight: 700; }
+    table { width: 100%; border-collapse: collapse; background: #fff; border: 1px solid #e5e7ef; border-radius: 8px; overflow: hidden; }
+    th, td { padding: 12px 14px; border-bottom: 1px solid #e5e7ef; text-align: left; vertical-align: top; font-size: 14px; }
+    th { background: #f1f5f9; }
+    tr:last-child td { border-bottom: none; }
+    pre { margin: 0; white-space: pre-wrap; font-size: 12px; background: #f8fafc; border: 1px solid #e5e7eb; border-radius: 6px; padding: 8px; max-height: 260px; overflow: auto; }
+    .note { border-left: 4px solid #2563eb; background: #eff6ff; color: #1e3a8a; padding: 12px 14px; border-radius: 6px; }
+    @media (max-width: 900px) { .grid { grid-template-columns: 1fr; } main { padding: 28px 16px 56px; } }
+  </style>
+</head>
+<body>
+<main>
+  <h1>Agent Eval 报告</h1>
+  <div class="sub">运行模式：real。路由模式：rules。资料策略：auto。稳定网页夹具：已启用。Judge：已启用 deepseek-v4-flash。规则检查系统是否跑对；LLM-as-Judge 检查语义质量、资料忠实度和来源使用。</div>
+
+  <section class="grid">
+    <div class="card"><div class="metric">29</div><div>总样本</div></div>
+    <div class="card"><div class="metric pass">29</div><div>通过</div></div>
+    <div class="card"><div class="metric fail">0</div><div>失败</div></div>
+    <div class="card"><div class="metric">100%</div><div>通过率</div></div>
+  </section>
+
+  <h2>分场景通过率</h2>
+  <table><thead><tr><th>场景</th><th>通过 / 总数</th><th>通过率</th></tr></thead><tbody><tr><td>autonomous</td><td>4/4</td><td>100%</td></tr>
+<tr><td>autonomous_fallback</td><td>3/3</td><td>100%</td></tr>
+<tr><td>chitchat</td><td>3/3</td><td>100%</td></tr>
+<tr><td>definition</td><td>5/5</td><td>100%</td></tr>
+<tr><td>document_qa</td><td>4/4</td><td>100%</td></tr>
+<tr><td>hybrid_rag</td><td>1/1</td><td>100%</td></tr>
+<tr><td>source_scope</td><td>2/2</td><td>100%</td></tr>
+<tr><td>upload_status</td><td>2/2</td><td>100%</td></tr>
+<tr><td>web_rag</td><td>5/5</td><td>100%</td></tr></tbody></table>
+
+  <h2>失败检查项</h2>
+  <table><thead><tr><th>检查项</th><th>失败次数</th></tr></thead><tbody><tr><td>无</td><td>0</td></tr></tbody></table>
+
+  <h2>逐 Case 明细</h2>
+  <table>
+    <thead><tr><th>Case</th><th>输入</th><th>最终结果</th><th>规则检查</th><th>Judge 语义评分</th><th>实际输出摘要</th></tr></thead>
+    <tbody>
+        <tr>
+          <td><strong>web_001</strong><br><span>web_rag</span></td>
+          <td>最近 AI Agent 有什么新趋势？</td>
+          <td class="pass">通过</td>
+          <td><pre>expected_mode: 通过
+expected_tools: 通过
+forbidden_tools: 通过
+sources: 通过
+required_tasks: 通过
+task_completion: 通过
+stop_reason: 通过
+answer: 通过</pre></td>
+          <td><pre>Judge: 通过
+总分: 5.0
+clarity: 5.0
+completeness: 5.0
+groundedness: 5.0
+safety: 5.0
+source_usage: 5.0
+task_success: 5.0
+硬门槛: 无
+理由: Agent回答完整覆盖用户问题，所有关键结论均有参考资料支撑，来源使用正确，表达清晰，无安全隐患。</pre></td>
+          <td><pre>{
+  &quot;planner_mode&quot;: &quot;pro_runtime&quot;,
+  &quot;tools&quot;: [
+    &quot;intent_classifier&quot;,
+    &quot;planner&quot;,
+    &quot;orchestrator&quot;,
+    &quot;dag_runtime&quot;,
+    &quot;web_collect&quot;,
+    &quot;dag_runtime&quot;,
+    &quot;rag_search&quot;,
+    &quot;aggregator&quot;,
+    &quot;evaluator&quot;,
+    &quot;generate_answer&quot;,
+    &quot;answer_validator&quot;
+  ],
+  &quot;tasks&quot;: [],
+  &quot;stop_reason&quot;: &quot;&quot;,
+  &quot;sources&quot;: [
+    {
+      &quot;id&quot;: &quot;web__AI_Agent__1781490000_0_0&quot;,
+      &quot;document&quot;: &quot;AI Agent 产品趋势稳定样本：2026 年 AI Agent 产品正在从单次工具调用走向任务级工作流。关键趋势包括多工具编排、可观测运行时、Agent Eval 评估体系、记忆系统、权限与安全控制、以及面向业务场景的多 Agent 协作。近期值得关注的产品动态包括：ChatGPT 类产品强化任务执行和连接器，企业知识库产品强化权限、审计和引用可追溯，开发者平台强化工具调用、工作流编排和评估闭环。三个可对标的 AI Agent 产品包括：ChatGPT（通用助手型 Agent，强调多工具调用、文件理解和连接器）、Claude（长上下文知识工作 Agent，强调文档理解、项目知识和安全边界）、Cursor（开发者自动化 Agent，强调代码理解、编辑、调试和任务执行）。也可以按产品类型归纳为：通用助手型 Agent、企业知识库/RAG Agent、开发者自动化 Agent。产品经理应关注的能力清单包括：目标理解、工具调用、RAG 资料检索、记忆管理、权限控制、可观测性、评估体系、失败恢复、成本控制和人类确认机制&quot;,
+      &quot;source&quot;: &quot;网页：AI Agent 产品趋势稳定样本&quot;,
+      &quot;source_type&quot;: &quot;web&quot;,
+      &quot;url&quot;: &quot;https://example.com/eval/ai-agent-trends&quot;,
+      &quot;chunk_index&quot;: 0,
+      &quot;created_at&quot;: 1781490000,
+      &quot;content_type&quot;: &quot;eval_web_fixture&quot;,
+      &quot;document_key&quot;: &quot;web:网页：AI Agent 产品趋势稳定样本:https://example.com/eval/ai-agent-trends&quot;,
+      &quot;section_title&quot;: &quot;&quot;,
+      &quot;page&quot;: 0,
+      &quot;sheet&quot;: &quot;&quot;,
+      &quot;row_start&quot;: 0,
+      &quot;row_end&quot;: 0,
+      &quot;chunk_type&quot;: &quot;child&quot;,
+      &quot;parent_id&quot;: &quot;网页：AI Agent 产品趋势稳定样本:0:eval_web_fixture&quot;,
+      &quot;parent_text&quot;: &quot;AI Agent 产品趋势稳定样本：2026 年 AI Agent 产品正在从单次工具调用走向任务级工作流。关键趋势包括多工具编排、可观测运行时、Agent Eval 评估体系、记忆系统、权限与安全控制、以及面向业务场景的多 Agent 协作。近期值得关注的产品动态包括：ChatGPT 类产品强化任务执行和连接器，企业知识库产品强化权限、审计和引用可追溯，开发者平台强化工具调用、工作流编排和评估闭环。三个可对标的 AI </pre></td>
+        </tr>
+        
+        <tr>
+          <td><strong>definition_001</strong><br><span>definition</span></td>
+          <td>RAG 是什么？</td>
+          <td class="pass">通过</td>
+          <td><pre>expected_mode: 通过
+expected_tools: 通过
+forbidden_tools: 通过
+sources: 通过
+required_tasks: 通过
+task_completion: 通过
+stop_reason: 通过
+answer: 通过</pre></td>
+          <td><pre>Judge: 通过
+总分: 5.0
+clarity: 5.0
+completeness: 5.0
+groundedness: 5.0
+safety: 5.0
+source_usage: 5.0
+task_success: 5.0
+硬门槛: 无
+理由: 所有维度均达标</pre></td>
+          <td><pre>{
+  &quot;planner_mode&quot;: &quot;pro_runtime&quot;,
+  &quot;tools&quot;: [
+    &quot;intent_classifier&quot;,
+    &quot;planner&quot;,
+    &quot;orchestrator&quot;,
+    &quot;dag_runtime&quot;,
+    &quot;web_collect&quot;,
+    &quot;dag_runtime&quot;,
+    &quot;rag_search&quot;,
+    &quot;aggregator&quot;,
+    &quot;evaluator&quot;,
+    &quot;generate_answer&quot;,
+    &quot;answer_validator&quot;
+  ],
+  &quot;tasks&quot;: [],
+  &quot;stop_reason&quot;: &quot;&quot;,
+  &quot;sources&quot;: [
+    {
+      &quot;id&quot;: &quot;web__RAG__1781490000_0_0&quot;,
+      &quot;document&quot;: &quot;RAG 是 Retrieval-Augmented Generation，中文常译为检索增强生成。它先从知识库、上传文件或网页中检索相关资料，再把资料与用户问题一起交给大模型生成回答。RAG 的核心价值是降低幻觉、补充模型不知道或不稳定的信息，并保留参考来源。RAG 工程化趋势包括混合检索、BM25 与向量召回融合、RRF 排序、reranker 精排、元数据过滤、去重、来源权重、新鲜度权重、Context Packing、引用校验和离线评估。Tool Agent 是围绕一次用户请求选择并执行工具的 Agent，重点是工具注册、工具 schema、planner、executor、state、trace 和 fallback。Autonomous Agent 是围绕一个目标拆解任务队列并循环推进的 Agent，重点是 Goal Manager、Task Queue、Observe-Act Loop、Critic/Reflection、Stop Condition 和 Human-in-the-loop&quot;,
+      &quot;source&quot;: &quot;网页：RAG 定义稳定样本&quot;,
+      &quot;source_type&quot;: &quot;web&quot;,
+      &quot;url&quot;: &quot;https://example.com/eval/rag-definition&quot;,
+      &quot;chunk_index&quot;: 0,
+      &quot;created_at&quot;: 1781490000,
+      &quot;content_type&quot;: &quot;eval_web_fixture&quot;,
+      &quot;document_key&quot;: &quot;web:网页：RAG 定义稳定样本:https://example.com/eval/rag-definition&quot;,
+      &quot;section_title&quot;: &quot;&quot;,
+      &quot;page&quot;: 0,
+      &quot;sheet&quot;: &quot;&quot;,
+      &quot;row_start&quot;: 0,
+      &quot;row_end&quot;: 0,
+      &quot;chunk_type&quot;: &quot;child&quot;,
+      &quot;parent_id&quot;: &quot;网页：RAG 定义稳定样本:0:eval_web_fixture&quot;,
+      &quot;parent_text&quot;: &quot;RAG 是 Retrieval-Augmented Generation，中文常译为检索增强生成。它先从知识库、上传文件或网页中检索相关资料，再把资料与用户问题一起交给大模型生成回答。RAG 的核心价值是降低幻觉、补充模型不知道或不稳定的信息，并保留参考来源。RAG 工程化趋势包括混合检索、BM25 与向量召回融合、RRF 排序、reranker 精排、元数据过滤、去重、来源权重、新鲜度权重、Context Packing、引用校验和离线评估。Tool Agent 是围绕一次用户请求选择</pre></td>
+        </tr>
+        
+        <tr>
+          <td><strong>auto_001</strong><br><span>autonomous</span></td>
+          <td>调研 AI Agent 产品趋势，并给产品经理学习建议</td>
+          <td class="pass">通过</td>
+          <td><pre>expected_mode: 通过
+expected_tools: 通过
+forbidden_tools: 通过
+sources: 通过
+required_tasks: 通过
+task_completion: 通过
+stop_reason: 通过
+answer: 通过</pre></td>
+          <td><pre>Judge: 通过
+总分: 5.0
+clarity: 5.0
+completeness: 5.0
+groundedness: 5.0
+safety: 5.0
+source_usage: 5.0
+task_success: 5.0
+硬门槛: 无
+理由: 回答完整覆盖用户任务，所有关键结论均有资料支撑，来源正确，表达清晰，无安全风险。</pre></td>
+          <td><pre>{
+  &quot;planner_mode&quot;: &quot;autonomous_runtime&quot;,
+  &quot;tools&quot;: [],
+  &quot;tasks&quot;: [
+    &quot;collect_context&quot;,
+    &quot;extract_findings&quot;,
+    &quot;write_deliverable&quot;
+  ],
+  &quot;stop_reason&quot;: &quot;all_tasks_completed&quot;,
+  &quot;sources&quot;: [
+    {
+      &quot;id&quot;: &quot;web__AI_Agent__1781490000_0_0&quot;,
+      &quot;document&quot;: &quot;AI Agent 产品趋势稳定样本：2026 年 AI Agent 产品正在从单次工具调用走向任务级工作流。关键趋势包括多工具编排、可观测运行时、Agent Eval 评估体系、记忆系统、权限与安全控制、以及面向业务场景的多 Agent 协作。近期值得关注的产品动态包括：ChatGPT 类产品强化任务执行和连接器，企业知识库产品强化权限、审计和引用可追溯，开发者平台强化工具调用、工作流编排和评估闭环。三个可对标的 AI Agent 产品包括：ChatGPT（通用助手型 Agent，强调多工具调用、文件理解和连接器）、Claude（长上下文知识工作 Agent，强调文档理解、项目知识和安全边界）、Cursor（开发者自动化 Agent，强调代码理解、编辑、调试和任务执行）。也可以按产品类型归纳为：通用助手型 Agent、企业知识库/RAG Agent、开发者自动化 Agent。产品经理应关注的能力清单包括：目标理解、工具调用、RAG 资料检索、记忆管理、权限控制、可观测性、评估体系、失败恢复、成本控制和人类确认机制&quot;,
+      &quot;source&quot;: &quot;网页：AI Agent 产品趋势稳定样本&quot;,
+      &quot;source_type&quot;: &quot;web&quot;,
+      &quot;url&quot;: &quot;https://example.com/eval/ai-agent-trends&quot;,
+      &quot;chunk_index&quot;: 0,
+      &quot;created_at&quot;: 1781490000,
+      &quot;content_type&quot;: &quot;eval_web_fixture&quot;,
+      &quot;document_key&quot;: &quot;web:网页：AI Agent 产品趋势稳定样本:https://example.com/eval/ai-agent-trends&quot;,
+      &quot;section_title&quot;: &quot;&quot;,
+      &quot;page&quot;: 0,
+      &quot;sheet&quot;: &quot;&quot;,
+      &quot;row_start&quot;: 0,
+      &quot;row_end&quot;: 0,
+      &quot;chunk_type&quot;: &quot;child&quot;,
+      &quot;parent_id&quot;: &quot;网页：AI Agent 产品趋势稳定样本:0:eval_web_fixture&quot;,
+      &quot;parent_text&quot;: &quot;AI Agent 产品趋势稳定样本：2026 年 AI Agent 产品正在从单次工具调用走向任务级工作流。关键趋势包括多工具编排、可观测运行时、Agent Eval 评估体系、记忆系统、权限与安全控制、以及面向业务场景的多 Agent 协作。近期值得关注的产品动态包括：ChatGPT 类产品强化任务执行和连接器，企业知识库产品强化权限、审计和引用可追溯，开发者平台强化工具调用、工作流编排和评估闭环。三个可对标的 AI Agent 产品包括：ChatGPT（通用助手型 Agent，强调多工具调用、文件理解和连接器）、Claude（长上下文知识工作 Agent，强调文档理解、项目知识和安全边界）、Cursor（开发者自动化 Agent，强调代码理解、编辑、</pre></td>
+        </tr>
+        
+        <tr>
+          <td><strong>chat_003</strong><br><span>chitchat</span></td>
+          <td>你能做什么？</td>
+          <td class="pass">通过</td>
+          <td><pre>expected_mode: 通过
+expected_tools: 通过
+forbidden_tools: 通过
+sources: 通过
+required_tasks: 通过
+task_completion: 通过
+stop_reason: 通过
+answer: 通过</pre></td>
+          <td><pre>Judge: 通过
+总分: 5.0
+clarity: 5.0
+completeness: 5.0
+groundedness: 5.0
+safety: 5.0
+source_usage: 5.0
+task_success: 5.0
+硬门槛: 无
+理由: 用户问“你能做什么”，Agent 清晰列举了三类能力，符合闲聊场景，没有违规使用工具或来源，表达清楚，安全合规。</pre></td>
+          <td><pre>{
+  &quot;planner_mode&quot;: &quot;pro_runtime&quot;,
+  &quot;tools&quot;: [
+    &quot;intent_classifier&quot;,
+    &quot;planner&quot;,
+    &quot;orchestrator&quot;,
+    &quot;dag_runtime&quot;,
+    &quot;direct_answer&quot;
+  ],
+  &quot;tasks&quot;: [],
+  &quot;stop_reason&quot;: &quot;&quot;,
+  &quot;sources&quot;: [],
+  &quot;answer&quot;: &quot;我可以帮你做三类事情：\n\n1. 基于你上传的资料做总结、提取要点、问答和对比分析。\n2. 联网收集公开信息，再结合本地资料做 RAG 回答。\n3. 帮你学习和实操 AI 产品经理相关主题，比如 RAG、Tool Agent、Autonomous Agent 和 Agent Eval。\n\n你可以直接上传文件，或者问我一个具体问题。&quot;
+}</pre></td>
+        </tr>
+        
+        <tr>
+          <td><strong>chat_004</strong><br><span>chitchat</span></td>
+          <td>介绍一下你自己</td>
+          <td class="pass">通过</td>
+          <td><pre>expected_mode: 通过
+expected_tools: 通过
+forbidden_tools: 通过
+sources: 通过
+required_tasks: 通过
+task_completion: 通过
+stop_reason: 通过
+answer: 通过</pre></td>
+          <td><pre>Judge: 通过
+总分: 5.0
+clarity: 5.0
+completeness: 5.0
+groundedness: 5.0
+safety: 5.0
+source_usage: 5.0
+task_success: 5.0
+硬门槛: 无
+理由: 用户要求介绍自己，Agent完整回答了自身能力，且遵守了工具使用规则，无安全或来源问题。</pre></td>
+          <td><pre>{
+  &quot;planner_mode&quot;: &quot;pro_runtime&quot;,
+  &quot;tools&quot;: [
+    &quot;intent_classifier&quot;,
+    &quot;planner&quot;,
+    &quot;orchestrator&quot;,
+    &quot;dag_runtime&quot;,
+    &quot;direct_answer&quot;
+  ],
+  &quot;tasks&quot;: [],
+  &quot;stop_reason&quot;: &quot;&quot;,
+  &quot;sources&quot;: [],
+  &quot;answer&quot;: &quot;我可以帮你做三类事情：\n\n1. 基于你上传的资料做总结、提取要点、问答和对比分析。\n2. 联网收集公开信息，再结合本地资料做 RAG 回答。\n3. 帮你学习和实操 AI 产品经理相关主题，比如 RAG、Tool Agent、Autonomous Agent 和 Agent Eval。\n\n你可以直接上传文件，或者问我一个具体问题。&quot;
+}</pre></td>
+        </tr>
+        
+        <tr>
+          <td><strong>upload_status_002</strong><br><span>upload_status</span></td>
+          <td>左侧上传的文件你现在能读到吗？</td>
+          <td class="pass">通过</td>
+          <td><pre>expected_mode: 通过
+expected_tools: 通过
+forbidden_tools: 通过
+sources: 通过
+required_tasks: 通过
+task_completion: 通过
+stop_reason: 通过
+answer: 通过</pre></td>
+          <td><pre>Judge: 通过
+总分: 5.0
+clarity: 5.0
+completeness: 5.0
+groundedness: 5.0
+safety: 5.0
+source_usage: 5.0
+task_success: 5.0
+硬门槛: 无
+理由: 用户询问能否读取左侧上传的文件，Agent明确回答能看到，并准确列出已入库的文件名，完全基于参考上下文，且工具使用符合预期，所有维度表现优秀。</pre></td>
+          <td><pre>{
+  &quot;planner_mode&quot;: &quot;pro_runtime&quot;,
+  &quot;tools&quot;: [
+    &quot;intent_classifier&quot;,
+    &quot;planner&quot;,
+    &quot;orchestrator&quot;,
+    &quot;dag_runtime&quot;,
+    &quot;upload_status&quot;
+  ],
+  &quot;tasks&quot;: [],
+  &quot;stop_reason&quot;: &quot;&quot;,
+  &quot;sources&quot;: [],
+  &quot;answer&quot;: &quot;能看到。你当前上传并入库的资料有：\n- 上传：用户访谈纪要.pdf\n\n你可以直接问我总结、提取重点或围绕这些资料做分析。&quot;
+}</pre></td>
+        </tr>
+        
+        <tr>
+          <td><strong>upload_status_003</strong><br><span>upload_status</span></td>
+          <td>我没有上传资料，你能看到文件吗？</td>
+          <td class="pass">通过</td>
+          <td><pre>expected_mode: 通过
+expected_tools: 通过
+forbidden_tools: 通过
+sources: 通过
+required_tasks: 通过
+task_completion: 通过
+stop_reason: 通过
+answer: 通过</pre></td>
+          <td><pre>Judge: 通过
+总分: 5.0
+clarity: 5.0
+completeness: 5.0
+groundedness: 5.0
+safety: 5.0
+source_usage: 5.0
+task_success: 5.0
+硬门槛: 无
+理由: Agent准确基于当前无上传资料的状态回答用户问题，并给出合理建议，所有维度均满分。</pre></td>
+          <td><pre>{
+  &quot;planner_mode&quot;: &quot;pro_runtime&quot;,
+  &quot;tools&quot;: [
+    &quot;intent_classifier&quot;,
+    &quot;planner&quot;,
+    &quot;orchestrator&quot;,
+    &quot;dag_runtime&quot;,
+    &quot;upload_status&quot;
+  ],
+  &quot;tasks&quot;: [],
+  &quot;stop_reason&quot;: &quot;&quot;,
+  &quot;sources&quot;: [],
+  &quot;answer&quot;: &quot;我目前没有看到已成功入库的上传资料。你可以先在左侧上传文件，等侧边栏出现“已入库资料”后再提问。&quot;
+}</pre></td>
+        </tr>
+        
+        <tr>
+          <td><strong>doc_qa_001</strong><br><span>document_qa</span></td>
+          <td>总结这份资料的核心观点</td>
+          <td class="pass">通过</td>
+          <td><pre>expected_mode: 通过
+expected_tools: 通过
+forbidden_tools: 通过
+sources: 通过
+required_tasks: 通过
+task_completion: 通过
+stop_reason: 通过
+answer: 通过</pre></td>
+          <td><pre>Judge: 通过
+总分: 5.0
+clarity: 5.0
+completeness: 5.0
+groundedness: 5.0
+safety: 5.0
+source_usage: 5.0
+task_success: 5.0
+硬门槛: 无
+理由: 准确总结核心观点，完全基于资料，表达清晰，无安全风险。</pre></td>
+          <td><pre>{
+  &quot;planner_mode&quot;: &quot;pro_runtime&quot;,
+  &quot;tools&quot;: [
+    &quot;intent_classifier&quot;,
+    &quot;planner&quot;,
+    &quot;orchestrator&quot;,
+    &quot;dag_runtime&quot;,
+    &quot;rag_search&quot;,
+    &quot;aggregator&quot;,
+    &quot;evaluator&quot;,
+    &quot;generate_answer&quot;,
+    &quot;answer_validator&quot;
+  ],
+  &quot;tasks&quot;: [],
+  &quot;stop_reason&quot;: &quot;&quot;,
+  &quot;sources&quot;: [
+    {
+      &quot;id&quot;: &quot;upload__AI_.md_1781490000_0_0&quot;,
+      &quot;document&quot;: &quot;AI 产品经理学习笔记：RAG 是检索增强生成，Tool Agent 负责在单次任务中选择和执行工具，Autonomous Agent 会围绕目标拆解任务、维护任务队列、观察执行结果并自检。Agent Eval 需要包含 smoke、regression、benchmark 三类样本，并观察工具调用、资料来源、答案质量和失败原因。&quot;,
+      &quot;source&quot;: &quot;上传：AI产品经理学习笔记.md&quot;,
+      &quot;source_type&quot;: &quot;upload&quot;,
+      &quot;url&quot;: &quot;&quot;,
+      &quot;chunk_index&quot;: 0,
+      &quot;created_at&quot;: 1781490000,
+      &quot;content_type&quot;: &quot;eval_fixture&quot;,
+      &quot;document_key&quot;: &quot;upload:上传：AI产品经理学习笔记.md:上传：AI产品经理学习笔记.md&quot;,
+      &quot;section_title&quot;: &quot;&quot;,
+      &quot;page&quot;: 0,
+      &quot;sheet&quot;: &quot;&quot;,
+      &quot;row_start&quot;: 0,
+      &quot;row_end&quot;: 0,
+      &quot;chunk_type&quot;: &quot;child&quot;,
+      &quot;parent_id&quot;: &quot;上传：AI产品经理学习笔记.md:0:eval_fixture&quot;,
+      &quot;parent_text&quot;: &quot;AI 产品经理学习笔记：RAG 是检索增强生成，Tool Agent 负责在单次任务中选择和执行工具，Autonomous Agent 会围绕目标拆解任务、维护任务队列、观察执行结果并自检。Agent Eval 需要包含 smoke、regression、benchmark 三类样本，并观察工具调用、资料来源、答案质量和失败原因。&quot;,
+      &quot;distance&quot;: 252.6737518310547,
+      &quot;bm25_score&quot;: 0.28768207245178085,
+      &quot;vector_rank&quot;: 1,
+      &quot;rrf_score&quot;: 0.03278688524590164,
+      &quot;vector_score&quot;: 0.003942071234338799,
+      &quot;bm25_rank&quot;: 1,
+      &quot;answerability_score&quot;: 0.55,
+      &quot;keyword_score&quot;: 0,
+      &quot;source_priority&quot;: 1,
+      &quot;source_weight&quot;: 1.35,
+      &quot;freshness_score&quot;: 0.85,
+      &quot;query_intent&quot;: &quot;general&quot;,
+      &quot;ranking_weights&quot;: &quot;{&#x27;rerank&#x27;: 0.65, &#x27;rrf&#x27;: 0.15, &#x27;source&#x27;: </pre></td>
+        </tr>
+        
+        <tr>
+          <td><strong>doc_qa_002</strong><br><span>document_qa</span></td>
+          <td>提取这个 PDF 里和 Agent Eval 相关的要点</td>
+          <td class="pass">通过</td>
+          <td><pre>expected_mode: 通过
+expected_tools: 通过
+forbidden_tools: 通过
+sources: 通过
+required_tasks: 通过
+task_completion: 通过
+stop_reason: 通过
+answer: 通过</pre></td>
+          <td><pre>Judge: 通过
+总分: 5.0
+clarity: 5.0
+completeness: 5.0
+groundedness: 5.0
+safety: 5.0
+source_usage: 5.0
+task_success: 5.0
+硬门槛: 无
+理由: 完整提取了PDF中Agent Eval的评估维度和样本集场景要点，结论有明确依据，来源正确，表达清晰，无安全风险。</pre></td>
+          <td><pre>{
+  &quot;planner_mode&quot;: &quot;pro_runtime&quot;,
+  &quot;tools&quot;: [
+    &quot;intent_classifier&quot;,
+    &quot;planner&quot;,
+    &quot;orchestrator&quot;,
+    &quot;dag_runtime&quot;,
+    &quot;rag_search&quot;,
+    &quot;aggregator&quot;,
+    &quot;evaluator&quot;,
+    &quot;generate_answer&quot;,
+    &quot;answer_validator&quot;
+  ],
+  &quot;tasks&quot;: [],
+  &quot;stop_reason&quot;: &quot;&quot;,
+  &quot;sources&quot;: [
+    {
+      &quot;id&quot;: &quot;upload__Agent_.pdf_1781490000_0_0&quot;,
+      &quot;document&quot;: &quot;Agent 评估白皮书：Agent Eval 应覆盖任务成功率、工具调用正确率、资料来源准确率、答案忠实度、延迟、成本和安全边界。评估样本集应包含基础路由、RAG 检索、文档问答、联网问答、自主任务和失败恢复等场景。&quot;,
+      &quot;source&quot;: &quot;上传：Agent评估白皮书.pdf&quot;,
+      &quot;source_type&quot;: &quot;upload&quot;,
+      &quot;url&quot;: &quot;&quot;,
+      &quot;chunk_index&quot;: 0,
+      &quot;created_at&quot;: 1781490000,
+      &quot;content_type&quot;: &quot;eval_fixture&quot;,
+      &quot;document_key&quot;: &quot;upload:上传：Agent评估白皮书.pdf:上传：Agent评估白皮书.pdf&quot;,
+      &quot;section_title&quot;: &quot;&quot;,
+      &quot;page&quot;: 0,
+      &quot;sheet&quot;: &quot;&quot;,
+      &quot;row_start&quot;: 0,
+      &quot;row_end&quot;: 0,
+      &quot;chunk_type&quot;: &quot;child&quot;,
+      &quot;parent_id&quot;: &quot;上传：Agent评估白皮书.pdf:0:eval_fixture&quot;,
+      &quot;parent_text&quot;: &quot;Agent 评估白皮书：Agent Eval 应覆盖任务成功率、工具调用正确率、资料来源准确率、答案忠实度、延迟、成本和安全边界。评估样本集应包含基础路由、RAG 检索、文档问答、联网问答、自主任务和失败恢复等场景。&quot;,
+      &quot;distance&quot;: 185.40756225585938,
+      &quot;bm25_score&quot;: 0.6986564616686106,
+      &quot;vector_rank&quot;: 1,
+      &quot;rrf_score&quot;: 0.03278688524590164,
+      &quot;vector_score&quot;: 0.005364589225341725,
+      &quot;bm25_rank&quot;: 1,
+      &quot;answerability_score&quot;: 0.33,
+      &quot;keyword_score&quot;: 2,
+      &quot;source_priority&quot;: 1,
+      &quot;source_weight&quot;: 1.35,
+      &quot;freshness_score&quot;: 0.85,
+      &quot;query_intent&quot;: &quot;general&quot;,
+      &quot;ranking_weights&quot;: &quot;{&#x27;rerank&#x27;: 0.65, &#x27;rrf&#x27;: 0.15, &#x27;source&#x27;: 0.1, &#x27;freshness&#x27;: 0.1}&quot;,
+      &quot;retrieval_strategy&quot;: &quot;vector_bm25_rrf&quot;,
+      &quot;context_packing_strategy&quot;: &quot;s</pre></td>
+        </tr>
+        
+        <tr>
+          <td><strong>doc_qa_003</strong><br><span>document_qa</span></td>
+          <td>分析这份文档里对产品经理最重要的三点</td>
+          <td class="pass">通过</td>
+          <td><pre>expected_mode: 通过
+expected_tools: 通过
+forbidden_tools: 通过
+sources: 通过
+required_tasks: 通过
+task_completion: 通过
+stop_reason: 通过
+answer: 通过</pre></td>
+          <td><pre>Judge: 通过
+总分: 5.0
+clarity: 5.0
+completeness: 5.0
+groundedness: 5.0
+safety: 5.0
+source_usage: 5.0
+task_success: 5.0
+硬门槛: 无
+理由: 答案完全基于上传文档，准确提炼出三点核心内容，结构清晰，来源合规。</pre></td>
+          <td><pre>{
+  &quot;planner_mode&quot;: &quot;pro_runtime&quot;,
+  &quot;tools&quot;: [
+    &quot;intent_classifier&quot;,
+    &quot;planner&quot;,
+    &quot;orchestrator&quot;,
+    &quot;dag_runtime&quot;,
+    &quot;rag_search&quot;,
+    &quot;aggregator&quot;,
+    &quot;evaluator&quot;,
+    &quot;generate_answer&quot;,
+    &quot;answer_validator&quot;
+  ],
+  &quot;tasks&quot;: [],
+  &quot;stop_reason&quot;: &quot;&quot;,
+  &quot;sources&quot;: [
+    {
+      &quot;id&quot;: &quot;upload__AI_.md_1781490000_0_0&quot;,
+      &quot;document&quot;: &quot;AI 产品经理学习笔记：RAG 是检索增强生成，Tool Agent 负责在单次任务中选择和执行工具，Autonomous Agent 会围绕目标拆解任务、维护任务队列、观察执行结果并自检。Agent Eval 需要包含 smoke、regression、benchmark 三类样本，并观察工具调用、资料来源、答案质量和失败原因。&quot;,
+      &quot;source&quot;: &quot;上传：AI产品经理学习笔记.md&quot;,
+      &quot;source_type&quot;: &quot;upload&quot;,
+      &quot;url&quot;: &quot;&quot;,
+      &quot;chunk_index&quot;: 0,
+      &quot;created_at&quot;: 1781490000,
+      &quot;content_type&quot;: &quot;eval_fixture&quot;,
+      &quot;document_key&quot;: &quot;upload:上传：AI产品经理学习笔记.md:上传：AI产品经理学习笔记.md&quot;,
+      &quot;section_title&quot;: &quot;&quot;,
+      &quot;page&quot;: 0,
+      &quot;sheet&quot;: &quot;&quot;,
+      &quot;row_start&quot;: 0,
+      &quot;row_end&quot;: 0,
+      &quot;chunk_type&quot;: &quot;child&quot;,
+      &quot;parent_id&quot;: &quot;上传：AI产品经理学习笔记.md:0:eval_fixture&quot;,
+      &quot;parent_text&quot;: &quot;AI 产品经理学习笔记：RAG 是检索增强生成，Tool Agent 负责在单次任务中选择和执行工具，Autonomous Agent 会围绕目标拆解任务、维护任务队列、观察执行结果并自检。Agent Eval 需要包含 smoke、regression、benchmark 三类样本，并观察工具调用、资料来源、答案质量和失败原因。&quot;,
+      &quot;distance&quot;: 214.5990447998047,
+      &quot;bm25_score&quot;: 0.8630462173553426,
+      &quot;vector_rank&quot;: 1,
+      &quot;rrf_score&quot;: 0.03278688524590164,
+      &quot;vector_score&quot;: 0.00463823947331749,
+      &quot;bm25_rank&quot;: 1,
+      &quot;answerability_score&quot;: 0.55,
+      &quot;keyword_score&quot;: 0,
+      &quot;source_priority&quot;: 1,
+      &quot;source_weight&quot;: 1.35,
+      &quot;freshness_score&quot;: 0.85,
+      &quot;query_intent&quot;: &quot;general&quot;,
+      &quot;ranking_weights&quot;: &quot;{&#x27;rerank&#x27;: 0.65, &#x27;rrf&#x27;: 0.15, &#x27;source&#x27;: 0.</pre></td>
+        </tr>
+        
+        <tr>
+          <td><strong>doc_qa_004</strong><br><span>document_qa</span></td>
+          <td>这份资料里有没有提到 RAG 和 Tool Agent 的关系？</td>
+          <td class="pass">通过</td>
+          <td><pre>expected_mode: 通过
+expected_tools: 通过
+forbidden_tools: 通过
+sources: 通过
+required_tasks: 通过
+task_completion: 通过
+stop_reason: 通过
+answer: 通过</pre></td>
+          <td><pre>Judge: 通过
+总分: 5.0
+clarity: 5.0
+completeness: 5.0
+groundedness: 5.0
+safety: 5.0
+source_usage: 5.0
+task_success: 5.0
+硬门槛: 无
+理由: 答案完整准确，基于资料判断未提及关系，依据充分，来源正确，表达清晰，无安全风险。</pre></td>
+          <td><pre>{
+  &quot;planner_mode&quot;: &quot;pro_runtime&quot;,
+  &quot;tools&quot;: [
+    &quot;intent_classifier&quot;,
+    &quot;planner&quot;,
+    &quot;orchestrator&quot;,
+    &quot;dag_runtime&quot;,
+    &quot;rag_search&quot;,
+    &quot;aggregator&quot;,
+    &quot;evaluator&quot;,
+    &quot;generate_answer&quot;,
+    &quot;answer_validator&quot;
+  ],
+  &quot;tasks&quot;: [],
+  &quot;stop_reason&quot;: &quot;&quot;,
+  &quot;sources&quot;: [
+    {
+      &quot;id&quot;: &quot;upload__AI_.md_1781490000_0_0&quot;,
+      &quot;document&quot;: &quot;AI 产品经理学习笔记：RAG 是检索增强生成，Tool Agent 负责在单次任务中选择和执行工具，Autonomous Agent 会围绕目标拆解任务、维护任务队列、观察执行结果并自检。Agent Eval 需要包含 smoke、regression、benchmark 三类样本，并观察工具调用、资料来源、答案质量和失败原因。&quot;,
+      &quot;source&quot;: &quot;上传：AI产品经理学习笔记.md&quot;,
+      &quot;source_type&quot;: &quot;upload&quot;,
+      &quot;url&quot;: &quot;&quot;,
+      &quot;chunk_index&quot;: 0,
+      &quot;created_at&quot;: 1781490000,
+      &quot;content_type&quot;: &quot;eval_fixture&quot;,
+      &quot;document_key&quot;: &quot;upload:上传：AI产品经理学习笔记.md:上传：AI产品经理学习笔记.md&quot;,
+      &quot;section_title&quot;: &quot;&quot;,
+      &quot;page&quot;: 0,
+      &quot;sheet&quot;: &quot;&quot;,
+      &quot;row_start&quot;: 0,
+      &quot;row_end&quot;: 0,
+      &quot;chunk_type&quot;: &quot;child&quot;,
+      &quot;parent_id&quot;: &quot;上传：AI产品经理学习笔记.md:0:eval_fixture&quot;,
+      &quot;parent_text&quot;: &quot;AI 产品经理学习笔记：RAG 是检索增强生成，Tool Agent 负责在单次任务中选择和执行工具，Autonomous Agent 会围绕目标拆解任务、维护任务队列、观察执行结果并自检。Agent Eval 需要包含 smoke、regression、benchmark 三类样本，并观察工具调用、资料来源、答案质量和失败原因。&quot;,
+      &quot;distance&quot;: 194.00946044921875,
+      &quot;bm25_score&quot;: 1.3425163381083105,
+      &quot;vector_rank&quot;: 1,
+      &quot;rrf_score&quot;: 0.03278688524590164,
+      &quot;vector_score&quot;: 0.005127956344766176,
+      &quot;bm25_rank&quot;: 1,
+      &quot;answerability_score&quot;: 0.8200000000000001,
+      &quot;keyword_score&quot;: 3,
+      &quot;source_priority&quot;: 1,
+      &quot;source_weight&quot;: 1.35,
+      &quot;freshness_score&quot;: 0.85,
+      &quot;query_intent&quot;: &quot;general&quot;,
+      &quot;ranking_weights&quot;: &quot;{&#x27;rerank&#x27;: 0.65, &#x27;rrf&#x27;: 0.</pre></td>
+        </tr>
+        
+        <tr>
+          <td><strong>scope_002</strong><br><span>source_scope</span></td>
+          <td>我这轮没有上传资料，不要引用之前的 PDF，直接说你现在有没有资料</td>
+          <td class="pass">通过</td>
+          <td><pre>expected_mode: 通过
+expected_tools: 通过
+forbidden_tools: 通过
+sources: 通过
+required_tasks: 通过
+task_completion: 通过
+stop_reason: 通过
+answer: 通过</pre></td>
+          <td><pre>Judge: 通过
+总分: 5.0
+clarity: 5.0
+completeness: 5.0
+groundedness: 5.0
+safety: 5.0
+source_usage: 5.0
+task_success: 5.0
+硬门槛: 无
+理由: Agent正确响应了用户要求，未引用上传资料，基于网页资料说明有可用资料，所有结论均有依据，来源使用正确，表达清晰。</pre></td>
+          <td><pre>{
+  &quot;planner_mode&quot;: &quot;pro_runtime&quot;,
+  &quot;tools&quot;: [
+    &quot;intent_classifier&quot;,
+    &quot;planner&quot;,
+    &quot;orchestrator&quot;,
+    &quot;dag_runtime&quot;,
+    &quot;web_collect&quot;,
+    &quot;dag_runtime&quot;,
+    &quot;rag_search&quot;,
+    &quot;aggregator&quot;,
+    &quot;evaluator&quot;,
+    &quot;generate_answer&quot;,
+    &quot;answer_validator&quot;
+  ],
+  &quot;tasks&quot;: [],
+  &quot;stop_reason&quot;: &quot;&quot;,
+  &quot;sources&quot;: [
+    {
+      &quot;id&quot;: &quot;web__RAG__1781490000_0_0&quot;,
+      &quot;document&quot;: &quot;RAG 是 Retrieval-Augmented Generation，中文常译为检索增强生成。它先从知识库、上传文件或网页中检索相关资料，再把资料与用户问题一起交给大模型生成回答。RAG 的核心价值是降低幻觉、补充模型不知道或不稳定的信息，并保留参考来源。RAG 工程化趋势包括混合检索、BM25 与向量召回融合、RRF 排序、reranker 精排、元数据过滤、去重、来源权重、新鲜度权重、Context Packing、引用校验和离线评估。Tool Agent 是围绕一次用户请求选择并执行工具的 Agent，重点是工具注册、工具 schema、planner、executor、state、trace 和 fallback。Autonomous Agent 是围绕一个目标拆解任务队列并循环推进的 Agent，重点是 Goal Manager、Task Queue、Observe-Act Loop、Critic/Reflection、Stop Condition 和 Human-in-the-loop&quot;,
+      &quot;source&quot;: &quot;网页：RAG 定义稳定样本&quot;,
+      &quot;source_type&quot;: &quot;web&quot;,
+      &quot;url&quot;: &quot;https://example.com/eval/rag-definition&quot;,
+      &quot;chunk_index&quot;: 0,
+      &quot;created_at&quot;: 1781490000,
+      &quot;content_type&quot;: &quot;eval_web_fixture&quot;,
+      &quot;document_key&quot;: &quot;web:网页：RAG 定义稳定样本:https://example.com/eval/rag-definition&quot;,
+      &quot;section_title&quot;: &quot;&quot;,
+      &quot;page&quot;: 0,
+      &quot;sheet&quot;: &quot;&quot;,
+      &quot;row_start&quot;: 0,
+      &quot;row_end&quot;: 0,
+      &quot;chunk_type&quot;: &quot;child&quot;,
+      &quot;parent_id&quot;: &quot;网页：RAG 定义稳定样本:0:eval_web_fixture&quot;,
+      &quot;parent_text&quot;: &quot;RAG 是 Retrieval-Augmented Generation，中文常译为检索增强生成。它先从知识库、上传文件或网页中检索相关资料，再把资料与用户问题一起交给大模型生成回答。RAG 的核心价值是降低幻觉、补充模型不知道或不稳定的信息，并保留参考来源。RAG 工程化趋势包括混合检索、BM25 与向量召回融合、RRF 排序、reranker 精排、元数据过滤、去重、来源权重、新鲜度权重、Context Packing、引用校验和离线评估。Tool Agent 是围绕一次用户请求选择</pre></td>
+        </tr>
+        
+        <tr>
+          <td><strong>scope_003</strong><br><span>source_scope</span></td>
+          <td>不要使用历史上传文件，只基于当前可见资料回答 RAG 是什么</td>
+          <td class="pass">通过</td>
+          <td><pre>expected_mode: 通过
+expected_tools: 通过
+forbidden_tools: 通过
+sources: 通过
+required_tasks: 通过
+task_completion: 通过
+stop_reason: 通过
+answer: 通过</pre></td>
+          <td><pre>Judge: 通过
+总分: 5.0
+clarity: 5.0
+completeness: 5.0
+groundedness: 5.0
+safety: 5.0
+source_usage: 5.0
+task_success: 5.0
+硬门槛: 无
+理由: 完全遵守用户指令，仅使用当前可见网页资料回答问题，所有关键结论均有可靠依据，表达清晰完整，无安全隐患。</pre></td>
+          <td><pre>{
+  &quot;planner_mode&quot;: &quot;pro_runtime&quot;,
+  &quot;tools&quot;: [
+    &quot;intent_classifier&quot;,
+    &quot;planner&quot;,
+    &quot;orchestrator&quot;,
+    &quot;dag_runtime&quot;,
+    &quot;web_collect&quot;,
+    &quot;dag_runtime&quot;,
+    &quot;rag_search&quot;,
+    &quot;aggregator&quot;,
+    &quot;evaluator&quot;,
+    &quot;generate_answer&quot;,
+    &quot;answer_validator&quot;
+  ],
+  &quot;tasks&quot;: [],
+  &quot;stop_reason&quot;: &quot;&quot;,
+  &quot;sources&quot;: [
+    {
+      &quot;id&quot;: &quot;web__RAG__1781490000_0_0&quot;,
+      &quot;document&quot;: &quot;RAG 是 Retrieval-Augmented Generation，中文常译为检索增强生成。它先从知识库、上传文件或网页中检索相关资料，再把资料与用户问题一起交给大模型生成回答。RAG 的核心价值是降低幻觉、补充模型不知道或不稳定的信息，并保留参考来源。RAG 工程化趋势包括混合检索、BM25 与向量召回融合、RRF 排序、reranker 精排、元数据过滤、去重、来源权重、新鲜度权重、Context Packing、引用校验和离线评估。Tool Agent 是围绕一次用户请求选择并执行工具的 Agent，重点是工具注册、工具 schema、planner、executor、state、trace 和 fallback。Autonomous Agent 是围绕一个目标拆解任务队列并循环推进的 Agent，重点是 Goal Manager、Task Queue、Observe-Act Loop、Critic/Reflection、Stop Condition 和 Human-in-the-loop&quot;,
+      &quot;source&quot;: &quot;网页：RAG 定义稳定样本&quot;,
+      &quot;source_type&quot;: &quot;web&quot;,
+      &quot;url&quot;: &quot;https://example.com/eval/rag-definition&quot;,
+      &quot;chunk_index&quot;: 0,
+      &quot;created_at&quot;: 1781490000,
+      &quot;content_type&quot;: &quot;eval_web_fixture&quot;,
+      &quot;document_key&quot;: &quot;web:网页：RAG 定义稳定样本:https://example.com/eval/rag-definition&quot;,
+      &quot;section_title&quot;: &quot;&quot;,
+      &quot;page&quot;: 0,
+      &quot;sheet&quot;: &quot;&quot;,
+      &quot;row_start&quot;: 0,
+      &quot;row_end&quot;: 0,
+      &quot;chunk_type&quot;: &quot;child&quot;,
+      &quot;parent_id&quot;: &quot;网页：RAG 定义稳定样本:0:eval_web_fixture&quot;,
+      &quot;parent_text&quot;: &quot;RAG 是 Retrieval-Augmented Generation，中文常译为检索增强生成。它先从知识库、上传文件或网页中检索相关资料，再把资料与用户问题一起交给大模型生成回答。RAG 的核心价值是降低幻觉、补充模型不知道或不稳定的信息，并保留参考来源。RAG 工程化趋势包括混合检索、BM25 与向量召回融合、RRF 排序、reranker 精排、元数据过滤、去重、来源权重、新鲜度权重、Context Packing、引用校验和离线评估。Tool Agent 是围绕一次用户请求选择</pre></td>
+        </tr>
+        
+        <tr>
+          <td><strong>web_002</strong><br><span>web_rag</span></td>
+          <td>今天 AI Agent 领域有什么值得关注的产品动态？</td>
+          <td class="pass">通过</td>
+          <td><pre>expected_mode: 通过
+expected_tools: 通过
+forbidden_tools: 通过
+sources: 通过
+required_tasks: 通过
+task_completion: 通过
+stop_reason: 通过
+answer: 通过</pre></td>
+          <td><pre>Judge: 通过
+总分: 5.0
+clarity: 5.0
+completeness: 5.0
+groundedness: 5.0
+safety: 5.0
+source_usage: 5.0
+task_success: 5.0
+硬门槛: 无
+理由: 回答完整准确，所有结论均有参考依据，来源使用正确，表达清晰，无安全风险。</pre></td>
+          <td><pre>{
+  &quot;planner_mode&quot;: &quot;pro_runtime&quot;,
+  &quot;tools&quot;: [
+    &quot;intent_classifier&quot;,
+    &quot;planner&quot;,
+    &quot;orchestrator&quot;,
+    &quot;dag_runtime&quot;,
+    &quot;web_collect&quot;,
+    &quot;dag_runtime&quot;,
+    &quot;rag_search&quot;,
+    &quot;aggregator&quot;,
+    &quot;evaluator&quot;,
+    &quot;generate_answer&quot;,
+    &quot;answer_validator&quot;
+  ],
+  &quot;tasks&quot;: [],
+  &quot;stop_reason&quot;: &quot;&quot;,
+  &quot;sources&quot;: [
+    {
+      &quot;id&quot;: &quot;web__AI_Agent__1781490000_0_0&quot;,
+      &quot;document&quot;: &quot;AI Agent 产品趋势稳定样本：2026 年 AI Agent 产品正在从单次工具调用走向任务级工作流。关键趋势包括多工具编排、可观测运行时、Agent Eval 评估体系、记忆系统、权限与安全控制、以及面向业务场景的多 Agent 协作。近期值得关注的产品动态包括：ChatGPT 类产品强化任务执行和连接器，企业知识库产品强化权限、审计和引用可追溯，开发者平台强化工具调用、工作流编排和评估闭环。三个可对标的 AI Agent 产品包括：ChatGPT（通用助手型 Agent，强调多工具调用、文件理解和连接器）、Claude（长上下文知识工作 Agent，强调文档理解、项目知识和安全边界）、Cursor（开发者自动化 Agent，强调代码理解、编辑、调试和任务执行）。也可以按产品类型归纳为：通用助手型 Agent、企业知识库/RAG Agent、开发者自动化 Agent。产品经理应关注的能力清单包括：目标理解、工具调用、RAG 资料检索、记忆管理、权限控制、可观测性、评估体系、失败恢复、成本控制和人类确认机制&quot;,
+      &quot;source&quot;: &quot;网页：AI Agent 产品趋势稳定样本&quot;,
+      &quot;source_type&quot;: &quot;web&quot;,
+      &quot;url&quot;: &quot;https://example.com/eval/ai-agent-trends&quot;,
+      &quot;chunk_index&quot;: 0,
+      &quot;created_at&quot;: 1781490000,
+      &quot;content_type&quot;: &quot;eval_web_fixture&quot;,
+      &quot;document_key&quot;: &quot;web:网页：AI Agent 产品趋势稳定样本:https://example.com/eval/ai-agent-trends&quot;,
+      &quot;section_title&quot;: &quot;&quot;,
+      &quot;page&quot;: 0,
+      &quot;sheet&quot;: &quot;&quot;,
+      &quot;row_start&quot;: 0,
+      &quot;row_end&quot;: 0,
+      &quot;chunk_type&quot;: &quot;child&quot;,
+      &quot;parent_id&quot;: &quot;网页：AI Agent 产品趋势稳定样本:0:eval_web_fixture&quot;,
+      &quot;parent_text&quot;: &quot;AI Agent 产品趋势稳定样本：2026 年 AI Agent 产品正在从单次工具调用走向任务级工作流。关键趋势包括多工具编排、可观测运行时、Agent Eval 评估体系、记忆系统、权限与安全控制、以及面向业务场景的多 Agent 协作。近期值得关注的产品动态包括：ChatGPT 类产品强化任务执行和连接器，企业知识库产品强化权限、审计和引用可追溯，开发者平台强化工具调用、工作流编排和评估闭环。三个可对标的 AI </pre></td>
+        </tr>
+        
+        <tr>
+          <td><strong>web_003</strong><br><span>web_rag</span></td>
+          <td>最新的 RAG 工程化趋势有哪些？</td>
+          <td class="pass">通过</td>
+          <td><pre>expected_mode: 通过
+expected_tools: 通过
+forbidden_tools: 通过
+sources: 通过
+required_tasks: 通过
+task_completion: 通过
+stop_reason: 通过
+answer: 通过</pre></td>
+          <td><pre>Judge: 通过
+总分: 5.0
+clarity: 5.0
+completeness: 5.0
+groundedness: 5.0
+safety: 5.0
+source_usage: 5.0
+task_success: 5.0
+硬门槛: 无
+理由: 答案完整覆盖所有RAG工程化趋势，关键结论直接来源于资料1，来源使用正确，表达清晰，无安全隐患。</pre></td>
+          <td><pre>{
+  &quot;planner_mode&quot;: &quot;pro_runtime&quot;,
+  &quot;tools&quot;: [
+    &quot;intent_classifier&quot;,
+    &quot;planner&quot;,
+    &quot;orchestrator&quot;,
+    &quot;dag_runtime&quot;,
+    &quot;web_collect&quot;,
+    &quot;dag_runtime&quot;,
+    &quot;rag_search&quot;,
+    &quot;aggregator&quot;,
+    &quot;evaluator&quot;,
+    &quot;generate_answer&quot;,
+    &quot;answer_validator&quot;
+  ],
+  &quot;tasks&quot;: [],
+  &quot;stop_reason&quot;: &quot;&quot;,
+  &quot;sources&quot;: [
+    {
+      &quot;id&quot;: &quot;web__RAG__1781490000_0_0&quot;,
+      &quot;document&quot;: &quot;RAG 是 Retrieval-Augmented Generation，中文常译为检索增强生成。它先从知识库、上传文件或网页中检索相关资料，再把资料与用户问题一起交给大模型生成回答。RAG 的核心价值是降低幻觉、补充模型不知道或不稳定的信息，并保留参考来源。RAG 工程化趋势包括混合检索、BM25 与向量召回融合、RRF 排序、reranker 精排、元数据过滤、去重、来源权重、新鲜度权重、Context Packing、引用校验和离线评估。Tool Agent 是围绕一次用户请求选择并执行工具的 Agent，重点是工具注册、工具 schema、planner、executor、state、trace 和 fallback。Autonomous Agent 是围绕一个目标拆解任务队列并循环推进的 Agent，重点是 Goal Manager、Task Queue、Observe-Act Loop、Critic/Reflection、Stop Condition 和 Human-in-the-loop&quot;,
+      &quot;source&quot;: &quot;网页：RAG 定义稳定样本&quot;,
+      &quot;source_type&quot;: &quot;web&quot;,
+      &quot;url&quot;: &quot;https://example.com/eval/rag-definition&quot;,
+      &quot;chunk_index&quot;: 0,
+      &quot;created_at&quot;: 1781490000,
+      &quot;content_type&quot;: &quot;eval_web_fixture&quot;,
+      &quot;document_key&quot;: &quot;web:网页：RAG 定义稳定样本:https://example.com/eval/rag-definition&quot;,
+      &quot;section_title&quot;: &quot;&quot;,
+      &quot;page&quot;: 0,
+      &quot;sheet&quot;: &quot;&quot;,
+      &quot;row_start&quot;: 0,
+      &quot;row_end&quot;: 0,
+      &quot;chunk_type&quot;: &quot;child&quot;,
+      &quot;parent_id&quot;: &quot;网页：RAG 定义稳定样本:0:eval_web_fixture&quot;,
+      &quot;parent_text&quot;: &quot;RAG 是 Retrieval-Augmented Generation，中文常译为检索增强生成。它先从知识库、上传文件或网页中检索相关资料，再把资料与用户问题一起交给大模型生成回答。RAG 的核心价值是降低幻觉、补充模型不知道或不稳定的信息，并保留参考来源。RAG 工程化趋势包括混合检索、BM25 与向量召回融合、RRF 排序、reranker 精排、元数据过滤、去重、来源权重、新鲜度权重、Context Packing、引用校验和离线评估。Tool Agent 是围绕一次用户请求选择</pre></td>
+        </tr>
+        
+        <tr>
+          <td><strong>web_004</strong><br><span>web_rag</span></td>
+          <td>现在多 Agent 协作有什么新进展？</td>
+          <td class="pass">通过</td>
+          <td><pre>expected_mode: 通过
+expected_tools: 通过
+forbidden_tools: 通过
+sources: 通过
+required_tasks: 通过
+task_completion: 通过
+stop_reason: 通过
+answer: 通过</pre></td>
+          <td><pre>Judge: 通过
+总分: 5.0
+clarity: 5.0
+completeness: 5.0
+groundedness: 5.0
+safety: 5.0
+source_usage: 5.0
+task_success: 5.0
+硬门槛: 无
+理由: 答案完整、有依据、来源正确、清晰且安全，各项均满分。</pre></td>
+          <td><pre>{
+  &quot;planner_mode&quot;: &quot;pro_runtime&quot;,
+  &quot;tools&quot;: [
+    &quot;intent_classifier&quot;,
+    &quot;planner&quot;,
+    &quot;orchestrator&quot;,
+    &quot;dag_runtime&quot;,
+    &quot;web_collect&quot;,
+    &quot;dag_runtime&quot;,
+    &quot;rag_search&quot;,
+    &quot;aggregator&quot;,
+    &quot;evaluator&quot;,
+    &quot;generate_answer&quot;,
+    &quot;answer_validator&quot;
+  ],
+  &quot;tasks&quot;: [],
+  &quot;stop_reason&quot;: &quot;&quot;,
+  &quot;sources&quot;: [
+    {
+      &quot;id&quot;: &quot;web__AI_Agent__1781490000_0_1&quot;,
+      &quot;document&quot;: &quot;自动化 Agent。产品经理应关注的能力清单包括：目标理解、工具调用、RAG 资料检索、记忆管理、权限控制、可观测性、评估体系、失败恢复、成本控制和人类确认机制\n多 Agent 协作的新进展包括角色分工、共享状态、任务队列、冲突仲裁和统一审计。Agent Memory 的实践趋势包括短期会话记忆、长期用户偏好、任务状态记忆、可删除/可解释的记忆、以及按权限隔离的组织知识记忆。当前 Agent MVP 的主要风险包括：路由误判、资料污染、联网不稳定、引用不准、judge 不稳定、自主循环过度执行、成本失控和缺少权限确认。下一轮优化计划应优先覆盖：路由评估集、稳定检索夹具、引用校验、请求超时、trace 可观测性、配置化教学开关和线上监控。产品经理需要重点学习：RAG 检索链路、Tool Agent 工具调用、Autonomous Agent 目标拆解与循环、Agent Eval 评估体系、成本与权限治理&quot;,
+      &quot;source&quot;: &quot;网页：AI Agent 产品趋势稳定样本&quot;,
+      &quot;source_type&quot;: &quot;web&quot;,
+      &quot;url&quot;: &quot;https://example.com/eval/ai-agent-trends&quot;,
+      &quot;chunk_index&quot;: 1,
+      &quot;created_at&quot;: 1781490000,
+      &quot;content_type&quot;: &quot;eval_web_fixture&quot;,
+      &quot;document_key&quot;: &quot;web:网页：AI Agent 产品趋势稳定样本:https://example.com/eval/ai-agent-trends&quot;,
+      &quot;section_title&quot;: &quot;&quot;,
+      &quot;page&quot;: 0,
+      &quot;sheet&quot;: &quot;&quot;,
+      &quot;row_start&quot;: 0,
+      &quot;row_end&quot;: 0,
+      &quot;chunk_type&quot;: &quot;child&quot;,
+      &quot;parent_id&quot;: &quot;网页：AI Agent 产品趋势稳定样本:0:eval_web_fixture&quot;,
+      &quot;parent_text&quot;: &quot;AI Agent 产品趋势稳定样本：2026 年 AI Agent 产品正在从单次工具调用走向任务级工作流。关键趋势包括多工具编排、可观测运行时、Agent Eval 评估体系、记忆系统、权限与安全控制、以及面向业务场景的多 Agent 协作。近期值得关注的产品动态包括：ChatGPT 类产品强化任务执行和连接器，企业知识库产品强化权限、审计和引用可追溯，开发者平台强化工具调用、工作流编排和评估闭环。三个可对标的 AI Agent 产品包括：ChatGPT（通用助手型 Agent，强调多工具调用、文件理解和连接器）、Claude（</pre></td>
+        </tr>
+        
+        <tr>
+          <td><strong>web_005</strong><br><span>web_rag</span></td>
+          <td>最近 Agent Memory 有什么实践趋势？</td>
+          <td class="pass">通过</td>
+          <td><pre>expected_mode: 通过
+expected_tools: 通过
+forbidden_tools: 通过
+sources: 通过
+required_tasks: 通过
+task_completion: 通过
+stop_reason: 通过
+answer: 通过</pre></td>
+          <td><pre>Judge: 通过
+总分: 5.0
+clarity: 5.0
+completeness: 5.0
+groundedness: 5.0
+safety: 5.0
+source_usage: 5.0
+task_success: 5.0
+硬门槛: 无
+理由: 答案准确总结了Agent Memory的五项实践趋势，所有结论均来自参考资料的明确内容，来源使用正确，结构清晰，无安全风险。</pre></td>
+          <td><pre>{
+  &quot;planner_mode&quot;: &quot;pro_runtime&quot;,
+  &quot;tools&quot;: [
+    &quot;intent_classifier&quot;,
+    &quot;planner&quot;,
+    &quot;orchestrator&quot;,
+    &quot;dag_runtime&quot;,
+    &quot;web_collect&quot;,
+    &quot;dag_runtime&quot;,
+    &quot;rag_search&quot;,
+    &quot;aggregator&quot;,
+    &quot;evaluator&quot;,
+    &quot;generate_answer&quot;,
+    &quot;answer_validator&quot;
+  ],
+  &quot;tasks&quot;: [],
+  &quot;stop_reason&quot;: &quot;&quot;,
+  &quot;sources&quot;: [
+    {
+      &quot;id&quot;: &quot;web__AI_Agent__1781490000_0_1&quot;,
+      &quot;document&quot;: &quot;自动化 Agent。产品经理应关注的能力清单包括：目标理解、工具调用、RAG 资料检索、记忆管理、权限控制、可观测性、评估体系、失败恢复、成本控制和人类确认机制\n多 Agent 协作的新进展包括角色分工、共享状态、任务队列、冲突仲裁和统一审计。Agent Memory 的实践趋势包括短期会话记忆、长期用户偏好、任务状态记忆、可删除/可解释的记忆、以及按权限隔离的组织知识记忆。当前 Agent MVP 的主要风险包括：路由误判、资料污染、联网不稳定、引用不准、judge 不稳定、自主循环过度执行、成本失控和缺少权限确认。下一轮优化计划应优先覆盖：路由评估集、稳定检索夹具、引用校验、请求超时、trace 可观测性、配置化教学开关和线上监控。产品经理需要重点学习：RAG 检索链路、Tool Agent 工具调用、Autonomous Agent 目标拆解与循环、Agent Eval 评估体系、成本与权限治理&quot;,
+      &quot;source&quot;: &quot;网页：AI Agent 产品趋势稳定样本&quot;,
+      &quot;source_type&quot;: &quot;web&quot;,
+      &quot;url&quot;: &quot;https://example.com/eval/ai-agent-trends&quot;,
+      &quot;chunk_index&quot;: 1,
+      &quot;created_at&quot;: 1781490000,
+      &quot;content_type&quot;: &quot;eval_web_fixture&quot;,
+      &quot;document_key&quot;: &quot;web:网页：AI Agent 产品趋势稳定样本:https://example.com/eval/ai-agent-trends&quot;,
+      &quot;section_title&quot;: &quot;&quot;,
+      &quot;page&quot;: 0,
+      &quot;sheet&quot;: &quot;&quot;,
+      &quot;row_start&quot;: 0,
+      &quot;row_end&quot;: 0,
+      &quot;chunk_type&quot;: &quot;child&quot;,
+      &quot;parent_id&quot;: &quot;网页：AI Agent 产品趋势稳定样本:0:eval_web_fixture&quot;,
+      &quot;parent_text&quot;: &quot;AI Agent 产品趋势稳定样本：2026 年 AI Agent 产品正在从单次工具调用走向任务级工作流。关键趋势包括多工具编排、可观测运行时、Agent Eval 评估体系、记忆系统、权限与安全控制、以及面向业务场景的多 Agent 协作。近期值得关注的产品动态包括：ChatGPT 类产品强化任务执行和连接器，企业知识库产品强化权限、审计和引用可追溯，开发者平台强化工具调用、工作流编排和评估闭环。三个可对标的 AI Agent 产品包括：ChatGPT（通用助手型 Agent，强调多工具调用、文件理解和连接器）、Claude（</pre></td>
+        </tr>
+        
+        <tr>
+          <td><strong>definition_002</strong><br><span>definition</span></td>
+          <td>Tool Agent 和 Autonomous Agent 的区别是什么？</td>
+          <td class="pass">通过</td>
+          <td><pre>expected_mode: 通过
+expected_tools: 通过
+forbidden_tools: 通过
+sources: 通过
+required_tasks: 通过
+task_completion: 通过
+stop_reason: 通过
+answer: 通过</pre></td>
+          <td><pre>Judge: 通过
+总分: 5.0
+clarity: 5.0
+completeness: 5.0
+groundedness: 5.0
+safety: 5.0
+source_usage: 5.0
+task_success: 5.0
+硬门槛: 无
+理由: 答案准确基于参考资料，完整覆盖问题，表达清晰，无安全风险。</pre></td>
+          <td><pre>{
+  &quot;planner_mode&quot;: &quot;pro_runtime&quot;,
+  &quot;tools&quot;: [
+    &quot;intent_classifier&quot;,
+    &quot;planner&quot;,
+    &quot;orchestrator&quot;,
+    &quot;dag_runtime&quot;,
+    &quot;web_collect&quot;,
+    &quot;dag_runtime&quot;,
+    &quot;rag_search&quot;,
+    &quot;aggregator&quot;,
+    &quot;evaluator&quot;,
+    &quot;generate_answer&quot;,
+    &quot;answer_validator&quot;
+  ],
+  &quot;tasks&quot;: [],
+  &quot;stop_reason&quot;: &quot;&quot;,
+  &quot;sources&quot;: [
+    {
+      &quot;id&quot;: &quot;web__RAG__1781490000_0_0&quot;,
+      &quot;document&quot;: &quot;RAG 是 Retrieval-Augmented Generation，中文常译为检索增强生成。它先从知识库、上传文件或网页中检索相关资料，再把资料与用户问题一起交给大模型生成回答。RAG 的核心价值是降低幻觉、补充模型不知道或不稳定的信息，并保留参考来源。RAG 工程化趋势包括混合检索、BM25 与向量召回融合、RRF 排序、reranker 精排、元数据过滤、去重、来源权重、新鲜度权重、Context Packing、引用校验和离线评估。Tool Agent 是围绕一次用户请求选择并执行工具的 Agent，重点是工具注册、工具 schema、planner、executor、state、trace 和 fallback。Autonomous Agent 是围绕一个目标拆解任务队列并循环推进的 Agent，重点是 Goal Manager、Task Queue、Observe-Act Loop、Critic/Reflection、Stop Condition 和 Human-in-the-loop&quot;,
+      &quot;source&quot;: &quot;网页：RAG 定义稳定样本&quot;,
+      &quot;source_type&quot;: &quot;web&quot;,
+      &quot;url&quot;: &quot;https://example.com/eval/rag-definition&quot;,
+      &quot;chunk_index&quot;: 0,
+      &quot;created_at&quot;: 1781490000,
+      &quot;content_type&quot;: &quot;eval_web_fixture&quot;,
+      &quot;document_key&quot;: &quot;web:网页：RAG 定义稳定样本:https://example.com/eval/rag-definition&quot;,
+      &quot;section_title&quot;: &quot;&quot;,
+      &quot;page&quot;: 0,
+      &quot;sheet&quot;: &quot;&quot;,
+      &quot;row_start&quot;: 0,
+      &quot;row_end&quot;: 0,
+      &quot;chunk_type&quot;: &quot;child&quot;,
+      &quot;parent_id&quot;: &quot;网页：RAG 定义稳定样本:0:eval_web_fixture&quot;,
+      &quot;parent_text&quot;: &quot;RAG 是 Retrieval-Augmented Generation，中文常译为检索增强生成。它先从知识库、上传文件或网页中检索相关资料，再把资料与用户问题一起交给大模型生成回答。RAG 的核心价值是降低幻觉、补充模型不知道或不稳定的信息，并保留参考来源。RAG 工程化趋势包括混合检索、BM25 与向量召回融合、RRF 排序、reranker 精排、元数据过滤、去重、来源权重、新鲜度权重、Context Packing、引用校验和离线评估。Tool Agent 是围绕一次用户请求选择</pre></td>
+        </tr>
+        
+        <tr>
+          <td><strong>definition_003</strong><br><span>definition</span></td>
+          <td>什么是 reranker？</td>
+          <td class="pass">通过</td>
+          <td><pre>expected_mode: 通过
+expected_tools: 通过
+forbidden_tools: 通过
+sources: 通过
+required_tasks: 通过
+task_completion: 通过
+stop_reason: 通过
+answer: 通过</pre></td>
+          <td><pre>Judge: 通过
+总分: 5.0
+clarity: 5.0
+completeness: 5.0
+groundedness: 5.0
+safety: 5.0
+source_usage: 5.0
+task_success: 5.0
+硬门槛: 无
+理由: 回答完整且准确，所有关键结论均能在参考上下文中找到依据，来源使用正确，表达清晰。</pre></td>
+          <td><pre>{
+  &quot;planner_mode&quot;: &quot;pro_runtime&quot;,
+  &quot;tools&quot;: [
+    &quot;intent_classifier&quot;,
+    &quot;planner&quot;,
+    &quot;orchestrator&quot;,
+    &quot;dag_runtime&quot;,
+    &quot;web_collect&quot;,
+    &quot;dag_runtime&quot;,
+    &quot;rag_search&quot;,
+    &quot;aggregator&quot;,
+    &quot;evaluator&quot;,
+    &quot;generate_answer&quot;,
+    &quot;answer_validator&quot;
+  ],
+  &quot;tasks&quot;: [],
+  &quot;stop_reason&quot;: &quot;&quot;,
+  &quot;sources&quot;: [
+    {
+      &quot;id&quot;: &quot;web__RAG__1781490000_0_1&quot;,
+      &quot;document&quot;: &quot;Task Queue、Observe-Act Loop、Critic/Reflection、Stop Condition 和 Human-in-the-loop\nreranker 是重排序模型，通常把用户问题和候选 chunk 作为一对输入，直接判断两者相关性，比只看向量余弦相似度更擅长理解语义匹配。Context Packing 是把检索后的候选资料按 token budget、来源优先级、去重、覆盖度和引用需求打包进最终 messages 的过程。BM25 是关键词统计检索，擅长精确词命中；向量检索是语义检索，擅长表达相近但词不完全一致的问题。RAG 产品化评估方案应包含指标、样本集和验收方式：指标包括任务成功率、工具调用正确率、检索命中率、答案忠实度、引用准确率、延迟、成本和安全事件；样本集包括 smoke、regression、benchmark；验收方式包括规则检查、LLM-as-Judge、人审抽检、线上日志回放和失败 case 复盘&quot;,
+      &quot;source&quot;: &quot;网页：RAG 定义稳定样本&quot;,
+      &quot;source_type&quot;: &quot;web&quot;,
+      &quot;url&quot;: &quot;https://example.com/eval/rag-definition&quot;,
+      &quot;chunk_index&quot;: 1,
+      &quot;created_at&quot;: 1781490000,
+      &quot;content_type&quot;: &quot;eval_web_fixture&quot;,
+      &quot;document_key&quot;: &quot;web:网页：RAG 定义稳定样本:https://example.com/eval/rag-definition&quot;,
+      &quot;section_title&quot;: &quot;&quot;,
+      &quot;page&quot;: 0,
+      &quot;sheet&quot;: &quot;&quot;,
+      &quot;row_start&quot;: 0,
+      &quot;row_end&quot;: 0,
+      &quot;chunk_type&quot;: &quot;child&quot;,
+      &quot;parent_id&quot;: &quot;网页：RAG 定义稳定样本:0:eval_web_fixture&quot;,
+      &quot;parent_text&quot;: &quot;RAG 是 Retrieval-Augmented Generation，中文常译为检索增强生成。它先从知识库、上传文件或网页中检索相关资料，再把资料与用户问题一起交给大模型生成回答。RAG 的核心价值是降低幻觉、补充模型不知道或不稳定的信息，并保留参考来源。RAG 工程化趋势包括混合检索、BM25 与向量召回融合、RRF 排序、reranker 精排、元数据过滤、去重、来源权重、新鲜度权重、Context Packing、引用校验和离线评估。Tool Agent 是围绕一次用户请求选择并执行工具的 Agent，重点是工具注册、工具 sch</pre></td>
+        </tr>
+        
+        <tr>
+          <td><strong>definition_004</strong><br><span>definition</span></td>
+          <td>Context Packing 是什么？</td>
+          <td class="pass">通过</td>
+          <td><pre>expected_mode: 通过
+expected_tools: 通过
+forbidden_tools: 通过
+sources: 通过
+required_tasks: 通过
+task_completion: 通过
+stop_reason: 通过
+answer: 通过</pre></td>
+          <td><pre>Judge: 通过
+总分: 5.0
+clarity: 5.0
+completeness: 5.0
+groundedness: 5.0
+safety: 5.0
+source_usage: 5.0
+task_success: 5.0
+硬门槛: 无
+理由: Agent准确回答了用户问题，所有关键结论均有参考资料支持，来源使用正确，表达清晰完整，无安全风险。</pre></td>
+          <td><pre>{
+  &quot;planner_mode&quot;: &quot;pro_runtime&quot;,
+  &quot;tools&quot;: [
+    &quot;intent_classifier&quot;,
+    &quot;planner&quot;,
+    &quot;orchestrator&quot;,
+    &quot;dag_runtime&quot;,
+    &quot;web_collect&quot;,
+    &quot;dag_runtime&quot;,
+    &quot;rag_search&quot;,
+    &quot;aggregator&quot;,
+    &quot;evaluator&quot;,
+    &quot;generate_answer&quot;,
+    &quot;answer_validator&quot;
+  ],
+  &quot;tasks&quot;: [],
+  &quot;stop_reason&quot;: &quot;&quot;,
+  &quot;sources&quot;: [
+    {
+      &quot;id&quot;: &quot;web__RAG__1781490000_0_1&quot;,
+      &quot;document&quot;: &quot;Task Queue、Observe-Act Loop、Critic/Reflection、Stop Condition 和 Human-in-the-loop\nreranker 是重排序模型，通常把用户问题和候选 chunk 作为一对输入，直接判断两者相关性，比只看向量余弦相似度更擅长理解语义匹配。Context Packing 是把检索后的候选资料按 token budget、来源优先级、去重、覆盖度和引用需求打包进最终 messages 的过程。BM25 是关键词统计检索，擅长精确词命中；向量检索是语义检索，擅长表达相近但词不完全一致的问题。RAG 产品化评估方案应包含指标、样本集和验收方式：指标包括任务成功率、工具调用正确率、检索命中率、答案忠实度、引用准确率、延迟、成本和安全事件；样本集包括 smoke、regression、benchmark；验收方式包括规则检查、LLM-as-Judge、人审抽检、线上日志回放和失败 case 复盘&quot;,
+      &quot;source&quot;: &quot;网页：RAG 定义稳定样本&quot;,
+      &quot;source_type&quot;: &quot;web&quot;,
+      &quot;url&quot;: &quot;https://example.com/eval/rag-definition&quot;,
+      &quot;chunk_index&quot;: 1,
+      &quot;created_at&quot;: 1781490000,
+      &quot;content_type&quot;: &quot;eval_web_fixture&quot;,
+      &quot;document_key&quot;: &quot;web:网页：RAG 定义稳定样本:https://example.com/eval/rag-definition&quot;,
+      &quot;section_title&quot;: &quot;&quot;,
+      &quot;page&quot;: 0,
+      &quot;sheet&quot;: &quot;&quot;,
+      &quot;row_start&quot;: 0,
+      &quot;row_end&quot;: 0,
+      &quot;chunk_type&quot;: &quot;child&quot;,
+      &quot;parent_id&quot;: &quot;网页：RAG 定义稳定样本:0:eval_web_fixture&quot;,
+      &quot;parent_text&quot;: &quot;RAG 是 Retrieval-Augmented Generation，中文常译为检索增强生成。它先从知识库、上传文件或网页中检索相关资料，再把资料与用户问题一起交给大模型生成回答。RAG 的核心价值是降低幻觉、补充模型不知道或不稳定的信息，并保留参考来源。RAG 工程化趋势包括混合检索、BM25 与向量召回融合、RRF 排序、reranker 精排、元数据过滤、去重、来源权重、新鲜度权重、Context Packing、引用校验和离线评估。Tool Agent 是围绕一次用户请求选择并执行工具的 Agent，重点是工具注册、工具 sch</pre></td>
+        </tr>
+        
+        <tr>
+          <td><strong>definition_005</strong><br><span>definition</span></td>
+          <td>BM25 和向量检索有什么区别？</td>
+          <td class="pass">通过</td>
+          <td><pre>expected_mode: 通过
+expected_tools: 通过
+forbidden_tools: 通过
+sources: 通过
+required_tasks: 通过
+task_completion: 通过
+stop_reason: 通过
+answer: 通过</pre></td>
+          <td><pre>Judge: 通过
+总分: 5.0
+clarity: 5.0
+completeness: 5.0
+groundedness: 5.0
+safety: 5.0
+source_usage: 5.0
+task_success: 5.0
+硬门槛: 无
+理由: 回答完整、准确，所有结论均有参考依据，来源使用正确，结构清晰，无安全风险。</pre></td>
+          <td><pre>{
+  &quot;planner_mode&quot;: &quot;pro_runtime&quot;,
+  &quot;tools&quot;: [
+    &quot;intent_classifier&quot;,
+    &quot;planner&quot;,
+    &quot;orchestrator&quot;,
+    &quot;dag_runtime&quot;,
+    &quot;web_collect&quot;,
+    &quot;dag_runtime&quot;,
+    &quot;rag_search&quot;,
+    &quot;aggregator&quot;,
+    &quot;evaluator&quot;,
+    &quot;generate_answer&quot;,
+    &quot;answer_validator&quot;
+  ],
+  &quot;tasks&quot;: [],
+  &quot;stop_reason&quot;: &quot;&quot;,
+  &quot;sources&quot;: [
+    {
+      &quot;id&quot;: &quot;web__RAG__1781490000_0_1&quot;,
+      &quot;document&quot;: &quot;Task Queue、Observe-Act Loop、Critic/Reflection、Stop Condition 和 Human-in-the-loop\nreranker 是重排序模型，通常把用户问题和候选 chunk 作为一对输入，直接判断两者相关性，比只看向量余弦相似度更擅长理解语义匹配。Context Packing 是把检索后的候选资料按 token budget、来源优先级、去重、覆盖度和引用需求打包进最终 messages 的过程。BM25 是关键词统计检索，擅长精确词命中；向量检索是语义检索，擅长表达相近但词不完全一致的问题。RAG 产品化评估方案应包含指标、样本集和验收方式：指标包括任务成功率、工具调用正确率、检索命中率、答案忠实度、引用准确率、延迟、成本和安全事件；样本集包括 smoke、regression、benchmark；验收方式包括规则检查、LLM-as-Judge、人审抽检、线上日志回放和失败 case 复盘&quot;,
+      &quot;source&quot;: &quot;网页：RAG 定义稳定样本&quot;,
+      &quot;source_type&quot;: &quot;web&quot;,
+      &quot;url&quot;: &quot;https://example.com/eval/rag-definition&quot;,
+      &quot;chunk_index&quot;: 1,
+      &quot;created_at&quot;: 1781490000,
+      &quot;content_type&quot;: &quot;eval_web_fixture&quot;,
+      &quot;document_key&quot;: &quot;web:网页：RAG 定义稳定样本:https://example.com/eval/rag-definition&quot;,
+      &quot;section_title&quot;: &quot;&quot;,
+      &quot;page&quot;: 0,
+      &quot;sheet&quot;: &quot;&quot;,
+      &quot;row_start&quot;: 0,
+      &quot;row_end&quot;: 0,
+      &quot;chunk_type&quot;: &quot;child&quot;,
+      &quot;parent_id&quot;: &quot;网页：RAG 定义稳定样本:0:eval_web_fixture&quot;,
+      &quot;parent_text&quot;: &quot;RAG 是 Retrieval-Augmented Generation，中文常译为检索增强生成。它先从知识库、上传文件或网页中检索相关资料，再把资料与用户问题一起交给大模型生成回答。RAG 的核心价值是降低幻觉、补充模型不知道或不稳定的信息，并保留参考来源。RAG 工程化趋势包括混合检索、BM25 与向量召回融合、RRF 排序、reranker 精排、元数据过滤、去重、来源权重、新鲜度权重、Context Packing、引用校验和离线评估。Tool Agent 是围绕一次用户请求选择并执行工具的 Agent，重点是工具注册、工具 sch</pre></td>
+        </tr>
+        
+        <tr>
+          <td><strong>auto_002</strong><br><span>autonomous</span></td>
+          <td>调研三个 AI Agent 产品，并输出产品经理应该关注的能力清单</td>
+          <td class="pass">通过</td>
+          <td><pre>expected_mode: 通过
+expected_tools: 通过
+forbidden_tools: 通过
+sources: 通过
+required_tasks: 通过
+task_completion: 通过
+stop_reason: 通过
+answer: 通过</pre></td>
+          <td><pre>Judge: 通过
+总分: 5.0
+clarity: 5.0
+completeness: 5.0
+groundedness: 5.0
+safety: 5.0
+source_usage: 5.0
+task_success: 5.0
+硬门槛: 无
+理由: Agent结果完整回答了用户问题，所有结论均有参考资料支持，来源使用正确，结构清晰，无安全风险。</pre></td>
+          <td><pre>{
+  &quot;planner_mode&quot;: &quot;autonomous_runtime&quot;,
+  &quot;tools&quot;: [],
+  &quot;tasks&quot;: [
+    &quot;collect_context&quot;,
+    &quot;extract_findings&quot;,
+    &quot;write_deliverable&quot;
+  ],
+  &quot;stop_reason&quot;: &quot;all_tasks_completed&quot;,
+  &quot;sources&quot;: [
+    {
+      &quot;id&quot;: &quot;web__AI_Agent__1781490000_0_0&quot;,
+      &quot;document&quot;: &quot;AI Agent 产品趋势稳定样本：2026 年 AI Agent 产品正在从单次工具调用走向任务级工作流。关键趋势包括多工具编排、可观测运行时、Agent Eval 评估体系、记忆系统、权限与安全控制、以及面向业务场景的多 Agent 协作。近期值得关注的产品动态包括：ChatGPT 类产品强化任务执行和连接器，企业知识库产品强化权限、审计和引用可追溯，开发者平台强化工具调用、工作流编排和评估闭环。三个可对标的 AI Agent 产品包括：ChatGPT（通用助手型 Agent，强调多工具调用、文件理解和连接器）、Claude（长上下文知识工作 Agent，强调文档理解、项目知识和安全边界）、Cursor（开发者自动化 Agent，强调代码理解、编辑、调试和任务执行）。也可以按产品类型归纳为：通用助手型 Agent、企业知识库/RAG Agent、开发者自动化 Agent。产品经理应关注的能力清单包括：目标理解、工具调用、RAG 资料检索、记忆管理、权限控制、可观测性、评估体系、失败恢复、成本控制和人类确认机制&quot;,
+      &quot;source&quot;: &quot;网页：AI Agent 产品趋势稳定样本&quot;,
+      &quot;source_type&quot;: &quot;web&quot;,
+      &quot;url&quot;: &quot;https://example.com/eval/ai-agent-trends&quot;,
+      &quot;chunk_index&quot;: 0,
+      &quot;created_at&quot;: 1781490000,
+      &quot;content_type&quot;: &quot;eval_web_fixture&quot;,
+      &quot;document_key&quot;: &quot;web:网页：AI Agent 产品趋势稳定样本:https://example.com/eval/ai-agent-trends&quot;,
+      &quot;section_title&quot;: &quot;&quot;,
+      &quot;page&quot;: 0,
+      &quot;sheet&quot;: &quot;&quot;,
+      &quot;row_start&quot;: 0,
+      &quot;row_end&quot;: 0,
+      &quot;chunk_type&quot;: &quot;child&quot;,
+      &quot;parent_id&quot;: &quot;网页：AI Agent 产品趋势稳定样本:0:eval_web_fixture&quot;,
+      &quot;parent_text&quot;: &quot;AI Agent 产品趋势稳定样本：2026 年 AI Agent 产品正在从单次工具调用走向任务级工作流。关键趋势包括多工具编排、可观测运行时、Agent Eval 评估体系、记忆系统、权限与安全控制、以及面向业务场景的多 Agent 协作。近期值得关注的产品动态包括：ChatGPT 类产品强化任务执行和连接器，企业知识库产品强化权限、审计和引用可追溯，开发者平台强化工具调用、工作流编排和评估闭环。三个可对标的 AI Agent 产品包括：ChatGPT（通用助手型 Agent，强调多工具调用、文件理解和连接器）、Claude（长上下文知识工作 Agent，强调文档理解、项目知识和安全边界）、Cursor（开发者自动化 Agent，强调代码理解、编辑、</pre></td>
+        </tr>
+        
+        <tr>
+          <td><strong>auto_003</strong><br><span>autonomous</span></td>
+          <td>整理一份 RAG 产品化评估方案，包含指标、样本集和验收方式</td>
+          <td class="pass">通过</td>
+          <td><pre>expected_mode: 通过
+expected_tools: 通过
+forbidden_tools: 通过
+sources: 通过
+required_tasks: 通过
+task_completion: 通过
+stop_reason: 通过
+answer: 通过</pre></td>
+          <td><pre>Judge: 通过
+总分: 5.0
+clarity: 5.0
+completeness: 5.0
+groundedness: 5.0
+safety: 5.0
+source_usage: 5.0
+task_success: 5.0
+硬门槛: 无
+理由: 所有维度均满分，回答完整、有据、清晰、安全。</pre></td>
+          <td><pre>{
+  &quot;planner_mode&quot;: &quot;autonomous_runtime&quot;,
+  &quot;tools&quot;: [],
+  &quot;tasks&quot;: [
+    &quot;collect_context&quot;,
+    &quot;extract_findings&quot;,
+    &quot;write_deliverable&quot;
+  ],
+  &quot;stop_reason&quot;: &quot;all_tasks_completed&quot;,
+  &quot;sources&quot;: [
+    {
+      &quot;id&quot;: &quot;web__RAG__1781490000_0_1&quot;,
+      &quot;document&quot;: &quot;Task Queue、Observe-Act Loop、Critic/Reflection、Stop Condition 和 Human-in-the-loop\nreranker 是重排序模型，通常把用户问题和候选 chunk 作为一对输入，直接判断两者相关性，比只看向量余弦相似度更擅长理解语义匹配。Context Packing 是把检索后的候选资料按 token budget、来源优先级、去重、覆盖度和引用需求打包进最终 messages 的过程。BM25 是关键词统计检索，擅长精确词命中；向量检索是语义检索，擅长表达相近但词不完全一致的问题。RAG 产品化评估方案应包含指标、样本集和验收方式：指标包括任务成功率、工具调用正确率、检索命中率、答案忠实度、引用准确率、延迟、成本和安全事件；样本集包括 smoke、regression、benchmark；验收方式包括规则检查、LLM-as-Judge、人审抽检、线上日志回放和失败 case 复盘&quot;,
+      &quot;source&quot;: &quot;网页：RAG 定义稳定样本&quot;,
+      &quot;source_type&quot;: &quot;web&quot;,
+      &quot;url&quot;: &quot;https://example.com/eval/rag-definition&quot;,
+      &quot;chunk_index&quot;: 1,
+      &quot;created_at&quot;: 1781490000,
+      &quot;content_type&quot;: &quot;eval_web_fixture&quot;,
+      &quot;document_key&quot;: &quot;web:网页：RAG 定义稳定样本:https://example.com/eval/rag-definition&quot;,
+      &quot;section_title&quot;: &quot;&quot;,
+      &quot;page&quot;: 0,
+      &quot;sheet&quot;: &quot;&quot;,
+      &quot;row_start&quot;: 0,
+      &quot;row_end&quot;: 0,
+      &quot;chunk_type&quot;: &quot;child&quot;,
+      &quot;parent_id&quot;: &quot;网页：RAG 定义稳定样本:0:eval_web_fixture&quot;,
+      &quot;parent_text&quot;: &quot;RAG 是 Retrieval-Augmented Generation，中文常译为检索增强生成。它先从知识库、上传文件或网页中检索相关资料，再把资料与用户问题一起交给大模型生成回答。RAG 的核心价值是降低幻觉、补充模型不知道或不稳定的信息，并保留参考来源。RAG 工程化趋势包括混合检索、BM25 与向量召回融合、RRF 排序、reranker 精排、元数据过滤、去重、来源权重、新鲜度权重、Context Packing、引用校验和离线评估。Tool Agent 是围绕一次用户请求选择并执行工具的 Agent，重点是工具注册、工具 schema、planner、executor、state、trace 和 fallback。Autonomous Agent 是围绕一个目标拆解任务队列并循环推进的 Agent，重点是 Goal Manager、Task Queue、Obse</pre></td>
+        </tr>
+        
+        <tr>
+          <td><strong>auto_004</strong><br><span>autonomous</span></td>
+          <td>分析当前 Agent MVP 的主要风险，并给出下一轮优化计划</td>
+          <td class="pass">通过</td>
+          <td><pre>expected_mode: 通过
+expected_tools: 通过
+forbidden_tools: 通过
+sources: 通过
+required_tasks: 通过
+task_completion: 通过
+stop_reason: 通过
+answer: 通过</pre></td>
+          <td><pre>Judge: 通过
+总分: 5.0
+clarity: 5.0
+completeness: 5.0
+groundedness: 5.0
+safety: 5.0
+source_usage: 5.0
+task_success: 5.0
+硬门槛: 无
+理由: 完整覆盖用户问题，所有关键结论均有参考资料支持，来源正确，表达清晰，无安全风险。</pre></td>
+          <td><pre>{
+  &quot;planner_mode&quot;: &quot;autonomous_runtime&quot;,
+  &quot;tools&quot;: [],
+  &quot;tasks&quot;: [
+    &quot;collect_context&quot;,
+    &quot;extract_findings&quot;,
+    &quot;write_deliverable&quot;
+  ],
+  &quot;stop_reason&quot;: &quot;all_tasks_completed&quot;,
+  &quot;sources&quot;: [
+    {
+      &quot;id&quot;: &quot;web__AI_Agent__1781490000_0_1&quot;,
+      &quot;document&quot;: &quot;自动化 Agent。产品经理应关注的能力清单包括：目标理解、工具调用、RAG 资料检索、记忆管理、权限控制、可观测性、评估体系、失败恢复、成本控制和人类确认机制\n多 Agent 协作的新进展包括角色分工、共享状态、任务队列、冲突仲裁和统一审计。Agent Memory 的实践趋势包括短期会话记忆、长期用户偏好、任务状态记忆、可删除/可解释的记忆、以及按权限隔离的组织知识记忆。当前 Agent MVP 的主要风险包括：路由误判、资料污染、联网不稳定、引用不准、judge 不稳定、自主循环过度执行、成本失控和缺少权限确认。下一轮优化计划应优先覆盖：路由评估集、稳定检索夹具、引用校验、请求超时、trace 可观测性、配置化教学开关和线上监控。产品经理需要重点学习：RAG 检索链路、Tool Agent 工具调用、Autonomous Agent 目标拆解与循环、Agent Eval 评估体系、成本与权限治理&quot;,
+      &quot;source&quot;: &quot;网页：AI Agent 产品趋势稳定样本&quot;,
+      &quot;source_type&quot;: &quot;web&quot;,
+      &quot;url&quot;: &quot;https://example.com/eval/ai-agent-trends&quot;,
+      &quot;chunk_index&quot;: 1,
+      &quot;created_at&quot;: 1781490000,
+      &quot;content_type&quot;: &quot;eval_web_fixture&quot;,
+      &quot;document_key&quot;: &quot;web:网页：AI Agent 产品趋势稳定样本:https://example.com/eval/ai-agent-trends&quot;,
+      &quot;section_title&quot;: &quot;&quot;,
+      &quot;page&quot;: 0,
+      &quot;sheet&quot;: &quot;&quot;,
+      &quot;row_start&quot;: 0,
+      &quot;row_end&quot;: 0,
+      &quot;chunk_type&quot;: &quot;child&quot;,
+      &quot;parent_id&quot;: &quot;网页：AI Agent 产品趋势稳定样本:0:eval_web_fixture&quot;,
+      &quot;parent_text&quot;: &quot;AI Agent 产品趋势稳定样本：2026 年 AI Agent 产品正在从单次工具调用走向任务级工作流。关键趋势包括多工具编排、可观测运行时、Agent Eval 评估体系、记忆系统、权限与安全控制、以及面向业务场景的多 Agent 协作。近期值得关注的产品动态包括：ChatGPT 类产品强化任务执行和连接器，企业知识库产品强化权限、审计和引用可追溯，开发者平台强化工具调用、工作流编排和评估闭环。三个可对标的 AI Agent 产品包括：ChatGPT（通用助手型 Agent，强调多工具调用、文件理解和连接器）、Claude（长上下文知识工作 Agent，强调文档理解、项目知识和安全边界）、Cursor（开发者自动化 Agent，强调代码理解、编辑、调试和任务执行）。也可以按产品类型归纳为：通用助手型 Agent、企业知识库/RAG Agent、开发者自动化 </pre></td>
+        </tr>
+        
+        <tr>
+          <td><strong>auto_fallback_002</strong><br><span>autonomous_fallback</span></td>
+          <td>你会什么？</td>
+          <td class="pass">通过</td>
+          <td><pre>expected_mode: 通过
+expected_tools: 通过
+forbidden_tools: 通过
+sources: 通过
+required_tasks: 通过
+task_completion: 通过
+stop_reason: 通过
+answer: 通过</pre></td>
+          <td><pre>Judge: 通过
+总分: 4.5
+clarity: 5.0
+completeness: 5.0
+groundedness: 3.0
+safety: 5.0
+source_usage: 5.0
+task_success: 5.0
+硬门槛: 无
+理由: 用户询问能力，回答全面且清晰，但所有结论均无参考资料支持，groundedness扣分。</pre></td>
+          <td><pre>{
+  &quot;planner_mode&quot;: &quot;autonomous_fallback&quot;,
+  &quot;tools&quot;: [
+    &quot;goal_router&quot;,
+    &quot;intent_classifier&quot;,
+    &quot;planner&quot;,
+    &quot;orchestrator&quot;,
+    &quot;dag_runtime&quot;,
+    &quot;direct_answer&quot;
+  ],
+  &quot;tasks&quot;: [],
+  &quot;stop_reason&quot;: &quot;&quot;,
+  &quot;sources&quot;: [],
+  &quot;answer&quot;: &quot;我可以帮你做三类事情：\n\n1. 基于你上传的资料做总结、提取要点、问答和对比分析。\n2. 联网收集公开信息，再结合本地资料做 RAG 回答。\n3. 帮你学习和实操 AI 产品经理相关主题，比如 RAG、Tool Agent、Autonomous Agent 和 Agent Eval。\n\n你可以直接上传文件，或者问我一个具体问题。&quot;
+}</pre></td>
+        </tr>
+        
+        <tr>
+          <td><strong>auto_fallback_003</strong><br><span>autonomous_fallback</span></td>
+          <td>你能做些什么</td>
+          <td class="pass">通过</td>
+          <td><pre>expected_mode: 通过
+expected_tools: 通过
+forbidden_tools: 通过
+sources: 通过
+required_tasks: 通过
+task_completion: 通过
+stop_reason: 通过
+answer: 通过</pre></td>
+          <td><pre>Judge: 通过
+总分: 5.0
+clarity: 5.0
+completeness: 5.0
+groundedness: 5.0
+safety: 5.0
+source_usage: 5.0
+task_success: 5.0
+硬门槛: 无
+理由: 回答准确描述了自身能力，符合autonomous_fallback模式，规则检查全部通过，没有使用禁用工具或来源，表达清晰安全。</pre></td>
+          <td><pre>{
+  &quot;planner_mode&quot;: &quot;autonomous_fallback&quot;,
+  &quot;tools&quot;: [
+    &quot;goal_router&quot;,
+    &quot;intent_classifier&quot;,
+    &quot;planner&quot;,
+    &quot;orchestrator&quot;,
+    &quot;dag_runtime&quot;,
+    &quot;direct_answer&quot;
+  ],
+  &quot;tasks&quot;: [],
+  &quot;stop_reason&quot;: &quot;&quot;,
+  &quot;sources&quot;: [],
+  &quot;answer&quot;: &quot;我可以帮你做三类事情：\n\n1. 基于你上传的资料做总结、提取要点、问答和对比分析。\n2. 联网收集公开信息，再结合本地资料做 RAG 回答。\n3. 帮你学习和实操 AI 产品经理相关主题，比如 RAG、Tool Agent、Autonomous Agent 和 Agent Eval。\n\n你可以直接上传文件，或者问我一个具体问题。&quot;
+}</pre></td>
+        </tr>
+        
+        <tr>
+          <td><strong>chat_005</strong><br><span>chitchat</span></td>
+          <td>你可以帮我做啥？</td>
+          <td class="pass">通过</td>
+          <td><pre>expected_mode: 通过
+expected_tools: 通过
+forbidden_tools: 通过
+sources: 通过
+required_tasks: 通过
+task_completion: 通过
+stop_reason: 通过
+answer: 通过</pre></td>
+          <td><pre>Judge: 通过
+总分: 5.0
+clarity: 5.0
+completeness: 5.0
+groundedness: 5.0
+safety: 5.0
+source_usage: 5.0
+task_success: 5.0
+硬门槛: 无
+理由: 完美回答用户提问，清晰列出能力范围，符合规则检查全部通过，无任何维度失败。</pre></td>
+          <td><pre>{
+  &quot;planner_mode&quot;: &quot;pro_runtime&quot;,
+  &quot;tools&quot;: [
+    &quot;intent_classifier&quot;,
+    &quot;planner&quot;,
+    &quot;orchestrator&quot;,
+    &quot;dag_runtime&quot;,
+    &quot;direct_answer&quot;
+  ],
+  &quot;tasks&quot;: [],
+  &quot;stop_reason&quot;: &quot;&quot;,
+  &quot;sources&quot;: [],
+  &quot;answer&quot;: &quot;我可以帮你做三类事情：\n\n1. 基于你上传的资料做总结、提取要点、问答和对比分析。\n2. 联网收集公开信息，再结合本地资料做 RAG 回答。\n3. 帮你学习和实操 AI 产品经理相关主题，比如 RAG、Tool Agent、Autonomous Agent 和 Agent Eval。\n\n你可以直接上传文件，或者问我一个具体问题。&quot;
+}</pre></td>
+        </tr>
+        
+        <tr>
+          <td><strong>auto_fallback_004</strong><br><span>autonomous_fallback</span></td>
+          <td>这个 Agent 有什么功能？</td>
+          <td class="pass">通过</td>
+          <td><pre>expected_mode: 通过
+expected_tools: 通过
+forbidden_tools: 通过
+sources: 通过
+required_tasks: 通过
+task_completion: 通过
+stop_reason: 通过
+answer: 通过</pre></td>
+          <td><pre>Judge: 通过
+总分: 4.5
+clarity: 5.0
+completeness: 5.0
+groundedness: 3.0
+safety: 5.0
+source_usage: 5.0
+task_success: 5.0
+硬门槛: 无
+理由: 答案描述了Agent的功能，但缺少外部参考依据，导致groundedness分数较低。</pre></td>
+          <td><pre>{
+  &quot;planner_mode&quot;: &quot;autonomous_fallback&quot;,
+  &quot;tools&quot;: [
+    &quot;goal_router&quot;,
+    &quot;intent_classifier&quot;,
+    &quot;planner&quot;,
+    &quot;orchestrator&quot;,
+    &quot;dag_runtime&quot;,
+    &quot;direct_answer&quot;
+  ],
+  &quot;tasks&quot;: [],
+  &quot;stop_reason&quot;: &quot;&quot;,
+  &quot;sources&quot;: [],
+  &quot;answer&quot;: &quot;我可以帮你做三类事情：\n\n1. 基于你上传的资料做总结、提取要点、问答和对比分析。\n2. 联网收集公开信息，再结合本地资料做 RAG 回答。\n3. 帮你学习和实操 AI 产品经理相关主题，比如 RAG、Tool Agent、Autonomous Agent 和 Agent Eval。\n\n你可以直接上传文件，或者问我一个具体问题。&quot;
+}</pre></td>
+        </tr>
+        
+        <tr>
+          <td><strong>hybrid_rag_001</strong><br><span>hybrid_rag</span></td>
+          <td>结合我上传的资料，再查一下最近有没有类似案例</td>
+          <td class="pass">通过</td>
+          <td><pre>expected_mode: 通过
+expected_tools: 通过
+forbidden_tools: 通过
+sources: 通过
+required_tasks: 通过
+task_completion: 通过
+stop_reason: 通过
+answer: 通过</pre></td>
+          <td><pre>Judge: 通过
+总分: 5.0
+clarity: 5.0
+completeness: 5.0
+groundedness: 5.0
+safety: 5.0
+source_usage: 5.0
+task_success: 5.0
+硬门槛: 无
+理由: agent 完整回应用户查询，结论均有依据，来源使用正确，表达清晰无安全风险。</pre></td>
+          <td><pre>{
+  &quot;planner_mode&quot;: &quot;pro_runtime&quot;,
+  &quot;tools&quot;: [
+    &quot;intent_classifier&quot;,
+    &quot;planner&quot;,
+    &quot;orchestrator&quot;,
+    &quot;dag_runtime&quot;,
+    &quot;web_collect&quot;,
+    &quot;dag_runtime&quot;,
+    &quot;rag_search&quot;,
+    &quot;aggregator&quot;,
+    &quot;evaluator&quot;,
+    &quot;generate_answer&quot;,
+    &quot;answer_validator&quot;
+  ],
+  &quot;tasks&quot;: [],
+  &quot;stop_reason&quot;: &quot;&quot;,
+  &quot;sources&quot;: [
+    {
+      &quot;id&quot;: &quot;web__RAG__1781490000_0_0&quot;,
+      &quot;document&quot;: &quot;RAG 是 Retrieval-Augmented Generation，中文常译为检索增强生成。它先从知识库、上传文件或网页中检索相关资料，再把资料与用户问题一起交给大模型生成回答。RAG 的核心价值是降低幻觉、补充模型不知道或不稳定的信息，并保留参考来源。RAG 工程化趋势包括混合检索、BM25 与向量召回融合、RRF 排序、reranker 精排、元数据过滤、去重、来源权重、新鲜度权重、Context Packing、引用校验和离线评估。Tool Agent 是围绕一次用户请求选择并执行工具的 Agent，重点是工具注册、工具 schema、planner、executor、state、trace 和 fallback。Autonomous Agent 是围绕一个目标拆解任务队列并循环推进的 Agent，重点是 Goal Manager、Task Queue、Observe-Act Loop、Critic/Reflection、Stop Condition 和 Human-in-the-loop&quot;,
+      &quot;source&quot;: &quot;网页：RAG 定义稳定样本&quot;,
+      &quot;source_type&quot;: &quot;web&quot;,
+      &quot;url&quot;: &quot;https://example.com/eval/rag-definition&quot;,
+      &quot;chunk_index&quot;: 0,
+      &quot;created_at&quot;: 1781490000,
+      &quot;content_type&quot;: &quot;eval_web_fixture&quot;,
+      &quot;document_key&quot;: &quot;web:网页：RAG 定义稳定样本:https://example.com/eval/rag-definition&quot;,
+      &quot;section_title&quot;: &quot;&quot;,
+      &quot;page&quot;: 0,
+      &quot;sheet&quot;: &quot;&quot;,
+      &quot;row_start&quot;: 0,
+      &quot;row_end&quot;: 0,
+      &quot;chunk_type&quot;: &quot;child&quot;,
+      &quot;parent_id&quot;: &quot;网页：RAG 定义稳定样本:0:eval_web_fixture&quot;,
+      &quot;parent_text&quot;: &quot;RAG 是 Retrieval-Augmented Generation，中文常译为检索增强生成。它先从知识库、上传文件或网页中检索相关资料，再把资料与用户问题一起交给大模型生成回答。RAG 的核心价值是降低幻觉、补充模型不知道或不稳定的信息，并保留参考来源。RAG 工程化趋势包括混合检索、BM25 与向量召回融合、RRF 排序、reranker 精排、元数据过滤、去重、来源权重、新鲜度权重、Context Packing、引用校验和离线评估。Tool Agent 是围绕一次用户请求选择</pre></td>
+        </tr>
+        </tbody>
+  </table>
+
+  <h2>结论</h2>
+  <div class="note">这版 Eval 同时支持规则校验和 LLM-as-Judge。规则负责硬边界，Judge 负责语义质量；最终结果要求两者都通过。</div>
+</main>
+</body>
+</html>
