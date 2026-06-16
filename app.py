@@ -1,4 +1,5 @@
 import os
+import inspect
 
 import streamlit as st
 
@@ -132,11 +133,21 @@ def source_label(source):
 
 
 SOURCE_STRATEGY_LABELS = {
-    "自动判断": agent_runtime.SOURCE_STRATEGY_AUTO,
-    "仅上传资料": agent_runtime.SOURCE_STRATEGY_UPLOAD_ONLY,
-    "仅联网资料": agent_runtime.SOURCE_STRATEGY_WEB_ONLY,
-    "上传资料 + 联网并行": agent_runtime.SOURCE_STRATEGY_UPLOAD_AND_WEB,
+    "自动判断": "auto",
+    "仅上传资料": "upload_only",
+    "仅联网资料": "web_only",
+    "上传资料 + 联网并行": "upload_and_web",
 }
+
+
+def call_with_supported_kwargs(func, *args, **kwargs):
+    supported_params = inspect.signature(func).parameters
+    filtered_kwargs = {
+        key: value
+        for key, value in kwargs.items()
+        if key in supported_params
+    }
+    return func(*args, **filtered_kwargs)
 
 
 with st.sidebar:
@@ -173,9 +184,9 @@ with st.sidebar:
         help="规则路由更快更稳定；规则-LLM-规则路由会在规则不确定时调用模型做语义分类，再由规则复核。",
     )
     router_mode = (
-        agent_runtime.ROUTER_MODE_HYBRID
+        "hybrid"
         if router_mode_label == "规则-LLM-规则路由"
-        else agent_runtime.ROUTER_MODE_RULES
+        else "rules"
     )
     max_autonomous_steps = st.slider("自主任务最大步数", 1, 5, 3)
 
@@ -260,13 +271,15 @@ if prompt:
                 use_autonomous_mode = False
                 autonomous_route_reason = ""
                 if run_mode == "自主任务":
-                    use_autonomous_mode, autonomous_route_reason = autonomous_agent.should_use_autonomous_mode(
+                    use_autonomous_mode, autonomous_route_reason = call_with_supported_kwargs(
+                        autonomous_agent.should_use_autonomous_mode,
                         prompt,
                         router_mode=router_mode,
                     )
 
                 if run_mode == "自主任务" and use_autonomous_mode:
-                    result = autonomous_agent.run_autonomous_agent(
+                    result = call_with_supported_kwargs(
+                        autonomous_agent.run_autonomous_agent,
                         prompt,
                         top_k=top_k,
                         web_max_results=web_max_results,
@@ -276,7 +289,8 @@ if prompt:
                         source_strategy=source_strategy,
                     )
                 else:
-                    result = agent_runtime.run_agent_pro(
+                    result = call_with_supported_kwargs(
+                        agent_runtime.run_agent_pro,
                         prompt,
                         use_web=True,
                         top_k=top_k,

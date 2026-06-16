@@ -64,7 +64,7 @@ class AutonomousState:
 
 def should_use_autonomous_mode(
     user_request: str,
-    router_mode: str = agent_runtime.ROUTER_MODE_RULES,
+    router_mode: str = "rules",
 ) -> tuple[bool, str]:
     stripped_request = user_request.strip()
     lightweight_intent = agent_runtime.classify_intent(stripped_request, [], router_mode=router_mode)
@@ -203,8 +203,8 @@ def execute_task_with_tool_agent(
         top_k=state.goal.constraints.get("top_k", 3),
         web_max_results=state.goal.constraints.get("web_max_results", 2),
         preferred_sources=preferred_sources,
-        router_mode=state.goal.constraints.get("router_mode", agent_runtime.ROUTER_MODE_RULES),
-        source_strategy=state.goal.constraints.get("source_strategy", agent_runtime.SOURCE_STRATEGY_AUTO),
+        router_mode=state.goal.constraints.get("router_mode", "rules"),
+        source_strategy=state.goal.constraints.get("source_strategy", "auto"),
     )
     return {
         "success": bool(result.get("answer")),
@@ -356,8 +356,8 @@ def run_autonomous_agent(
     web_max_results: int = 2,
     max_steps: int = 3,
     preferred_sources: list[str] | None = None,
-    router_mode: str = agent_runtime.ROUTER_MODE_RULES,
-    source_strategy: str = agent_runtime.SOURCE_STRATEGY_AUTO,
+    router_mode: str = "rules",
+    source_strategy: str = "auto",
     tool_agent_runner: Callable[..., dict[str, Any]] = agent_runtime.run_agent_pro,
 ) -> dict[str, Any]:
     preferred_sources = preferred_sources or []

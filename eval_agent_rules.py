@@ -15,6 +15,17 @@ import autonomous_agent
 ROOT = Path(__file__).resolve().parent
 DEFAULT_CASES_PATH = ROOT / "eval_cases.jsonl"
 DEFAULT_REPORT_PATH = ROOT / "reports" / "agent_rule_eval_report.html"
+ROUTER_MODE_RULES = getattr(agent_runtime, "ROUTER_MODE_RULES", "rules")
+ROUTER_MODES = getattr(agent_runtime, "ROUTER_MODES", {"rules", "hybrid"})
+SOURCE_STRATEGY_AUTO = getattr(agent_runtime, "SOURCE_STRATEGY_AUTO", "auto")
+SOURCE_STRATEGY_UPLOAD_ONLY = getattr(agent_runtime, "SOURCE_STRATEGY_UPLOAD_ONLY", "upload_only")
+SOURCE_STRATEGY_WEB_ONLY = getattr(agent_runtime, "SOURCE_STRATEGY_WEB_ONLY", "web_only")
+SOURCE_STRATEGY_UPLOAD_AND_WEB = getattr(agent_runtime, "SOURCE_STRATEGY_UPLOAD_AND_WEB", "upload_and_web")
+SOURCE_STRATEGIES = getattr(
+    agent_runtime,
+    "SOURCE_STRATEGIES",
+    {"auto", "upload_only", "web_only", "upload_and_web"},
+)
 JUDGE_MODEL = os.getenv("JUDGE_MODEL", agent_runtime.agent.DEEPSEEK_MODEL)
 JUDGE_PASS_THRESHOLD = float(os.getenv("JUDGE_PASS_THRESHOLD", "3.8"))
 JUDGE_SYSTEM_PROMPT = """
@@ -200,10 +211,10 @@ def fake_rag_search(
     question: str,
     top_k: int,
     preferred_sources: list[str],
-    source_strategy: str = agent_runtime.SOURCE_STRATEGY_AUTO,
+    source_strategy: str = SOURCE_STRATEGY_AUTO,
 ) -> agent_runtime.ToolResult:
     results: list[dict[str, Any]] = []
-    if preferred_sources and source_strategy != agent_runtime.SOURCE_STRATEGY_WEB_ONLY:
+    if preferred_sources and source_strategy != SOURCE_STRATEGY_WEB_ONLY:
         results.append({
             "source_type": "upload",
             "source": preferred_sources[0],
@@ -224,7 +235,7 @@ def fake_rag_search(
         "Agent Memory",
         "多 Agent",
     ]
-    if source_strategy in {agent_runtime.SOURCE_STRATEGY_AUTO, agent_runtime.SOURCE_STRATEGY_WEB_ONLY, agent_runtime.SOURCE_STRATEGY_UPLOAD_AND_WEB} and any(word in question for word in web_signal_words):
+    if source_strategy in {SOURCE_STRATEGY_AUTO, SOURCE_STRATEGY_WEB_ONLY, SOURCE_STRATEGY_UPLOAD_AND_WEB} and any(word in question for word in web_signal_words):
         results.append({
             "source_type": "web",
             "source": "AI Agent trends web",
@@ -233,12 +244,12 @@ def fake_rag_search(
             "final_score": 0.88,
             "chunk_index": 1,
         })
-    if source_strategy == agent_runtime.SOURCE_STRATEGY_UPLOAD_ONLY:
+    if source_strategy == SOURCE_STRATEGY_UPLOAD_ONLY:
         results = [item for item in results if item.get("source_type") == "upload"]
-    elif source_strategy == agent_runtime.SOURCE_STRATEGY_WEB_ONLY:
+    elif source_strategy == SOURCE_STRATEGY_WEB_ONLY:
         results = [item for item in results if item.get("source_type") == "web"]
 
-    if not results and source_strategy == agent_runtime.SOURCE_STRATEGY_AUTO:
+    if not results and source_strategy == SOURCE_STRATEGY_AUTO:
         results.append({
             "source_type": "local",
             "source": "我的AI学习笔记",
@@ -295,8 +306,8 @@ def restore_tools(original_tools: dict[str, Any]) -> None:
 
 def run_case(
     case: dict[str, Any],
-    router_mode: str = agent_runtime.ROUTER_MODE_RULES,
-    source_strategy: str = agent_runtime.SOURCE_STRATEGY_AUTO,
+    router_mode: str = ROUTER_MODE_RULES,
+    source_strategy: str = SOURCE_STRATEGY_AUTO,
 ) -> dict[str, Any]:
     selected_mode = case.get("selected_mode", "normal")
     preferred_sources = case.get("preferred_sources", [])
@@ -398,8 +409,8 @@ def error_result(case: dict[str, Any], error: Exception) -> dict[str, Any]:
 def run_case_safely(
     case: dict[str, Any],
     case_timeout: int,
-    router_mode: str = agent_runtime.ROUTER_MODE_RULES,
-    source_strategy: str = agent_runtime.SOURCE_STRATEGY_AUTO,
+    router_mode: str = ROUTER_MODE_RULES,
+    source_strategy: str = SOURCE_STRATEGY_AUTO,
 ) -> dict[str, Any]:
     if case_timeout <= 0:
         try:
@@ -433,8 +444,8 @@ def run_case_child(case: dict[str, Any], queue: Any, router_mode: str, source_st
 def run_case_isolated(
     case: dict[str, Any],
     case_timeout: int,
-    router_mode: str = agent_runtime.ROUTER_MODE_RULES,
-    source_strategy: str = agent_runtime.SOURCE_STRATEGY_AUTO,
+    router_mode: str = ROUTER_MODE_RULES,
+    source_strategy: str = SOURCE_STRATEGY_AUTO,
 ) -> dict[str, Any]:
     context = mp.get_context("spawn")
     queue = context.Queue()
@@ -747,8 +758,8 @@ def run_eval(
     case_timeout: int = 120,
     isolate_cases: bool = False,
     judge: bool = False,
-    router_mode: str = agent_runtime.ROUTER_MODE_RULES,
-    source_strategy: str = agent_runtime.SOURCE_STRATEGY_AUTO,
+    router_mode: str = ROUTER_MODE_RULES,
+    source_strategy: str = SOURCE_STRATEGY_AUTO,
 ) -> dict[str, Any]:
     original_tools = install_fake_tools() if mode == "mock" else None
     rows = []
@@ -929,8 +940,8 @@ def main() -> None:
     parser.add_argument("--case-timeout", type=int, default=120, help="单条 case 的超时时间，单位秒；<=0 表示不限制。")
     parser.add_argument("--isolate-cases", action="store_true", help="每条 case 使用隔离子进程执行，适合真实 API benchmark。")
     parser.add_argument("--judge", action="store_true", help="启用 LLM-as-Judge 语义质量评分。")
-    parser.add_argument("--router-mode", choices=sorted(agent_runtime.ROUTER_MODES), default=agent_runtime.ROUTER_MODE_RULES)
-    parser.add_argument("--source-strategy", choices=sorted(agent_runtime.SOURCE_STRATEGIES), default=agent_runtime.SOURCE_STRATEGY_AUTO)
+    parser.add_argument("--router-mode", choices=sorted(ROUTER_MODES), default=ROUTER_MODE_RULES)
+    parser.add_argument("--source-strategy", choices=sorted(SOURCE_STRATEGIES), default=SOURCE_STRATEGY_AUTO)
     args = parser.parse_args()
 
     cases = load_cases(Path(args.cases))
