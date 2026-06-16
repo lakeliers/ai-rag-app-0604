@@ -62,7 +62,7 @@ st.set_page_config(
     layout="wide",
 )
 
-st.title("RAG Agent Pro")
+st.title("RAG Agent Pro（检索增强智能体教学版）")
 
 
 
@@ -153,25 +153,63 @@ RETRIEVAL_STRATEGY_LABELS = {
     "向量 + BM25 + RRF": "vector_bm25_rrf",
 }
 CONTEXT_PACKING_LABELS = {
-    "简单 TopK": "simple_topk",
+    "简单 TopK（取前 K 条资料）": "simple_topk",
     "来源优先": "source_priority",
     "去重 + 新鲜度 + 来源权重": "weighted",
-    "严格 token budget": "strict_budget",
+    "严格 token budget（令牌预算）": "strict_budget",
 }
 CHUNKING_STRATEGY_LABELS = {
     "普通文本切分": "plain",
-    "Parent-child": "parent_child",
+    "Parent-child（父子关系）": "parent_child",
     "表格专用": "table",
-    "摘要 chunk": "summary",
+    "摘要 chunk（摘要片段）": "summary",
 }
 PLANNER_TYPE_LABELS = {
-    "规则 Planner": "rules",
-    "LLM Tool Calling Planner": "llm_tool_calling",
-    "fallback 混合 Planner": "fallback_mixed",
+    "规则 Planner（规划器）": "rules",
+    "LLM Tool Calling Planner（大模型工具调用规划器）": "llm_tool_calling",
+    "fallback 混合 Planner（失败回退混合规划器）": "fallback_mixed",
 }
 EVALUATOR_TYPE_LABELS = {
     "关闭": "off",
     "规则评估": "rules",
+}
+
+CATEGORY_LABELS = {
+    "chitchat": "chitchat（闲聊）",
+    "upload_status": "upload_status（上传状态）",
+    "source_scope": "source_scope（资料边界）",
+    "web_rag": "web_rag（联网检索增强生成）",
+    "document_qa": "document_qa（文档问答）",
+    "definition": "definition（概念解释）",
+    "autonomous": "autonomous（自主任务）",
+    "autonomous_fallback": "autonomous_fallback（自主任务回退）",
+    "hybrid_rag": "hybrid_rag（上传资料+联网混合检索）",
+}
+SEVERITY_LABELS = {
+    "low": "low（低）",
+    "medium": "medium（中）",
+    "high": "high（高）",
+    "blocker": "blocker（阻断）",
+}
+MODE_LABELS = {
+    "normal": "normal（普通问答）",
+    "autonomous": "autonomous（自主任务）",
+    "pro_runtime": "pro_runtime（专业运行时）",
+    "autonomous_runtime": "autonomous_runtime（自主任务运行时）",
+    "autonomous_fallback": "autonomous_fallback（自主任务回退）",
+}
+TOOL_LABELS = {
+    "direct_answer": "direct_answer（直接回答）",
+    "upload_status": "upload_status（上传状态检查）",
+    "web_collect": "web_collect（网页收集）",
+    "rag_search": "rag_search（检索增强搜索）",
+    "generate_answer": "generate_answer（生成回答）",
+    "answer_validator": "answer_validator（回答校验）",
+}
+SOURCE_LABELS = {
+    "upload": "upload（上传资料）",
+    "web": "web（网页资料）",
+    "local": "local（本地基础资料）",
 }
 
 
@@ -238,7 +276,7 @@ def render_assistant_message(content, run=None, key_suffix=""):
             st.button(
                 "!",
                 key=f"badcase_button_{key_suffix}",
-                help="反馈 badcase",
+                help="反馈 badcase（不良案例）",
                 on_click=set_badcase_target,
                 args=(run,),
             )
@@ -249,10 +287,10 @@ def render_badcase_form():
     if not run or not st.session_state.get("show_badcase_form"):
         return
 
-    with st.expander("反馈 badcase：补充 Regression Case 信息", expanded=True):
+    with st.expander("反馈 badcase（不良案例）：补充 Regression Case（回归用例）信息", expanded=True):
         st.markdown("**当前问题现场**")
-        st.write("User Prompt：", run["user_input"])
-        st.write("Agent Answer：", run["actual_answer"])
+        st.write("User Prompt（用户问题）：", run["user_input"])
+        st.write("Agent Answer（智能体回答）：", run["actual_answer"])
         st.caption("工具调用：" + (", ".join(run["tools_called"]) or "无"))
         st.caption("资料来源：" + (", ".join(run["sources_used"]) or "无"))
 
@@ -269,29 +307,35 @@ def render_badcase_form():
                 "保存位置",
                 badcase_manager.SAVE_TARGETS,
                 index=0,
-                help="本地 eval 会直接写入 eval_cases.jsonl；线上 eval 会创建 GitHub Issue 等待开发者确认。",
+                help="eval 是评估集合；GitHub Issue 是 GitHub 上的问题单，用于开发者确认 badcase（不良案例）。",
             )
 
-            st.markdown("**Case 基础信息**")
+            st.markdown("**Case（用例）基础信息**")
             category = st.selectbox(
-                "category",
+                "category（问题类型）",
                 badcase_manager.CATEGORIES,
                 index=badcase_manager.CATEGORIES.index(default_category),
+                format_func=lambda value: CATEGORY_LABELS.get(value, value),
+                help="category 表示这个 badcase 属于哪类能力问题。",
             )
             case_id = st.text_input(
-                "case_id",
+                "case_id（用例编号）",
                 value=badcase_manager.generate_case_id(run["user_input"], category),
+                help="case_id 是 regression set 里的唯一用例编号。",
             )
             suite = st.multiselect(
-                "suite",
+                "suite（评估集合）",
                 badcase_manager.SUITES,
                 default=["regression"],
+                help="suite 表示这个 case 加入哪个测试集合：smoke 冒烟、regression 回归、benchmark 基准。",
             )
             severity = st.radio(
-                "severity",
+                "severity（严重级别）",
                 badcase_manager.SEVERITIES,
                 index=2,
                 horizontal=True,
+                format_func=lambda value: SEVERITY_LABELS.get(value, value),
+                help="severity 用于标记问题影响程度。",
             )
             problem_description = st.text_area(
                 "问题说明",
@@ -306,47 +350,77 @@ def render_badcase_form():
                 else "normal"
             )
             selected_mode = st.radio(
-                "selected_mode",
+                "selected_mode（运行模式）",
                 badcase_manager.SELECTED_MODES,
                 index=badcase_manager.SELECTED_MODES.index(selected_mode_default),
                 horizontal=True,
+                format_func=lambda value: MODE_LABELS.get(value, value),
+                help="selected_mode 表示测试时应该用普通问答还是自主任务模式。",
             )
             expected_mode = st.selectbox(
-                "expected_mode",
+                "expected_mode（期望运行时）",
                 [""] + badcase_manager.EXPECTED_MODES,
                 index=0,
+                format_func=lambda value: MODE_LABELS.get(value, "不限制"),
+                help="expected_mode 用来约束 Agent 应该进入哪种运行时。",
             )
-            expected_tools = st.multiselect("expected_tools", badcase_manager.TOOLS)
-            forbidden_tools = st.multiselect("forbidden_tools", badcase_manager.TOOLS)
-            expected_sources = st.multiselect("expected_sources", badcase_manager.SOURCES)
-            forbidden_sources = st.multiselect("forbidden_sources", badcase_manager.SOURCES)
+            expected_tools = st.multiselect(
+                "expected_tools（期望调用工具）",
+                badcase_manager.TOOLS,
+                format_func=lambda value: TOOL_LABELS.get(value, value),
+                help="expected_tools 表示这类问题必须调用的工具。",
+            )
+            forbidden_tools = st.multiselect(
+                "forbidden_tools（禁止调用工具）",
+                badcase_manager.TOOLS,
+                format_func=lambda value: TOOL_LABELS.get(value, value),
+                help="forbidden_tools 表示这类问题不应该调用的工具。",
+            )
+            expected_sources = st.multiselect(
+                "expected_sources（期望资料来源）",
+                badcase_manager.SOURCES,
+                format_func=lambda value: SOURCE_LABELS.get(value, value),
+                help="expected_sources 表示回答应该使用哪些资料来源。",
+            )
+            forbidden_sources = st.multiselect(
+                "forbidden_sources（禁止资料来源）",
+                badcase_manager.SOURCES,
+                format_func=lambda value: SOURCE_LABELS.get(value, value),
+                help="forbidden_sources 表示回答不应该使用哪些资料来源。",
+            )
 
             st.markdown("**答案约束**")
             required_phrases_text = st.text_input(
-                "required_phrases（逗号分隔）",
-                help="例如：上传，联网，RAG",
+                "required_phrases（必须出现词，逗号分隔）",
+                help="required_phrases 是答案里必须包含的关键词，例如：上传，联网，RAG。",
             )
             expected_answer_phrases_text = st.text_input(
-                "expected_answer_phrases（逗号分隔）",
-                help="用于更明确地要求答案必须包含某些表述。",
+                "expected_answer_phrases（期望回答词，逗号分隔）",
+                help="expected_answer_phrases 用于更明确地要求答案必须包含某些表述。",
             )
             forbidden_answer_phrases_text = st.text_input(
-                "forbidden_answer_phrases（逗号分隔）",
-                help="例如：搜狐，极简生活，根据现有资料",
+                "forbidden_answer_phrases（禁止回答词，逗号分隔）",
+                help="forbidden_answer_phrases 是答案里不能出现的词，例如：搜狐，极简生活，根据现有资料。",
             )
             min_answer_chars = st.number_input(
-                "min_answer_chars",
+                "min_answer_chars（最少回答字数）",
                 min_value=0,
                 max_value=1000,
                 value=20,
                 step=1,
+                help="min_answer_chars 用于避免空回答或过短回答通过测试。",
             )
             success_criteria_text = st.text_area(
-                "success_criteria（每行一条）",
+                "success_criteria（成功标准，每行一条）",
                 value="",
                 placeholder="例如：不得引用历史上传资料\n必须直接介绍 Agent 能力",
+                help="success_criteria 是人工可读的成功标准，后续可转成规则或 LLM-as-Judge rubric。",
             )
-            note = st.text_area("note（人工备注，不参与规则评估）", value="")
+            note = st.text_area(
+                "note（备注，不参与规则评估）",
+                value="",
+                help="note 只给开发者看，不参与自动化 eval。",
+            )
 
             submitted = st.form_submit_button("校验并提交")
 
@@ -397,7 +471,7 @@ def render_badcase_form():
                     if save_result["local_badcase_saved"]:
                         st.success("已写入 bad_cases.jsonl。")
                     if save_result["github_issue_url"]:
-                        st.success("已创建 GitHub Issue。")
+                        st.success("已创建 GitHub Issue（线上问题单）。")
                         st.write(save_result["github_issue_url"])
             except Exception as error:
                 st.error(str(error))
@@ -425,16 +499,16 @@ with st.sidebar:
     )
 
     st.divider()
-    st.subheader("Agent 配置")
+    st.subheader("Agent（智能体）配置")
     run_mode = st.radio(
         "运行模式",
         ["普通问答", "自主任务"],
-        help="普通问答走 Tool Agent；自主任务会先拆任务，再逐步调用 Tool Agent 推进。",
+        help="Agent 是智能体；Tool Agent 是会调用工具完成任务的智能体。",
     )
     router_mode_label = st.radio(
         "路由模式",
         ["规则路由", "规则-LLM-规则路由"],
-        help="规则路由更快更稳定；规则-LLM-规则路由会在规则不确定时调用模型做语义分类，再由规则复核。",
+        help="LLM 是大语言模型；规则-LLM-规则表示先规则兜底，再模型分类，最后规则复核。",
     )
     router_mode = (
         "hybrid"
@@ -443,22 +517,22 @@ with st.sidebar:
     )
     max_autonomous_steps = st.slider("自主任务最大步数", 1, 5, 3)
     planner_type_label = st.selectbox(
-        "Planner 类型",
+        "Planner（规划器）类型",
         list(PLANNER_TYPE_LABELS.keys()),
         index=2,
-        help="规则 Planner 更稳定；LLM Tool Calling Planner 会让模型选择工具；fallback 混合 Planner 是当前教学默认链路。",
+        help="Planner 是规划器；Tool Calling 是工具调用；fallback 是失败后的回退策略。",
     )
     planner_type = PLANNER_TYPE_LABELS[planner_type_label]
     evaluator_type_label = st.selectbox(
-        "Evaluator / Critic",
+        "Evaluator / Critic（评估器 / 批判器）",
         list(EVALUATOR_TYPE_LABELS.keys()),
         index=1,
-        help="控制 C 端回答链路中的资料充分性判断。关闭会跳过评估；规则评估会检查资料数量、来源和引用可用性。",
+        help="Evaluator 判断资料是否足够；Critic 检查中间产物或最终回答是否达标。",
     )
     evaluator_type = EVALUATOR_TYPE_LABELS[evaluator_type_label]
 
     st.divider()
-    st.subheader("RAG 配置")
+    st.subheader("RAG（检索增强生成）配置")
     source_strategy_label = st.radio(
         "资料来源策略",
         list(SOURCE_STRATEGY_LABELS.keys()),
@@ -469,54 +543,54 @@ with st.sidebar:
         "检索策略",
         list(RETRIEVAL_STRATEGY_LABELS.keys()),
         index=2,
-        help="用于对比向量召回、关键词召回和 RRF 融合召回的差异。",
+        help="BM25 是关键词检索算法；RRF 是多路召回结果融合排序方法。",
     )
     retrieval_strategy = RETRIEVAL_STRATEGY_LABELS[retrieval_strategy_label]
     context_packing_label = st.selectbox(
-        "Context Packing 策略",
+        "Context Packing（上下文打包）策略",
         list(CONTEXT_PACKING_LABELS.keys()),
         index=3,
-        help="控制最终送进大模型的资料如何筛选、去重、配额和预算约束。",
+        help="Context Packing 是把候选资料筛选、去重并打包进模型上下文的过程。",
     )
     context_packing_strategy = CONTEXT_PACKING_LABELS[context_packing_label]
     chunking_strategy_label = st.selectbox(
-        "Chunking 策略",
+        "Chunking（切分）策略",
         list(CHUNKING_STRATEGY_LABELS.keys()),
         index=1,
-        help="对新上传文件入库生效；已入库资料不会自动重切。",
+        help="Chunking 是把文档切成适合检索的小片段；chunk 是片段。",
     )
     chunking_strategy = CHUNKING_STRATEGY_LABELS[chunking_strategy_label]
     top_k = st.slider("资料条数", 1, 5, 3)
     web_max_results = st.slider("网页结果数", 1, 5, 2)
     reranker_enabled = st.toggle(
-        "启用 Reranker",
+        "启用 Reranker（重排序器）",
         value=agent.ENABLE_RERANKER,
-        help="关闭后只使用向量、关键词和融合分；开启后增加精排模型。",
+        help="Reranker 会对初步召回的资料做精排，让更相关的资料排前面。",
     )
     agent.ENABLE_RERANKER = reranker_enabled
 
     st.divider()
     st.subheader("可观测性")
     trace_level = st.radio(
-        "Trace 展示级别",
+        "Trace（执行轨迹）展示级别",
         ["简洁", "完整", "隐藏"],
-        help="控制是否展示 Agent 执行步骤、工具、原因和耗时。",
+        help="Trace 是 Agent 每一步做了什么、调用了什么工具、耗时多少的记录。",
     )
 
     st.divider()
-    st.caption("Agent 会自动使用上传资料，并联网补充资料；没有上传资料时，会直接联网收集。")
-    st.write("DeepSeek:", "已配置" if deepseek_key else "未配置")
+    st.caption("Agent（智能体）会自动使用上传资料，并联网补充资料；没有上传资料时，会直接联网收集。")
+    st.write("DeepSeek（大模型服务）:", "已配置" if deepseek_key else "未配置")
     st.write("通义百炼:", "已配置" if dashscope_key else "未配置")
     reranker_status = "已启用" if agent.ENABLE_RERANKER else "未启用"
-    st.write("Reranker:", reranker_status)
-    planner_status = "行业主流Runtime雏形"
-    st.write("Planner:", planner_status)
-    st.write("Router:", router_mode_label)
-    st.write("Source:", source_strategy_label)
-    st.write("Retrieval:", retrieval_strategy_label)
-    st.write("Packing:", context_packing_label)
-    st.write("Chunking:", chunking_strategy_label)
-    st.write("Evaluator:", evaluator_type_label)
+    st.write("Reranker（重排序器）:", reranker_status)
+    planner_status = "行业主流 Runtime（运行时）雏形"
+    st.write("Planner（规划器）:", planner_status)
+    st.write("Router（路由器）:", router_mode_label)
+    st.write("Source（资料来源）:", source_strategy_label)
+    st.write("Retrieval（检索）:", retrieval_strategy_label)
+    st.write("Packing（上下文打包）:", context_packing_label)
+    st.write("Chunking（切分）:", chunking_strategy_label)
+    st.write("Evaluator（评估器）:", evaluator_type_label)
 
     if "upload_status" in st.session_state and st.session_state.upload_status:
         st.divider()
@@ -556,7 +630,7 @@ for index, message in enumerate(st.session_state.messages):
             st.write(message["content"])
 
 
-prompt = st.chat_input("输入问题，Agent 会自动检索上传资料和网络资料")
+prompt = st.chat_input("输入问题，Agent（智能体）会自动检索上传资料和网络资料")
 
 if prompt:
     if not deepseek_key:
@@ -570,7 +644,7 @@ if prompt:
 
     with st.chat_message("assistant"):
         try:
-            with st.spinner("执行 Agent 计划中..."):
+            with st.spinner("执行 Agent（智能体）计划中..."):
                 uploaded_sources = ingest_uploaded_files(uploaded_files, prompt, chunking_strategy)
 
                 use_autonomous_mode = False
@@ -618,7 +692,7 @@ if prompt:
                             {
                                 "name": "自主模式入口判断",
                                 "tool": "goal_router",
-                                "reason": "Goal Manager 先判断输入是否值得进入任务级 Autonomous Runtime。",
+                                "reason": "Goal Manager（目标管理器）先判断输入是否值得进入任务级 Autonomous Runtime（自主任务运行时）。",
                                 "status": "success",
                                 "summary": f"已回退普通问答：{autonomous_route_reason}",
                                 "elapsed_ms": 0,
@@ -648,23 +722,23 @@ if prompt:
             st.session_state.last_sources = result["sources"]
 
             if trace_level != "隐藏":
-                with st.expander("查看 Agent 执行步骤"):
+                with st.expander("查看 Agent（智能体）执行步骤"):
                     planner_label = (
-                        "Autonomous Runtime"
+                        "Autonomous Runtime（自主任务运行时）"
                         if result.get("planner_mode") == "autonomous_runtime"
                         else
-                        "LLM Tool Calling"
+                        "LLM Tool Calling（大模型工具调用）"
                         if result.get("planner_mode") == "llm_tool_calling"
                         else "自主模式回退普通问答"
                         if result.get("planner_mode") == "autonomous_fallback"
-                        else "行业主流Runtime雏形"
+                        else "行业主流 Runtime（运行时）雏形"
                         if result.get("planner_mode") == "pro_runtime"
                         else "规则兜底"
                     )
                     st.caption(
-                        f"Planner来源：{planner_label}｜Router：{router_mode_label}｜"
-                        f"Source：{source_strategy_label}｜Retrieval：{retrieval_strategy_label}｜"
-                        f"Packing：{context_packing_label}｜Evaluator：{evaluator_type_label}"
+                        f"Planner（规划器）来源：{planner_label}｜Router（路由器）：{router_mode_label}｜"
+                        f"Source（资料来源）：{source_strategy_label}｜Retrieval（检索）：{retrieval_strategy_label}｜"
+                        f"Packing（上下文打包）：{context_packing_label}｜Evaluator（评估器）：{evaluator_type_label}"
                     )
                     for index, step in enumerate(result.get("steps", []), start=1):
                         status_map = {
@@ -687,7 +761,7 @@ if prompt:
                         st.divider()
 
             if result.get("planner_mode") == "autonomous_runtime":
-                with st.expander("查看自主任务状态"):
+                with st.expander("查看 Autonomous Agent（自主智能体）任务状态"):
                     goal = result.get("goal")
                     if goal:
                         st.markdown("**目标**")
@@ -700,7 +774,7 @@ if prompt:
                         st.caption(f"依赖：{', '.join(task.depends_on) or '无'}｜预期产物：{task.expected_output}")
 
                     if result.get("critic_results"):
-                        st.markdown("**Critic 结果**")
+                        st.markdown("**Critic（批判器）结果**")
                         for critic in result["critic_results"]:
                             status = "通过" if critic["passed"] else "未通过"
                             st.write(f"{critic['task_id']}｜{status}｜分数：{critic['score']}")
@@ -708,7 +782,7 @@ if prompt:
                                 st.caption("问题：" + "；".join(critic["issues"]))
 
                     if result.get("reflections"):
-                        st.markdown("**Reflect 补救建议**")
+                        st.markdown("**Reflect（反思）补救建议**")
                         for reflection in result["reflections"]:
                             st.write(f"{reflection['task_id']} → {reflection['repair_task_id']}")
                             st.caption("问题：" + "；".join(reflection["issues"]))
@@ -722,7 +796,7 @@ if prompt:
                         label = source_label(source)
                         st.markdown(f"**{index}. {title}**")
                         st.markdown(f"`{label}`")
-                        st.caption(f"类型：{source_type} | 块类型：{source.get('chunk_type', 'child')}")
+                        st.caption(f"类型：{source_type} | chunk（资料片段）类型：{source.get('chunk_type', 'child')}")
                         location_parts = []
                         if source.get("section_title"):
                             location_parts.append(f"小节：{source['section_title']}")
@@ -741,8 +815,8 @@ if prompt:
                             f"意图：{source.get('query_intent', 'general')} | "
                             f"新鲜度：{source.get('freshness_score', 0):.2f} | "
                             f"答案性：{source.get('answerability_score', 0):.2f} | "
-                            f"Rerank：{source.get('rerank_status', '未启用')} | "
-                            f"Rerank分：{source.get('rerank_score', '无')} | "
+                            f"Rerank（重排序）：{source.get('rerank_status', '未启用')} | "
+                            f"Rerank（重排序）分：{source.get('rerank_score', '无')} | "
                             f"向量排名：{source.get('vector_rank', '未召回')} | "
                             f"关键词排名：{source.get('bm25_rank', '未召回')} | "
                             f"上下文顺序：{source.get('context_order', index)}"
