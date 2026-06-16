@@ -224,22 +224,32 @@ def build_current_config():
     }
 
 
+def set_badcase_target(run):
+    st.session_state.last_agent_run = run
+    st.session_state.show_badcase_form = True
+
+
+def render_assistant_message(content, run=None, key_suffix=""):
+    left, right = st.columns([0.94, 0.06], vertical_alignment="top")
+    with left:
+        st.write(content)
+    if run:
+        with right:
+            st.button(
+                "!",
+                key=f"badcase_button_{key_suffix}",
+                help="反馈 badcase",
+                on_click=set_badcase_target,
+                args=(run,),
+            )
+
+
 def render_badcase_form():
     run = st.session_state.get("last_agent_run")
-    if not run:
+    if not run or not st.session_state.get("show_badcase_form"):
         return
 
-    st.divider()
-    st.subheader("Bad Case / Regression Set")
-    st.caption("把最近一轮对话沉淀为 regression case。线上保存会创建 GitHub Issue，由开发者确认后再合并。")
-
-    if st.button("记录最近一轮为 Bad Case"):
-        st.session_state.show_badcase_form = True
-
-    if not st.session_state.get("show_badcase_form"):
-        return
-
-    with st.expander("补充 Regression Case 信息", expanded=True):
+    with st.expander("反馈 badcase：补充 Regression Case 信息", expanded=True):
         st.markdown("**当前问题现场**")
         st.write("User Prompt：", run["user_input"])
         st.write("Agent Answer：", run["actual_answer"])
@@ -534,9 +544,16 @@ if "show_badcase_form" not in st.session_state:
     st.session_state.show_badcase_form = False
 
 
-for message in st.session_state.messages:
+for index, message in enumerate(st.session_state.messages):
     with st.chat_message(message["role"]):
-        st.write(message["content"])
+        if message["role"] == "assistant":
+            render_assistant_message(
+                message["content"],
+                message.get("badcase_run"),
+                key_suffix=f"history_{index}",
+            )
+        else:
+            st.write(message["content"])
 
 
 prompt = st.chat_input("输入问题，Agent 会自动检索上传资料和网络资料")
@@ -610,13 +627,7 @@ if prompt:
                             *result.get("steps", []),
                         ]
 
-            st.write(result["answer"])
-            st.session_state.messages.append({
-                "role": "assistant",
-                "content": result["answer"],
-            })
-            st.session_state.last_sources = result["sources"]
-            st.session_state.last_agent_run = {
+            badcase_run = {
                 "user_input": prompt,
                 "actual_answer": result["answer"],
                 "config": build_current_config(),
@@ -624,6 +635,17 @@ if prompt:
                 "sources_used": extract_source_types(result.get("sources", [])),
                 "planner_mode": result.get("planner_mode", ""),
             }
+            render_assistant_message(
+                result["answer"],
+                badcase_run,
+                key_suffix=f"live_{len(st.session_state.messages)}",
+            )
+            st.session_state.messages.append({
+                "role": "assistant",
+                "content": result["answer"],
+                "badcase_run": badcase_run,
+            })
+            st.session_state.last_sources = result["sources"]
 
             if trace_level != "隐藏":
                 with st.expander("查看 Agent 执行步骤"):
