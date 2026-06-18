@@ -32,6 +32,9 @@ CONTEXT_CHAR_BUDGET = int(os.getenv("CONTEXT_CHAR_BUDGET", "4500"))
 ENABLE_SUMMARY_CHUNKS = os.getenv("ENABLE_SUMMARY_CHUNKS", "0") == "1"
 SUMMARY_MIN_CHARS = int(os.getenv("SUMMARY_MIN_CHARS", "1200"))
 PARENT_TEXT_CHAR_LIMIT = int(os.getenv("PARENT_TEXT_CHAR_LIMIT", "1800"))
+INGEST_FAILED_SEARCH_RESULTS = os.getenv("INGEST_FAILED_SEARCH_RESULTS", "0") == "1"
+WEB_SEARCH_CANDIDATE_MULTIPLIER = int(os.getenv("WEB_SEARCH_CANDIDATE_MULTIPLIER", "3"))
+WEB_MIN_TEXT_CHARS = int(os.getenv("WEB_MIN_TEXT_CHARS", "100"))
 RRF_K = 60
 RETRIEVAL_VECTOR_ONLY = "vector_only"
 RETRIEVAL_VECTOR_BM25 = "vector_bm25"
@@ -73,6 +76,18 @@ SOURCE_QUOTAS = {
     "local": 1,
     "unknown": 1,
 }
+FAILED_WEB_CONTENT_TYPES = {"search_result", "search_result_failed"}
+FAILED_WEB_MARKERS = [
+    "网页搜索结果摘要",
+    "完整网页正文读取失败",
+    "失败原因",
+    "读取失败",
+    "网页正文太少",
+    "403 Client Error",
+    "403 Forbidden",
+    "forbidden",
+    "access denied",
+]
 INTENT_WEIGHTS = {
     "latest_news": {
         "rerank": 0.45,
@@ -342,6 +357,13 @@ def bm25_retrieve(question, limit=20, metadata_filter=None):
     rows = []
 
     for item_id, document, metadata, tokens in zip(ids, documents, metadatas, corpus_tokens):
+        if is_failed_web_result(make_search_item(
+            item_id=item_id,
+            document=document,
+            metadata=metadata,
+        )):
+            continue
+
         token_counts = Counter(tokens)
         doc_len = len(tokens)
         score = 0.0
@@ -392,6 +414,39 @@ def make_search_item(item_id, document, metadata, distance=None, bm25_score=0.0)
         "distance": distance,
         "bm25_score": bm25_score,
     }
+
+
+def is_failed_web_result(row):
+    if row.get("source_type") != "web":
+        return False
+
+    document = row.get("document", "") or ""
+    content_type = row.get("content_type", "")
+    source = row.get("source", "") or ""
+    lowered_document = document.lower()
+
+    if content_type in FAILED_WEB_CONTENT_TYPES:
+        return True
+    if source.startswith("网页搜索结果："):
+        return True
+
+    for marker in FAILED_WEB_MARKERS:
+        if marker.lower() in lowered_document:
+            return True
+
+    return False
+
+
+def filter_answerable_rows(rows):
+    answerable_rows = []
+
+    for row in rows:
+        if is_failed_web_result(row):
+            row["context_skip_reason"] = "网页正文不可读，已排除"
+            continue
+        answerable_rows.append(row)
+
+    return answerable_rows
 
 
 def safe_id(text):
@@ -768,6 +823,8 @@ def dedupe_and_limit_chunks(rows, max_chunks_per_source=MAX_CHUNKS_PER_SOURCE):
 
 
 def pack_context_results(rows, top_k, char_budget=CONTEXT_CHAR_BUDGET, context_packing_strategy=CONTEXT_STRICT_BUDGET):
+    rows = filter_answerable_rows(rows)
+
     if context_packing_strategy not in CONTEXT_PACKING_STRATEGIES:
         context_packing_strategy = CONTEXT_STRICT_BUDGET
 
@@ -906,6 +963,8 @@ def search_chroma(
     fused = {}
 
     for rank, row in enumerate(vector_rows, start=1):
+        if is_failed_web_result(row):
+            continue
         if not is_allowed_source(row, preferred_sources, preferred_only=preferred_only):
             continue
         item_id = row["id"]
@@ -915,6 +974,8 @@ def search_chroma(
         fused[item_id]["vector_score"] = vector_similarity_score(row)
 
     for rank, row in enumerate(bm25_rows, start=1):
+        if is_failed_web_result(row):
+            continue
         if not is_allowed_source(row, preferred_sources, preferred_only=preferred_only):
             continue
         item_id = row["id"]
@@ -953,6 +1014,7 @@ def search_chroma(
         row["pre_rerank_score"] = final_score
         search_results.append(row)
 
+    search_results = filter_answerable_rows(search_results)
     search_results.sort(key=lambda item: item["final_score"], reverse=True)
     if retrieval_strategy == RETRIEVAL_VECTOR_BM25_RRF:
         search_results = rerank_results(
@@ -973,6 +1035,8 @@ def search_chroma(
 
 
 def build_context(search_results):
+    search_results = filter_answerable_rows(search_results)
+
     if not search_results:
         return "没有检索到资料。"
 
@@ -1231,6 +1295,16 @@ def search_web(query, max_results=5):
     return all_results
 
 
+def normalize_web_query(query):
+    compact_query = query.strip()
+    lowered_query = compact_query.lower()
+
+    if "agent" in lowered_query and "ai" not in lowered_query:
+        return f"AI Agent {compact_query}"
+
+    return compact_query
+
+
 def fetch_web_text(url):
     headers = {
         "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36"
@@ -1249,19 +1323,28 @@ def fetch_web_text(url):
 
 
 def web_collect(query, max_results=3):
+    search_query = normalize_web_query(query)
     print("正在搜索网页...")
-    results = search_web(query, max_results=max_results)
+    if search_query != query:
+        print(f"检索词改写：{search_query}")
+    candidate_limit = max(max_results * WEB_SEARCH_CANDIDATE_MULTIPLIER, max_results + 3)
+    results = search_web(search_query, max_results=candidate_limit)
 
     if not results:
         print("没有搜索到网页结果。")
         return []
 
     ingested_sources = []
+    successful_sources = []
 
     def ingest_search_result_fallback(item, reason):
+        if not INGEST_FAILED_SEARCH_RESULTS:
+            print("网页正文不可读，跳过写入知识库。")
+            return
+
         fallback_text = (
             f"网页搜索结果摘要\n"
-            f"查询：{query}\n"
+            f"查询：{search_query}\n"
             f"标题：{item['title']}\n"
             f"链接：{item['url']}\n"
             f"说明：完整网页正文读取失败或正文过短，当前仅保留搜索结果标题和链接作为低置信度网页资料。\n"
@@ -1273,7 +1356,7 @@ def web_collect(query, max_results=3):
             source=source_name,
             source_type="web",
             url=item["url"],
-            content_type="search_result",
+            content_type="search_result_failed",
         )
         if chunk_count:
             print(f"已写入搜索结果摘要：{chunk_count} 块")
@@ -1291,7 +1374,7 @@ def web_collect(query, max_results=3):
             ingest_search_result_fallback(item, str(e))
             continue
 
-        if len(text) < 100:
+        if len(text) < WEB_MIN_TEXT_CHARS:
             print("网页正文太少，跳过。")
             ingest_search_result_fallback(item, "网页正文太少")
             continue
@@ -1300,8 +1383,12 @@ def web_collect(query, max_results=3):
         chunk_count = add_text_to_chroma(text, source=source_name, source_type="web", url=url)
         print(f"已写入网页资料：{chunk_count} 块")
         ingested_sources.append(item)
+        successful_sources.append(item)
 
-    return ingested_sources
+        if len(successful_sources) >= max_results:
+            break
+
+    return successful_sources
 
 
 def image_to_data_url(image_path):
