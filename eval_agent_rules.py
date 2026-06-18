@@ -279,6 +279,78 @@ def stable_web_collect(question: str, max_results: int) -> agent_runtime.ToolRes
     )
 
 
+def stable_rag_search(
+    question: str,
+    top_k: int,
+    preferred_sources: list[str],
+    source_strategy: str = SOURCE_STRATEGY_AUTO,
+    retrieval_strategy: str = "vector_bm25_rrf",
+    context_packing_strategy: str = "strict_budget",
+) -> agent_runtime.ToolResult:
+    """Use deterministic eval context so real API eval is not polluted by old Chroma rows."""
+    results: list[dict[str, Any]] = []
+    if preferred_sources and source_strategy != SOURCE_STRATEGY_WEB_ONLY:
+        upload_source = preferred_sources[0]
+        upload_text = EVAL_UPLOAD_FIXTURES.get(
+            upload_source,
+            "上传资料说明 AI 产品经理需要理解 RAG、工具调用、记忆系统和评估体系。",
+        )
+        results.append({
+            "source_type": "upload",
+            "source": upload_source,
+            "url": upload_source,
+            "document": upload_text,
+            "final_score": 0.95,
+            "chunk_index": 1,
+            "content_type": "eval_upload_fixture",
+        })
+
+    needs_web = source_strategy in {
+        SOURCE_STRATEGY_AUTO,
+        SOURCE_STRATEGY_WEB_ONLY,
+        SOURCE_STRATEGY_UPLOAD_AND_WEB,
+    }
+    web_signal_words = [
+        "最近",
+        "最新",
+        "今天",
+        "现在",
+        "趋势",
+        "动态",
+        "调研",
+        "进展",
+        "实践",
+        "Agent",
+        "RAG",
+        "Tool",
+        "Autonomous",
+        "Memory",
+        "多 Agent",
+    ]
+    if needs_web and (source_strategy == SOURCE_STRATEGY_WEB_ONLY or any(word in question for word in web_signal_words) or not preferred_sources):
+        for item in EVAL_WEB_FIXTURES:
+            results.append({
+                "source_type": "web",
+                "source": item["source"],
+                "url": item["url"],
+                "document": item["text"],
+                "final_score": 0.9,
+                "chunk_index": 1,
+                "content_type": "eval_web_fixture",
+            })
+
+    if source_strategy == SOURCE_STRATEGY_UPLOAD_ONLY:
+        results = [item for item in results if item.get("source_type") == "upload"]
+    elif source_strategy == SOURCE_STRATEGY_WEB_ONLY:
+        results = [item for item in results if item.get("source_type") == "web"]
+
+    return agent_runtime.ToolResult(
+        status="success",
+        summary=f"稳定检索夹具返回 {len(results[:top_k])} 条资料。",
+        data=results[:top_k],
+    )
+
+
 def fake_rag_search(
     question: str,
     top_k: int,
@@ -376,6 +448,7 @@ def install_fake_tools() -> dict[str, Any]:
 def install_stable_web_tool() -> dict[str, Any]:
     original_tools = agent_runtime.TOOLS.copy()
     agent_runtime.TOOLS["web_collect"] = stable_web_collect
+    agent_runtime.TOOLS["rag_search"] = stable_rag_search
     return original_tools
 
 
@@ -703,6 +776,17 @@ def build_reference_context(evaluation: dict[str, Any]) -> list[dict[str, Any]]:
 
 def build_judge_payload(case: dict[str, Any], evaluation: dict[str, Any]) -> dict[str, Any]:
     reference_context = build_reference_context(evaluation)
+    if case.get("category") in {"chitchat", "autonomous_fallback"} and "direct_answer" in evaluation["result"].get("tools", []):
+        reference_context.append({
+            "source_type": "app_capability",
+            "source": "agent_capability_spec",
+            "document": (
+                "当前 Agent 可以基于上传资料做总结、提取要点、问答和对比分析；"
+                "可以联网收集公开信息并结合本地资料做 RAG 回答；"
+                "可以辅助学习和实操 AI 产品经理相关主题，例如 RAG、Tool Agent、"
+                "Autonomous Agent 和 Agent Eval。"
+            ),
+        })
     if case.get("category") == "upload_status":
         preferred_sources = case.get("preferred_sources", [])
         reference_context.append({
@@ -846,14 +930,21 @@ def call_llm_judge(payload: dict[str, Any]) -> dict[str, Any]:
             retry_response = client.chat.completions.create(**retry_args)
         parsed = extract_json_object(retry_response.choices[0].message.content or "{}")
 
-    if not isinstance(parsed.get("scores"), dict) or not parsed.get("scores"):
+    required_score_names = set(JUDGE_RUBRIC.keys())
+    parsed_scores = parsed.get("scores")
+    if (
+        not isinstance(parsed_scores, dict)
+        or not parsed_scores
+        or not required_score_names.issubset(set(parsed_scores.keys()))
+    ):
         retry_messages = [
             {"role": "system", "content": JUDGE_SYSTEM_PROMPT},
             {
                 "role": "user",
                 "content": (
                     "请重新完成这次 Agent 评估。必须输出包含 scores、overall_score、pass、"
-                    "failed_dimensions、reason 的合法 JSON，scores 不能为空。\n\n"
+                    "failed_dimensions、reason 的合法 JSON，scores 必须包含 task_success、"
+                    "groundedness、source_usage、completeness、clarity、safety 六个维度。\n\n"
                     + json.dumps(payload, ensure_ascii=False)
                 ),
             },
@@ -873,7 +964,12 @@ def call_llm_judge(payload: dict[str, Any]) -> dict[str, Any]:
             retry_response = client.chat.completions.create(**retry_args)
         parsed = extract_json_object(retry_response.choices[0].message.content or "{}")
 
-    if not isinstance(parsed.get("scores"), dict) or not parsed.get("scores"):
+    parsed_scores = parsed.get("scores")
+    if (
+        not isinstance(parsed_scores, dict)
+        or not parsed_scores
+        or not required_score_names.issubset(set(parsed_scores.keys()))
+    ):
         parsed = {
             "scores": {
                 "task_success": 0,

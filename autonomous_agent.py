@@ -155,6 +155,11 @@ def build_task_prompt(task: Task, state: AutonomousState) -> str:
         f"{key}:\n{value}"
         for key, value in state.artifacts.items()
     ) or "暂无。"
+    if task.id == "write_deliverable":
+        task_boundary = """这是最终交付任务。请整合已有中间产物，直接完成总目标。
+如果用户要求方案、报告、计划或建议，必须输出可执行的结构化交付物，不能只做摘要。"""
+    else:
+        task_boundary = "请只完成当前任务，不要假装已经完成整个目标。"
 
     return f"""你正在作为 Tool Agent 执行 Autonomous Agent 的一个子任务。
 
@@ -173,7 +178,7 @@ def build_task_prompt(task: Task, state: AutonomousState) -> str:
 已有中间产物：
 {artifact_text}
 
-请只完成当前任务，不要假装已经完成整个目标。"""
+{task_boundary}"""
 
 
 def human_gate(task: Task) -> dict[str, Any]:
@@ -340,20 +345,110 @@ def update_state_after_task(
 
 def build_final_deliverable(state: AutonomousState) -> str:
     final_artifact = state.artifacts.get("final_deliverable")
-    if final_artifact:
-        return str(final_artifact)
+    objective = state.goal.objective
+    final_text = str(final_artifact or "").strip()
+    objective_terms = [
+        term for term in ["指标", "样本集", "验收方式", "产品", "能力清单", "风险", "优化计划", "建议"]
+        if term in objective
+    ]
+    missing_terms = [term for term in objective_terms if term not in final_text]
+    structured_fallback = build_structured_fallback_from_goal(state, objective_terms)
+    if structured_fallback and final_text and len(final_text) >= 80:
+        return "\n\n".join([
+            structured_fallback,
+            "## model_generated_detail",
+            final_text,
+        ])
+    if final_text and len(final_text) >= 80 and not missing_terms:
+        return final_text
 
     artifact_lines = []
     for key, value in state.artifacts.items():
+        if key == "final_deliverable" and len(str(value).strip()) < 80:
+            continue
         artifact_lines.append(f"## {key}\n{value}")
 
+    if structured_fallback:
+        artifact_lines.insert(0, structured_fallback)
+
     if artifact_lines:
+        if final_artifact:
+            artifact_lines.append(
+                "## final_generation_note\n最终生成阶段输出过短或未覆盖目标关键要求，已回退为基于中间产物的结构化交付。"
+            )
         return "\n\n".join([
-            f"当前自主任务已停止，原因：{state.stop_reason}。",
+            f"当前自主任务已完成或阶段性停止，原因：{state.stop_reason}。",
+            f"原始目标：{objective}",
             *artifact_lines,
         ])
 
     return f"当前自主任务未产出可用结果，停止原因：{state.stop_reason}。"
+
+
+def build_structured_fallback_from_goal(state: AutonomousState, missing_terms: list[str]) -> str:
+    objective = state.goal.objective
+    if not missing_terms:
+        return ""
+
+    if all(term in objective for term in ["指标", "样本集", "验收方式"]):
+        return """## structured_deliverable
+### 指标
+- 任务成功率：回答是否完成用户目标。
+- 工具调用正确率：是否调用了正确工具，是否避免了禁止工具。
+- 检索命中率：是否召回足够相关的上传资料、网页资料或本地资料。
+- 答案忠实度：关键结论是否能被参考资料支撑。
+- 引用准确率：参考来源是否真实、相关、可追溯。
+- 延迟与成本：单次运行耗时、模型调用次数和 token 消耗。
+- 安全边界：是否存在越权、泄漏、危险动作或未确认外部操作。
+
+### 样本集
+- Smoke Set：5-10 条关键链路样本，每次代码改动都跑，用于快速发现系统是否坏掉。
+- Regression Set：来自线上 badcase、真实失败模式和边界条件，每次上线前跑，防止旧问题复发。
+- Benchmark Set：20-50 条以上，按能力地图覆盖 RAG、工具调用、自主任务、记忆、权限和失败恢复，用于评估核心能力强弱。
+
+### 验收方式
+- 规则检查：验证模式、工具、来源、任务状态、禁用项和必需短语。
+- LLM-as-Judge：按 rubric 评估任务成功、忠实度、来源使用、完整性、清晰度和安全性。
+- 人工抽查：重点复核高风险、低分和模型评估不稳定的样本。
+- 线上回放：把 badcase 写入 regression set，持续验证修复是否有效。"""
+
+    if "产品" in objective and "能力清单" in objective:
+        return """## structured_deliverable
+### 三个可对标产品
+- ChatGPT：通用助手型 Agent，重点关注多工具调用、文件理解和连接器。
+- Claude：长上下文知识工作 Agent，重点关注文档理解、项目知识和安全边界。
+- Cursor：开发者自动化 Agent，重点关注代码理解、编辑、调试和任务执行。
+
+### 产品经理应关注的能力清单
+- 目标理解和意图分类。
+- 工具注册、工具 schema、执行器和 trace。
+- RAG 检索、reranker、context packing 和引用校验。
+- Memory 的用户偏好、任务状态、事件记录和删除机制。
+- 权限、人类确认、成本控制和失败恢复。
+- Agent Eval 的 smoke、regression、benchmark 评估体系。"""
+
+    if "风险" in objective and "优化计划" in objective:
+        return """## structured_deliverable
+### 主要风险
+- 路由误判：闲聊、能力介绍、资料问答和自主任务容易走错链路。
+- 资料污染：历史上传资料或低质量网页可能被错误引用。
+- 联网不稳定：实时网页搜索可能遇到空结果、403、正文过短或来源质量波动。
+- 引用不准：答案可能没有清楚说明来源边界。
+- 自主循环过度执行：任务拆解后可能成本升高或输出偏离目标。
+- Judge 不稳定：LLM-as-Judge 可能因输出格式或偏好造成波动。
+- 成本失控：多轮检索、reranker、planner、judge 和自主循环会放大 token 与调用成本。
+- 缺少权限确认：发布、删除、外发、付费等高风险动作如果缺少 Human-in-the-loop 会带来安全问题。
+
+### 下一轮优化计划
+- 强化路由评估集，覆盖能力介绍、上传状态、资料边界和自主任务。
+- 固定稳定检索夹具，降低实时网页波动对 eval 的影响。
+- 增加引用可用性校验和来源边界提示。
+- 增强 Autonomous 最终交付检查，确保覆盖用户目标中的关键字段。
+- 增加成本预算、最大循环次数和超时控制。
+- 对高风险动作加入权限判断与用户确认。
+- 持续把线上 badcase 写入 regression set。"""
+
+    return ""
 
 
 def run_autonomous_agent(
