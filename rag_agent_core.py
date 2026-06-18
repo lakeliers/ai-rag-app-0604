@@ -58,11 +58,13 @@ CHUNKING_PLAIN = "plain"
 CHUNKING_PARENT_CHILD = "parent_child"
 CHUNKING_TABLE = "table"
 CHUNKING_SUMMARY = "summary"
+CHUNKING_AUTO = "auto"
 CHUNKING_STRATEGIES = {
     CHUNKING_PLAIN,
     CHUNKING_PARENT_CHILD,
     CHUNKING_TABLE,
     CHUNKING_SUMMARY,
+    CHUNKING_AUTO,
 }
 SOURCE_WEIGHTS = {
     "upload": 1.35,
@@ -454,20 +456,52 @@ def safe_id(text):
     return text[:120]
 
 
+def normalize_chunking_strategies(chunking_strategy):
+    if chunking_strategy is None:
+        return {CHUNKING_PARENT_CHILD, CHUNKING_TABLE}
+
+    if isinstance(chunking_strategy, str):
+        strategies = {
+            item.strip()
+            for item in chunking_strategy.split(",")
+            if item.strip()
+        }
+    else:
+        strategies = set(chunking_strategy)
+
+    strategies = {strategy for strategy in strategies if strategy in CHUNKING_STRATEGIES}
+
+    if not strategies or CHUNKING_AUTO in strategies:
+        strategies.discard(CHUNKING_AUTO)
+        strategies.update({CHUNKING_PARENT_CHILD, CHUNKING_TABLE})
+
+    return strategies
+
+
+def choose_chunking_strategy(section, enabled_strategies):
+    if section.content_type == "table" and CHUNKING_TABLE in enabled_strategies:
+        return CHUNKING_TABLE
+    if CHUNKING_PARENT_CHILD in enabled_strategies:
+        return CHUNKING_PARENT_CHILD
+    if CHUNKING_PLAIN in enabled_strategies:
+        return CHUNKING_PLAIN
+    return CHUNKING_PARENT_CHILD
+
+
 def build_chunk_candidates(section, source, section_index, chunking_strategy):
-    if chunking_strategy not in CHUNKING_STRATEGIES:
-        chunking_strategy = CHUNKING_PARENT_CHILD
+    enabled_strategies = normalize_chunking_strategies(chunking_strategy)
+    selected_strategy = choose_chunking_strategy(section, enabled_strategies)
 
     parent_text = format_section_text(section)
     parent_id = f"{source}:{section_index}:{section.section_title or section.content_type or 'section'}"
 
-    if chunking_strategy == CHUNKING_PLAIN:
+    if selected_strategy == CHUNKING_PLAIN:
         return [
             ChunkCandidate(text=text, chunk_type="plain")
             for text in split_text_fixed(parent_text)
         ]
 
-    if chunking_strategy == CHUNKING_TABLE:
+    if selected_strategy == CHUNKING_TABLE:
         if section.content_type == "table":
             texts = split_table_section(section)
         else:
@@ -499,10 +533,11 @@ def add_text_to_chroma(text, source, source_type="local", url="", content_type="
 
 def add_sections_to_chroma(sections, source, source_type="local", url="", created_at=None, chunking_strategy=CHUNKING_PARENT_CHILD):
     chunk_rows = []
+    enabled_strategies = normalize_chunking_strategies(chunking_strategy)
 
     for section_index, section in enumerate(sections):
-        chunk_candidates = build_chunk_candidates(section, source, section_index, chunking_strategy)
-        summary = summarize_section_for_retrieval(section, force=True) if chunking_strategy == CHUNKING_SUMMARY else ""
+        chunk_candidates = build_chunk_candidates(section, source, section_index, enabled_strategies)
+        summary = summarize_section_for_retrieval(section, force=True) if CHUNKING_SUMMARY in enabled_strategies else ""
         if summary:
             parent_id = chunk_candidates[0].parent_id if chunk_candidates else f"{source}:{section_index}:summary"
             parent_text = chunk_candidates[0].parent_text if chunk_candidates else section.text.strip()

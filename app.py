@@ -77,8 +77,24 @@ def is_image(uploaded_file):
     return uploaded_file.type.startswith("image/")
 
 
+def format_chunking_strategy(chunking_strategy):
+    if isinstance(chunking_strategy, (list, tuple, set)):
+        return ",".join(sorted(str(item) for item in chunking_strategy))
+    return str(chunking_strategy)
+
+
+def format_chunking_labels(chunking_strategy):
+    value_to_label = {
+        value: label
+        for label, value in CHUNKING_STRATEGY_LABELS.items()
+    }
+    if isinstance(chunking_strategy, (list, tuple, set)):
+        return "、".join(value_to_label.get(item, str(item)) for item in chunking_strategy)
+    return value_to_label.get(chunking_strategy, str(chunking_strategy))
+
+
 def file_key(uploaded_file, chunking_strategy):
-    return f"{uploaded_file.name}:{len(uploaded_file.getvalue())}:{chunking_strategy}"
+    return f"{uploaded_file.name}:{len(uploaded_file.getvalue())}:{format_chunking_strategy(chunking_strategy)}"
 
 
 def ingest_uploaded_files(uploaded_files, question, chunking_strategy):
@@ -124,7 +140,7 @@ def ingest_uploaded_files(uploaded_files, question, chunking_strategy):
             )
 
         st.session_state.ingested_uploads[key] = source
-        st.session_state.upload_status.append(f"{source}：{chunk_count} 块｜切分：{chunking_strategy}")
+        st.session_state.upload_status.append(f"{source}：{chunk_count} 块｜切分：{format_chunking_labels(chunking_strategy)}")
         ingested_sources.append(source)
 
     return ingested_sources
@@ -261,6 +277,7 @@ def build_current_config():
         "retrieval_strategy": retrieval_strategy,
         "context_packing_strategy": context_packing_strategy,
         "chunking_strategy": chunking_strategy,
+        "chunking_strategy_labels": chunking_strategy_labels,
         "planner_type": planner_type,
         "evaluator_type": evaluator_type,
         "memory_enabled": memory_enabled,
@@ -645,13 +662,22 @@ with st.sidebar:
         help="Context Packing 是把候选资料筛选、去重并打包进模型上下文的过程。",
     )
     context_packing_strategy = CONTEXT_PACKING_LABELS[context_packing_label]
-    chunking_strategy_label = st.selectbox(
+    chunking_strategy_labels = st.multiselect(
         "Chunking（切分）策略",
         list(CHUNKING_STRATEGY_LABELS.keys()),
-        index=1,
-        help="Chunking 是把文档切成适合检索的小片段；chunk 是片段。",
+        default=["Parent-child（父子关系）", "表格专用"],
+        help=(
+            "Chunking 是把文档切成适合检索的小片段；这里是启用哪些切分能力。"
+            "后端会根据解析出的内容类型自动路由，摘要 chunk 是附加策略。"
+        ),
     )
-    chunking_strategy = CHUNKING_STRATEGY_LABELS[chunking_strategy_label]
+    if not chunking_strategy_labels:
+        st.warning("至少选择一种 Chunking（切分）策略；当前已按 Parent-child（父子关系）处理。")
+        chunking_strategy_labels = ["Parent-child（父子关系）"]
+    chunking_strategy = [
+        CHUNKING_STRATEGY_LABELS[label]
+        for label in chunking_strategy_labels
+    ]
     top_k = st.slider("资料条数", 1, 5, 3)
     web_max_results = st.slider("网页结果数", 1, 5, 2)
     reranker_enabled = st.toggle(
@@ -681,7 +707,7 @@ with st.sidebar:
     st.write("Source（资料来源）:", source_strategy_label)
     st.write("Retrieval（检索）:", retrieval_strategy_label)
     st.write("Packing（上下文打包）:", context_packing_label)
-    st.write("Chunking（切分）:", chunking_strategy_label)
+    st.write("Chunking（切分）:", "、".join(chunking_strategy_labels))
     st.write("Evaluator（评估器）:", evaluator_type_label)
 
     if "upload_status" in st.session_state and st.session_state.upload_status:
@@ -854,7 +880,8 @@ if prompt:
                     st.caption(
                         f"Planner（规划器）来源：{planner_label}｜Router（路由器）：{router_mode_label}｜"
                         f"Source（资料来源）：{source_strategy_label}｜Retrieval（检索）：{retrieval_strategy_label}｜"
-                        f"Packing（上下文打包）：{context_packing_label}｜Evaluator（评估器）：{evaluator_type_label}"
+                        f"Packing（上下文打包）：{context_packing_label}｜"
+                        f"Chunking（切分）：{'、'.join(chunking_strategy_labels)}｜Evaluator（评估器）：{evaluator_type_label}"
                     )
                     for index, step in enumerate(result.get("steps", []), start=1):
                         status_map = {
