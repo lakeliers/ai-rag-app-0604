@@ -35,6 +35,9 @@ PARENT_TEXT_CHAR_LIMIT = int(os.getenv("PARENT_TEXT_CHAR_LIMIT", "1800"))
 INGEST_FAILED_SEARCH_RESULTS = os.getenv("INGEST_FAILED_SEARCH_RESULTS", "0") == "1"
 WEB_SEARCH_CANDIDATE_MULTIPLIER = int(os.getenv("WEB_SEARCH_CANDIDATE_MULTIPLIER", "3"))
 WEB_MIN_TEXT_CHARS = int(os.getenv("WEB_MIN_TEXT_CHARS", "100"))
+WEB_FETCH_TIMEOUT_SECONDS = float(os.getenv("WEB_FETCH_TIMEOUT_SECONDS", "20"))
+ENABLE_JINA_READER = os.getenv("ENABLE_JINA_READER", "1") == "1"
+JINA_READER_TIMEOUT_SECONDS = float(os.getenv("JINA_READER_TIMEOUT_SECONDS", "8"))
 RRF_K = 60
 RETRIEVAL_VECTOR_ONLY = "vector_only"
 RETRIEVAL_VECTOR_BM25 = "vector_bm25"
@@ -90,6 +93,25 @@ FAILED_WEB_MARKERS = [
     "forbidden",
     "access denied",
 ]
+WEB_BLOCK_MARKERS = [
+    "百度安全验证",
+    "网络不给力",
+    "请输入验证码",
+    "访问受限",
+    "访问异常",
+    "安全验证",
+    "403 forbidden",
+    "access denied",
+    "forbidden",
+]
+DESKTOP_USER_AGENT = (
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+    "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0 Safari/537.36"
+)
+MOBILE_USER_AGENT = (
+    "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) "
+    "AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1"
+)
 INTENT_WEIGHTS = {
     "latest_news": {
         "rerank": 0.45,
@@ -1303,8 +1325,7 @@ def baidu_search(query, max_results=5):
 
 
 def search_web(query, max_results=5):
-    all_results = []
-    seen = set()
+    provider_results = []
 
     for search_name, search_func in [
         ("百度", baidu_search),
@@ -1318,43 +1339,175 @@ def search_web(query, max_results=5):
             print(f"{search_name} 搜索失败：{e}")
             continue
 
-        for item in results:
-            if item["url"] in seen:
+        provider_results.append((search_name, results))
+
+    all_results = []
+    seen = set()
+
+    def append_item(item):
+        if item["url"] in seen:
+            return
+        seen.add(item["url"])
+        all_results.append(item)
+
+    baidu_results = []
+    other_provider_results = []
+    for search_name, results in provider_results:
+        if search_name == "百度":
+            baidu_results = results
+        else:
+            other_provider_results.append(results)
+
+    baidu_priority_count = min(len(baidu_results), 5)
+    for item in baidu_results[:baidu_priority_count]:
+        append_item(item)
+
+    max_other_len = max((len(results) for results in other_provider_results), default=0)
+    for index in range(max_other_len):
+        for results in other_provider_results:
+            if index >= len(results):
                 continue
-            seen.add(item["url"])
-            all_results.append(item)
+            append_item(results[index])
 
             if len(all_results) >= max_results:
                 return all_results
+
+    for item in baidu_results[baidu_priority_count:]:
+        append_item(item)
+        if len(all_results) >= max_results:
+            return all_results
 
     return all_results
 
 
 def normalize_web_query(query):
     compact_query = query.strip()
+    compact_query = re.sub(r"^(你知道|请问|帮我查一下|查一下|搜索一下|了解一下|介绍一下)\s*", "", compact_query)
+    compact_query = re.sub(r"[吗嘛呢？?]+$", "", compact_query).strip()
     lowered_query = compact_query.lower()
 
     if "agent" in lowered_query and "ai" not in lowered_query:
+        if lowered_query.startswith("agent"):
+            return re.sub(r"(?i)^agent\s*", "AI Agent ", compact_query, count=1).strip()
         return f"AI Agent {compact_query}"
 
     return compact_query
 
 
-def fetch_web_text(url):
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36"
+class WebTextFetchError(RuntimeError):
+    pass
+
+
+def web_request_headers(user_agent):
+    return {
+        "User-Agent": user_agent,
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,text/plain;q=0.8,*/*;q=0.7",
+        "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
+        "Cache-Control": "no-cache",
     }
-    response = requests.get(url, headers=headers, timeout=20)
+
+
+def normalize_response_text(response):
+    if not response.encoding:
+        response.encoding = response.apparent_encoding or "utf-8"
+    return response.text or ""
+
+
+def contains_block_marker(text):
+    lowered = (text or "").lower()
+    return any(marker.lower() in lowered for marker in WEB_BLOCK_MARKERS)
+
+
+def validate_web_text(text, source_label):
+    text = (text or "").strip()
+    if not text:
+        raise WebTextFetchError(f"{source_label} 没有抽取到正文")
+    if contains_block_marker(text):
+        raise WebTextFetchError(f"{source_label} 命中安全验证或访问限制")
+    if len(text) < WEB_MIN_TEXT_CHARS:
+        raise WebTextFetchError(f"{source_label} 正文太短：{len(text)} 字")
+    return text[:8000]
+
+
+def extract_text_from_html(html_text):
+    parser = SimpleTextExtractor()
+    parser.feed(html_text)
+    return parser.get_text()
+
+
+def fetch_web_text_with_user_agent(url, user_agent, label):
+    response = requests.get(
+        url,
+        headers=web_request_headers(user_agent),
+        timeout=WEB_FETCH_TIMEOUT_SECONDS,
+        allow_redirects=True,
+    )
     response.raise_for_status()
 
     content_type = response.headers.get("content-type", "")
-    if "text/html" not in content_type and "text/plain" not in content_type:
-        return ""
+    if content_type and "text/html" not in content_type and "text/plain" not in content_type:
+        raise WebTextFetchError(f"{label} 非文本页面：{content_type}")
 
-    parser = SimpleTextExtractor()
-    parser.feed(response.text)
-    text = parser.get_text()
-    return text[:8000]
+    raw_text = normalize_response_text(response)
+    if "text/plain" in content_type:
+        text = raw_text
+    else:
+        text = extract_text_from_html(raw_text)
+
+    return validate_web_text(text, label)
+
+
+def jina_reader_url(url):
+    return f"https://r.jina.ai/{url}"
+
+
+def fetch_web_text_with_jina(url):
+    if not ENABLE_JINA_READER:
+        raise WebTextFetchError("Jina Reader 未启用")
+
+    headers = {
+        "User-Agent": DESKTOP_USER_AGENT,
+        "Accept": "text/plain, text/markdown, */*",
+    }
+    jina_key = os.getenv("JINA_API_KEY")
+    if jina_key:
+        headers["Authorization"] = f"Bearer {jina_key}"
+
+    response = requests.get(
+        jina_reader_url(url),
+        headers=headers,
+        timeout=JINA_READER_TIMEOUT_SECONDS,
+        allow_redirects=True,
+    )
+    response.raise_for_status()
+    text = normalize_response_text(response)
+    return validate_web_text(text, "Jina Reader")
+
+
+def fetch_web_text(url):
+    errors = []
+
+    for label, user_agent in [
+        ("桌面浏览器请求", DESKTOP_USER_AGENT),
+        ("移动浏览器请求", MOBILE_USER_AGENT),
+    ]:
+        try:
+            text = fetch_web_text_with_user_agent(url, user_agent, label)
+            print(f"正文读取成功：{label}")
+            return text
+        except Exception as e:
+            errors.append(f"{label}: {e}")
+            print(f"正文读取失败：{label}｜{e}")
+
+    try:
+        text = fetch_web_text_with_jina(url)
+        print("正文读取成功：Jina Reader")
+        return text
+    except Exception as e:
+        errors.append(f"Jina Reader: {e}")
+        print(f"正文读取失败：Jina Reader｜{e}")
+
+    raise WebTextFetchError("；".join(errors))
 
 
 def web_collect(query, max_results=3):
