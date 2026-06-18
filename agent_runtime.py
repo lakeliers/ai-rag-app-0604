@@ -944,9 +944,23 @@ def apply_source_quota(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return packed
 
 
-def tool_generate_answer(question: str, search_results: list[dict[str, Any]]) -> ToolResult:
+def build_question_with_memory(question: str, memory_context: str = "") -> str:
+    if not memory_context.strip():
+        return question
+    return f"""{memory_context}
+
+【当前用户问题】
+{question}
+"""
+
+
+def tool_generate_answer(
+    question: str,
+    search_results: list[dict[str, Any]],
+    memory_context: str = "",
+) -> ToolResult:
     try:
-        answer = agent.ask_deepseek(question, search_results)
+        answer = agent.ask_deepseek(build_question_with_memory(question, memory_context), search_results)
     except Exception as error:
         answer = ""
 
@@ -980,7 +994,7 @@ def tool_generate_answer(question: str, search_results: list[dict[str, Any]]) ->
     )
 
 
-def tool_direct_answer(question: str) -> ToolResult:
+def tool_direct_answer(question: str, memory_context: str = "") -> ToolResult:
     if asks_for_capability_intro(question):
         answer = (
             "我可以帮你做三类事情：\n\n"
@@ -1011,6 +1025,10 @@ def tool_direct_answer(question: str) -> ToolResult:
 1. 如果是寒暄、自我介绍、普通对话，简洁自然地回应。
 2. 不要声称自己检索了资料。
 3. 不要编造参考来源。
+4. 可以参考【长期记忆】，但如果长期记忆和当前用户输入冲突，以当前用户输入为准。
+
+【长期记忆】
+{memory_context or "无"}
 
 用户输入：
 {question}
@@ -1509,6 +1527,8 @@ def run_tool(step: AgentStep, state: dict[str, Any]) -> ToolResult:
 
     if args.get("search_results") == "$rag_search":
         args["search_results"] = state.get("search_results", [])
+    if step.tool in {"generate_answer", "direct_answer"} and "memory_context" not in args:
+        args["memory_context"] = state.get("memory_context", "")
 
     started_at = time.time()
     result = tool(**args)
@@ -1525,12 +1545,14 @@ def run_agent(
     source_strategy: str = SOURCE_STRATEGY_AUTO,
     retrieval_strategy: str = agent.RETRIEVAL_VECTOR_BM25_RRF,
     context_packing_strategy: str = agent.CONTEXT_STRICT_BUDGET,
+    memory_context: str = "",
 ) -> dict[str, Any]:
     state: dict[str, Any] = {
         "question": question,
         "search_results": [],
         "answer": "",
         "planner_mode": "llm_tool_calling" if ENABLE_LLM_PLANNER else "rule_based",
+        "memory_context": memory_context,
     }
     trace: list[dict[str, Any]] = []
     steps = plan_agent_steps(
@@ -1629,6 +1651,7 @@ def run_agent_pro(
     context_packing_strategy: str = agent.CONTEXT_STRICT_BUDGET,
     planner_type: str = PLANNER_FALLBACK_MIXED,
     evaluator_type: str = EVALUATOR_RULES,
+    memory_context: str = "",
 ) -> dict[str, Any]:
     if source_strategy not in SOURCE_STRATEGIES:
         source_strategy = SOURCE_STRATEGY_AUTO
@@ -1647,6 +1670,7 @@ def run_agent_pro(
             source_strategy=source_strategy,
             retrieval_strategy=retrieval_strategy,
             context_packing_strategy=context_packing_strategy,
+            memory_context=memory_context,
         )
         result["teaching_config"] = {
             "retrieval_strategy": retrieval_strategy,
@@ -1663,6 +1687,16 @@ def run_agent_pro(
     tool_results: dict[str, ToolResult] = {}
     answer = ""
     search_results: list[dict[str, Any]] = []
+
+    if memory_context.strip():
+        trace.append(
+            make_stage_trace(
+                name="读取长期记忆",
+                tool="memory_retriever",
+                reason="按用户画像、学习偏好和任务进度读取 Memory，并在生成阶段注入上下文。",
+                summary="Memory 已启用，本轮会把相关长期记忆注入最终回答。不要把 Memory 当作外部资料来源引用。",
+            )
+        )
 
     started_at = time.time()
     intent = classify_intent(question, effective_preferred_sources, router_mode=router_mode)
@@ -1728,6 +1762,7 @@ def run_agent_pro(
         "search_results": [],
         "answer": "",
         "planner_mode": "pro_runtime",
+        "memory_context": memory_context,
     }
 
     tool_results, runtime_trace = run_task_graph(task_graph, state)

@@ -194,6 +194,7 @@ def execute_task_with_tool_agent(
     task: Task,
     state: AutonomousState,
     preferred_sources: list[str],
+    memory_context: str = "",
     tool_agent_runner: Callable[..., dict[str, Any]] = agent_runtime.run_agent_pro,
 ) -> dict[str, Any]:
     prompt = build_task_prompt(task, state)
@@ -209,6 +210,7 @@ def execute_task_with_tool_agent(
         context_packing_strategy=state.goal.constraints.get("context_packing_strategy", "strict_budget"),
         planner_type=state.goal.constraints.get("planner_type", "fallback_mixed"),
         evaluator_type=state.goal.constraints.get("evaluator_type", "rules"),
+        memory_context=memory_context,
     )
     return {
         "success": bool(result.get("answer")),
@@ -366,6 +368,7 @@ def run_autonomous_agent(
     context_packing_strategy: str = "strict_budget",
     planner_type: str = "fallback_mixed",
     evaluator_type: str = "rules",
+    memory_context: str = "",
     tool_agent_runner: Callable[..., dict[str, Any]] = agent_runtime.run_agent_pro,
 ) -> dict[str, Any]:
     preferred_sources = preferred_sources or []
@@ -409,6 +412,7 @@ def run_autonomous_agent(
             task,
             state,
             preferred_sources=preferred_sources,
+            memory_context=memory_context,
             tool_agent_runner=tool_agent_runner,
         )
         observation = observe_task_result(task, task_result)

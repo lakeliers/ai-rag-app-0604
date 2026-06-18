@@ -23,6 +23,7 @@ summary_min_chars = get_secret("SUMMARY_MIN_CHARS")
 enable_llm_planner = get_secret("ENABLE_LLM_PLANNER")
 github_token = get_secret("GITHUB_TOKEN")
 github_repo = get_secret("GITHUB_REPO")
+seed_teaching_memory = get_secret("SEED_TEACHING_MEMORY")
 
 if deepseek_key:
     os.environ["DEEPSEEK_API_KEY"] = deepseek_key
@@ -52,8 +53,11 @@ import parsing_layer
 import agent_runtime
 import autonomous_agent
 import badcase_manager
+import memory_manager
 
 agent.seed_local_note()
+if seed_teaching_memory != "0":
+    memory_manager.seed_default_memories_if_empty()
 
 
 st.set_page_config(
@@ -173,6 +177,10 @@ EVALUATOR_TYPE_LABELS = {
     "关闭": "off",
     "规则评估": "rules",
 }
+MEMORY_WRITE_MODE_LABELS = {
+    "关闭写入": "off",
+    "手动 + 半自动确认": "confirm",
+}
 
 CATEGORY_LABELS = {
     "chitchat": "chitchat（闲聊）",
@@ -255,6 +263,8 @@ def build_current_config():
         "chunking_strategy": chunking_strategy,
         "planner_type": planner_type,
         "evaluator_type": evaluator_type,
+        "memory_enabled": memory_enabled,
+        "memory_write_mode": memory_write_mode,
         "reranker_enabled": agent.ENABLE_RERANKER,
         "top_k": top_k,
         "web_max_results": web_max_results,
@@ -477,6 +487,52 @@ def render_badcase_form():
                 st.error(str(error))
 
 
+def confirm_memory_candidate(candidate):
+    result = memory_manager.upsert_memory(candidate)
+    if result["ok"]:
+        st.session_state.memory_notice = "已保存为长期记忆。"
+        st.session_state.dismissed_memory_candidates.add(candidate.get("candidate_id"))
+    else:
+        st.session_state.memory_notice = "保存失败：" + "；".join(result["errors"])
+
+
+def dismiss_memory_candidate(candidate_id):
+    st.session_state.dismissed_memory_candidates.add(candidate_id)
+
+
+def render_memory_confirmation():
+    candidates = st.session_state.get("pending_memory_candidates", [])
+    visible_candidates = [
+        item for item in candidates
+        if item.get("candidate_id") not in st.session_state.dismissed_memory_candidates
+    ]
+    if not visible_candidates:
+        return
+
+    with st.expander("Memory（记忆）候选：确认后才会写入长期记忆", expanded=True):
+        st.caption("这是半自动确认模式：Agent 只提出候选，不会把普通对话自动写入长期记忆。")
+        for index, candidate in enumerate(visible_candidates):
+            st.markdown(f"**{index + 1}. {memory_manager.TYPE_LABELS.get(candidate['type'], candidate['type'])}**")
+            st.write(candidate["value"])
+            st.caption(f"key：{candidate['key']}｜confidence（置信度）：{candidate['confidence']:.2f}｜source（来源）：{candidate['source']}")
+            left, right = st.columns([0.18, 0.82])
+            with left:
+                st.button(
+                    "保存",
+                    key=f"save_memory_candidate_{candidate['candidate_id']}",
+                    on_click=confirm_memory_candidate,
+                    args=(candidate,),
+                )
+            with right:
+                st.button(
+                    "忽略",
+                    key=f"dismiss_memory_candidate_{candidate['candidate_id']}",
+                    on_click=dismiss_memory_candidate,
+                    args=(candidate["candidate_id"],),
+                )
+            st.divider()
+
+
 with st.sidebar:
     st.header("资料")
     uploaded_files = st.file_uploader(
@@ -530,6 +586,42 @@ with st.sidebar:
         help="Evaluator 判断资料是否足够；Critic 检查中间产物或最终回答是否达标。",
     )
     evaluator_type = EVALUATOR_TYPE_LABELS[evaluator_type_label]
+
+    st.divider()
+    st.subheader("Memory（记忆）配置")
+    memory_enabled = st.toggle(
+        "启用 Memory（长期记忆）",
+        value=True,
+        help="Memory 会记住用户画像、学习偏好和任务进度；它不同于 RAG 资料库。",
+    )
+    memory_write_mode_label = st.selectbox(
+        "Memory 写入模式",
+        list(MEMORY_WRITE_MODE_LABELS.keys()),
+        index=1,
+        help="手动 + 半自动确认表示用户说“记住”或出现长期偏好时，先生成候选，确认后才保存。",
+    )
+    memory_write_mode = MEMORY_WRITE_MODE_LABELS[memory_write_mode_label]
+    if st.button("初始化教学 Memory", help="写入一组教学默认记忆，用于体验 User Memory 和 Task Memory。"):
+        seeded = memory_manager.seed_default_memories_if_empty()
+        st.success("已初始化默认记忆。" if seeded else "已有记忆，未重复初始化。")
+    stats = memory_manager.memory_stats()
+    st.caption(
+        f"active（生效）：{stats['active']}｜archived（归档）：{stats['archived']}｜deleted（删除）：{stats['deleted']}"
+    )
+    with st.expander("查看 / 删除 Memory（记忆）"):
+        for item in memory_manager.load_memories():
+            if item.get("status") != memory_manager.MEMORY_STATUS_ACTIVE:
+                continue
+            st.markdown(f"**{memory_manager.TYPE_LABELS.get(item['type'], item['type'])}**")
+            st.write(item["value"])
+            st.caption(f"key：{item['key']}｜confidence（置信度）：{item['confidence']:.2f}｜use_count（使用次数）：{item.get('use_count', 0)}")
+            st.button(
+                "删除这条记忆",
+                key=f"delete_memory_{item['id']}",
+                on_click=memory_manager.delete_memory,
+                args=(item["id"],),
+            )
+            st.divider()
 
     st.divider()
     st.subheader("RAG（检索增强生成）配置")
@@ -617,6 +709,15 @@ if "last_agent_run" not in st.session_state:
 if "show_badcase_form" not in st.session_state:
     st.session_state.show_badcase_form = False
 
+if "pending_memory_candidates" not in st.session_state:
+    st.session_state.pending_memory_candidates = []
+
+if "dismissed_memory_candidates" not in st.session_state:
+    st.session_state.dismissed_memory_candidates = set()
+
+if "memory_notice" not in st.session_state:
+    st.session_state.memory_notice = ""
+
 
 for index, message in enumerate(st.session_state.messages):
     with st.chat_message(message["role"]):
@@ -646,6 +747,11 @@ if prompt:
         try:
             with st.spinner("执行 Agent（智能体）计划中..."):
                 uploaded_sources = ingest_uploaded_files(uploaded_files, prompt, chunking_strategy)
+                memory_context = ""
+                retrieved_memories = []
+                if memory_enabled:
+                    retrieved_memories = memory_manager.retrieve_memories(prompt)
+                    memory_context = memory_manager.build_memory_context(retrieved_memories)
 
                 use_autonomous_mode = False
                 autonomous_route_reason = ""
@@ -670,6 +776,7 @@ if prompt:
                         context_packing_strategy=context_packing_strategy,
                         planner_type=planner_type,
                         evaluator_type=evaluator_type,
+                        memory_context=memory_context,
                     )
                 else:
                     result = call_with_supported_kwargs(
@@ -685,6 +792,7 @@ if prompt:
                         context_packing_strategy=context_packing_strategy,
                         planner_type=planner_type,
                         evaluator_type=evaluator_type,
+                        memory_context=memory_context,
                     )
                     if run_mode == "自主任务":
                         result["planner_mode"] = "autonomous_fallback"
@@ -708,6 +816,7 @@ if prompt:
                 "tools_called": extract_tools_from_steps(result.get("steps", [])),
                 "sources_used": extract_source_types(result.get("sources", [])),
                 "planner_mode": result.get("planner_mode", ""),
+                "memory_used": [item.get("id") for item in retrieved_memories],
             }
             render_assistant_message(
                 result["answer"],
@@ -720,6 +829,13 @@ if prompt:
                 "badcase_run": badcase_run,
             })
             st.session_state.last_sources = result["sources"]
+
+            if memory_enabled and memory_write_mode == "confirm":
+                candidates = memory_manager.suggest_memory_candidates(prompt)
+                for candidate in candidates:
+                    candidate["candidate_id"] = memory_manager.candidate_id(candidate)
+                st.session_state.pending_memory_candidates = candidates
+                render_memory_confirmation()
 
             if trace_level != "隐藏":
                 with st.expander("查看 Agent（智能体）执行步骤"):
@@ -830,3 +946,6 @@ if prompt:
             st.error(f"调用失败：{e}")
 
 render_badcase_form()
+if st.session_state.memory_notice:
+    st.info(st.session_state.memory_notice)
+render_memory_confirmation()
