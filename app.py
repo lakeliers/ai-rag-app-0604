@@ -235,6 +235,10 @@ SOURCE_LABELS = {
     "web": "web（网页资料）",
     "local": "local（本地基础资料）",
 }
+DEEPSEEK_MODEL_LABELS = {
+    "Flash（快速/低成本）": "deepseek-v4-flash",
+    "Pro（高质量/较高成本）": "deepseek-v4-pro",
+}
 
 
 def call_with_supported_kwargs(func, *args, **kwargs):
@@ -278,6 +282,8 @@ def build_current_config():
         "context_packing_strategy": context_packing_strategy,
         "chunking_strategy": chunking_strategy,
         "chunking_strategy_labels": chunking_strategy_labels,
+        "deepseek_model": deepseek_model,
+        "deepseek_model_label": deepseek_model_label,
         "planner_type": planner_type,
         "evaluator_type": evaluator_type,
         "memory_enabled": memory_enabled,
@@ -698,6 +704,16 @@ with st.sidebar:
     st.divider()
     st.caption("Agent（智能体）会自动使用上传资料，并联网补充资料；没有上传资料时，会直接联网收集。")
     st.write("DeepSeek（大模型服务）:", "已配置" if deepseek_key else "未配置")
+    default_deepseek_model_index = list(DEEPSEEK_MODEL_LABELS.values()).index(agent.DEEPSEEK_MODEL) if agent.DEEPSEEK_MODEL in DEEPSEEK_MODEL_LABELS.values() else 0
+    deepseek_model_label = st.selectbox(
+        "DeepSeek Model（模型）",
+        list(DEEPSEEK_MODEL_LABELS.keys()),
+        index=default_deepseek_model_index,
+        help="Flash 更快更省；Pro 通常质量更高但成本和耗时更高。两者共用同一个 DeepSeek API key。",
+    )
+    deepseek_model = DEEPSEEK_MODEL_LABELS[deepseek_model_label]
+    agent.DEEPSEEK_MODEL = deepseek_model
+    agent_runtime.PLANNER_MODEL = deepseek_model
     st.write("通义百炼:", "已配置" if dashscope_key else "未配置")
     reranker_status = "已启用" if agent.ENABLE_RERANKER else "未启用"
     st.write("Reranker（重排序器）:", reranker_status)
@@ -708,6 +724,7 @@ with st.sidebar:
     st.write("Retrieval（检索）:", retrieval_strategy_label)
     st.write("Packing（上下文打包）:", context_packing_label)
     st.write("Chunking（切分）:", "、".join(chunking_strategy_labels))
+    st.write("Model（模型）:", deepseek_model_label)
     st.write("Evaluator（评估器）:", evaluator_type_label)
 
     if "upload_status" in st.session_state and st.session_state.upload_status:
@@ -881,7 +898,8 @@ if prompt:
                         f"Planner（规划器）来源：{planner_label}｜Router（路由器）：{router_mode_label}｜"
                         f"Source（资料来源）：{source_strategy_label}｜Retrieval（检索）：{retrieval_strategy_label}｜"
                         f"Packing（上下文打包）：{context_packing_label}｜"
-                        f"Chunking（切分）：{'、'.join(chunking_strategy_labels)}｜Evaluator（评估器）：{evaluator_type_label}"
+                        f"Chunking（切分）：{'、'.join(chunking_strategy_labels)}｜"
+                        f"Model（模型）：{deepseek_model_label}｜Evaluator（评估器）：{evaluator_type_label}"
                     )
                     for index, step in enumerate(result.get("steps", []), start=1):
                         status_map = {
