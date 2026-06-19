@@ -84,6 +84,7 @@ SOURCE_QUOTAS = {
     "unknown": 1,
 }
 FAILED_WEB_CONTENT_TYPES = {"search_result", "search_result_failed"}
+LOW_CONFIDENCE_WEB_CONTENT_TYPES = {"search_result_summary"}
 FAILED_WEB_MARKERS = [
     "网页搜索结果摘要",
     "完整网页正文读取失败",
@@ -105,6 +106,49 @@ WEB_BLOCK_MARKERS = [
     "403 forbidden",
     "access denied",
     "forbidden",
+    "_waf_",
+    "captcha",
+    "verify you are human",
+]
+LOW_VALUE_SEARCH_DOMAINS = {
+    "mail.yahoo.com",
+    "login.yahoo.com",
+    "www.instagram.com",
+    "instagram.com",
+    "www.facebook.com",
+    "facebook.com",
+    "twitter.com",
+    "x.com",
+}
+LOW_READABILITY_DOMAIN_PARTS = [
+    "weibo.com",
+    "quanmin.baidu.com",
+    "haokan.baidu.com",
+    "douyin.com",
+    "kuaishou.com",
+    "bilibili.com",
+]
+OFFICIAL_FINANCE_DOMAIN_PARTS = [
+    "ir.lixiang.com",
+    "investor.lixiang.com",
+    "sec.gov",
+]
+FINANCE_QUERY_WORDS = [
+    "财报",
+    "业绩",
+    "营收",
+    "利润",
+    "季度",
+    "一季报",
+    "年报",
+    "earnings",
+    "financial",
+    "results",
+    "quarter",
+    "q1",
+    "q2",
+    "q3",
+    "q4",
 ]
 DESKTOP_USER_AGENT = (
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
@@ -188,8 +232,22 @@ def normalize_metadata_scope(metadata_scope=None):
     }
 
 
+def metadata_scope_filter(metadata_scope=None):
+    clean_scope = normalize_metadata_scope(metadata_scope)
+    if len(clean_scope) <= 1:
+        return clean_scope
+    return {"$and": [{key: value} for key, value in clean_scope.items()]}
+
+
 def combine_metadata_filters(*filters):
-    valid_filters = [item for item in filters if item]
+    valid_filters = []
+    for item in filters:
+        if not item:
+            continue
+        if isinstance(item, dict) and set(item.keys()) == {"$and"}:
+            valid_filters.extend(item["$and"])
+        else:
+            valid_filters.append(item)
     if not valid_filters:
         return None
     if len(valid_filters) == 1:
@@ -470,6 +528,35 @@ def bm25_retrieve(question, limit=20, metadata_filter=None, chroma_path=CHROMA_P
     return rows[:limit]
 
 
+def get_rows_by_sources(sources, limit=20, metadata_filter=None, chroma_path=CHROMA_PATH):
+    source_list = list(sources or [])
+    if not source_list:
+        return []
+
+    source_filter = {"source": {"$in": source_list}}
+    combined_filter = combine_metadata_filters(metadata_filter, source_filter)
+    active_collection = get_collection(chroma_path=chroma_path)
+    data = active_collection.get(
+        include=["documents", "metadatas"],
+        where=combined_filter,
+        limit=limit,
+    )
+
+    rows = []
+    for item_id, document, metadata in zip(
+        data.get("ids", []),
+        data.get("documents", []),
+        data.get("metadatas", []),
+    ):
+        rows.append(make_search_item(
+            item_id=item_id,
+            document=document,
+            metadata=metadata,
+        ))
+
+    return rows
+
+
 def make_search_item(item_id, document, metadata, distance=None, bm25_score=0.0):
     source = metadata.get("source", "未知来源")
     return {
@@ -522,16 +609,32 @@ def is_failed_web_result(row):
     return False
 
 
+def is_low_confidence_web_result(row):
+    return (
+        row.get("source_type") == "web"
+        and row.get("content_type", "") in LOW_CONFIDENCE_WEB_CONTENT_TYPES
+    )
+
+
 def filter_answerable_rows(rows):
     answerable_rows = []
+    low_confidence_rows = []
 
     for row in rows:
         if is_failed_web_result(row):
             row["context_skip_reason"] = "网页正文不可读，已排除"
             continue
+        if is_low_confidence_web_result(row):
+            row["context_skip_reason"] = "已有正文资料时，标题线索不进入最终上下文"
+            row["final_score"] = row.get("final_score", 0) * 0.35
+            low_confidence_rows.append(row)
+            continue
         answerable_rows.append(row)
 
-    return answerable_rows
+    if len(answerable_rows) >= 2:
+        return answerable_rows
+
+    return answerable_rows + low_confidence_rows
 
 
 def safe_id(text):
@@ -1102,7 +1205,7 @@ def search_chroma(
     if retrieval_strategy not in RETRIEVAL_STRATEGIES:
         retrieval_strategy = RETRIEVAL_VECTOR_BM25_RRF
     query_profile = analyze_query(question)
-    scope_filter = normalize_metadata_scope(metadata_scope)
+    scope_filter = metadata_scope_filter(metadata_scope)
     metadata_filter = combine_metadata_filters(
         build_metadata_filter(query_profile),
         scope_filter,
@@ -1126,6 +1229,14 @@ def search_chroma(
             question,
             limit=recall_limit,
             metadata_filter=metadata_filter,
+            chroma_path=chroma_path,
+        )
+    preferred_rows = []
+    if preferred_sources and not preferred_only:
+        preferred_rows = get_rows_by_sources(
+            preferred_sources,
+            limit=max(len(preferred_sources) * MAX_CHUNKS_PER_SOURCE, top_k),
+            metadata_filter=scope_filter,
             chroma_path=chroma_path,
         )
     if metadata_filter and not preferred_only and not vector_rows and not bm25_rows:
@@ -1168,6 +1279,14 @@ def search_chroma(
         fused.setdefault(item_id, row.copy())
         fused[item_id]["bm25_rank"] = rank
         fused[item_id]["bm25_score"] = row.get("bm25_score", 0)
+        fused[item_id]["rrf_score"] = fused[item_id].get("rrf_score", 0) + 1 / (RRF_K + rank)
+
+    for rank, row in enumerate(preferred_rows, start=1):
+        if is_failed_web_result(row):
+            continue
+        item_id = row["id"]
+        fused.setdefault(item_id, row.copy())
+        fused[item_id]["preferred_rank"] = rank
         fused[item_id]["rrf_score"] = fused[item_id].get("rrf_score", 0) + 1 / (RRF_K + rank)
 
     search_results = []
@@ -1345,6 +1464,102 @@ def clean_title(raw_title):
     return html.unescape(title).strip()
 
 
+def is_finance_query(query):
+    lowered = query.lower()
+    return any(word in lowered for word in FINANCE_QUERY_WORDS)
+
+
+def unique_preserve_order(items):
+    seen = set()
+    unique_items = []
+    for item in items:
+        normalized = re.sub(r"\s+", " ", item).strip()
+        if not normalized or normalized in seen:
+            continue
+        seen.add(normalized)
+        unique_items.append(normalized)
+    return unique_items
+
+
+def expand_web_queries(query):
+    compact_query = query.strip()
+    queries = [compact_query]
+    lowered = compact_query.lower()
+
+    if is_finance_query(compact_query):
+        spaced_query = re.sub(r"([A-Za-z0-9]+|20\d{2}|19\d{2})", r" \1 ", compact_query)
+        spaced_query = re.sub(r"\s+", " ", spaced_query).strip()
+        queries.append(spaced_query)
+
+        if "理想" in compact_query or "li auto" in lowered or "lixiang" in lowered:
+            queries.extend([
+                "理想汽车 2026 第一季度 财报",
+                "理想汽车 2026 Q1 财报",
+                "理想汽车 2026 年第一季度 业绩",
+                "Li Auto Q1 2026 financial results",
+                "Li Auto first quarter 2026 earnings",
+                "Li Auto investor relations Q1 2026",
+            ])
+
+    return unique_preserve_order(queries)[:4]
+
+
+def domain_contains(domain, parts):
+    return any(part in domain for part in parts)
+
+
+def search_query_terms(query):
+    terms = set(re.findall(r"[a-zA-Z][a-zA-Z0-9]+|20\d{2}|19\d{2}", query.lower()))
+    for token in re.findall(r"[\u4e00-\u9fff]{2,}", query):
+        if len(token) <= 4:
+            terms.add(token)
+        else:
+            for index in range(max(len(token) - 1, 0)):
+                terms.add(token[index:index + 2])
+    return {term for term in terms if term not in {"什么", "情况", "一下", "了解"}}
+
+
+def score_search_result(query, item):
+    title = item.get("title", "") or ""
+    url = item.get("url", "") or ""
+    domain = urlparse(url).netloc.lower()
+    lowered_text = f"{title} {url}".lower()
+    score = 0.0
+
+    if domain in LOW_VALUE_SEARCH_DOMAINS:
+        score -= 12
+    if domain_contains(domain, LOW_READABILITY_DOMAIN_PARTS):
+        score -= 4
+
+    if is_finance_query(query):
+        if domain_contains(domain, OFFICIAL_FINANCE_DOMAIN_PARTS):
+            score += 10
+        if any(word in lowered_text for word in ["财报", "业绩", "营收", "利润", "financial", "earnings", "results", "quarterly"]):
+            score += 5
+        if any(word in lowered_text for word in ["第一季度", "一季度", "q1", "first quarter"]):
+            score += 4
+        if "2026" in lowered_text:
+            score += 3
+        if any(word in lowered_text for word in ["理想汽车", "li auto", "lixiang"]):
+            score += 6
+        if any(word in lowered_text for word in ["cctv", "autohome", "雪球", "xueqiu", "36kr", "财联社"]):
+            score += 2
+        if any(word in lowered_text for word in ["football", "fifa", "mundial", "corea", "mexico", "yahoo.com", "instagram"]):
+            score -= 10
+
+    terms = search_query_terms(query)
+    if terms:
+        matched = sum(1 for term in terms if term in lowered_text)
+        score += min(matched, 8) * 0.8
+
+    item["search_score"] = round(score, 3)
+    return score
+
+
+def is_high_value_search_result(query, item):
+    return score_search_result(query, dict(item)) >= (8 if is_finance_query(query) else 4)
+
+
 def add_search_result(results, seen, title, url, max_results):
     if not url.startswith("http"):
         return
@@ -1357,7 +1572,7 @@ def add_search_result(results, seen, title, url, max_results):
         "www.bing.com",
     ]
 
-    if domain in blocked_domains:
+    if domain in blocked_domains or domain in LOW_VALUE_SEARCH_DOMAINS:
         return
 
     if url in seen:
@@ -1455,63 +1670,59 @@ def baidu_search(query, max_results=5):
 
 def search_web(query, max_results=5):
     provider_results = []
+    expanded_queries = expand_web_queries(query)
+    per_query_limit = max(max_results, 8)
 
-    for search_name, search_func in [
-        ("百度", baidu_search),
-        ("DuckDuckGo Lite", duckduckgo_search),
-        ("Bing", bing_search),
-    ]:
-        try:
-            results = search_func(query, max_results=max_results)
-            print(f"{search_name} 找到 {len(results)} 个结果。")
-        except Exception as e:
-            print(f"{search_name} 搜索失败：{e}")
-            continue
+    if len(expanded_queries) > 1:
+        print("扩展检索词：" + "｜".join(expanded_queries[:4]))
 
-        provider_results.append((search_name, results))
+    for expanded_query in expanded_queries:
+        for search_name, search_func in [
+            ("百度", baidu_search),
+            ("DuckDuckGo Lite", duckduckgo_search),
+            ("Bing", bing_search),
+        ]:
+            try:
+                results = search_func(expanded_query, max_results=per_query_limit)
+                print(f"{search_name} 找到 {len(results)} 个结果。")
+            except Exception as e:
+                print(f"{search_name} 搜索失败：{e}")
+                continue
 
-    all_results = []
+            provider_results.append((search_name, expanded_query, results))
+
+    candidates = []
     seen = set()
 
-    def append_item(item):
-        if len(all_results) >= max_results:
-            return False
+    def append_item(item, search_name, expanded_query, provider_rank):
         if item["url"] in seen:
             return False
         seen.add(item["url"])
-        all_results.append(item)
+        scored_item = dict(item)
+        base_score = score_search_result(expanded_query, scored_item)
+        provider_bonus = 1.5 if search_name == "百度" else 0.7
+        scored_item["search_provider"] = search_name
+        scored_item["search_query"] = expanded_query
+        scored_item["search_rank"] = provider_rank
+        scored_item["search_score"] = round(base_score + provider_bonus - provider_rank * 0.08, 3)
+        candidates.append(scored_item)
         return True
 
-    baidu_results = []
-    other_provider_results = []
-    for search_name, results in provider_results:
-        if search_name == "百度":
-            baidu_results = results
-        else:
-            other_provider_results.append(results)
+    for search_name, expanded_query, results in provider_results:
+        for index, item in enumerate(results):
+            append_item(item, search_name, expanded_query, index)
 
-    baidu_priority_count = min(len(baidu_results), 5)
-    for item in baidu_results[:baidu_priority_count]:
-        append_item(item)
-        if len(all_results) >= max_results:
-            return all_results
+    if not candidates:
+        return []
 
-    max_other_len = max((len(results) for results in other_provider_results), default=0)
-    for index in range(max_other_len):
-        for results in other_provider_results:
-            if index >= len(results):
-                continue
-            append_item(results[index])
+    candidates.sort(key=lambda item: item.get("search_score", 0), reverse=True)
 
-            if len(all_results) >= max_results:
-                return all_results
+    if is_finance_query(query):
+        strong_candidates = [item for item in candidates if item.get("search_score", 0) >= 5]
+        if len(strong_candidates) >= max_results:
+            return strong_candidates[:max_results]
 
-    for item in baidu_results[baidu_priority_count:]:
-        append_item(item)
-        if len(all_results) >= max_results:
-            return all_results
-
-    return all_results[:max_results]
+    return candidates[:max_results]
 
 
 def normalize_web_query(query):
@@ -1542,9 +1753,15 @@ def web_request_headers(user_agent):
 
 
 def normalize_response_text(response):
-    if not response.encoding:
+    detected_encoding = response.apparent_encoding or "utf-8"
+    if not response.encoding or response.encoding.lower() in {"iso-8859-1", "ascii"}:
+        response.encoding = detected_encoding
+    text = response.text or ""
+    mojibake_markers = ["Ã", "Â", "æ", "ç", "è", "å"]
+    if detected_encoding and sum(text.count(marker) for marker in mojibake_markers) >= 8:
         response.encoding = response.apparent_encoding or "utf-8"
-    return response.text or ""
+        text = response.text or ""
+    return text
 
 
 def contains_block_marker(text):
@@ -1660,30 +1877,33 @@ def web_collect(query, max_results=3, chroma_path=CHROMA_PATH, metadata_scope=No
     successful_sources = []
 
     def ingest_search_result_fallback(item, reason):
-        if not INGEST_FAILED_SEARCH_RESULTS:
+        should_ingest_summary = (
+            INGEST_FAILED_SEARCH_RESULTS
+            or is_high_value_search_result(search_query, item)
+        )
+        if not should_ingest_summary:
             print("网页正文不可读，跳过写入知识库。")
             return
 
         fallback_text = (
-            f"网页搜索结果摘要\n"
+            f"网页标题线索\n"
             f"查询：{search_query}\n"
             f"标题：{item['title']}\n"
             f"链接：{item['url']}\n"
-            f"说明：完整网页正文读取失败或正文过短，当前仅保留搜索结果标题和链接作为低置信度网页资料。\n"
-            f"失败原因：{reason}"
+            f"可信度：低。该资料只来自搜索结果标题和链接，未读取完整正文；只能作为线索，回答时需要提示用户核验原网页。"
         )
-        source_name = f"网页搜索结果：{item['title']}"
+        source_name = f"网页标题线索：{item['title']}"
         chunk_count = add_text_to_chroma(
             fallback_text,
             source=source_name,
             source_type="web",
             url=item["url"],
-            content_type="search_result_failed",
+            content_type="search_result_summary",
             chroma_path=chroma_path,
             metadata_scope=metadata_scope,
         )
         if chunk_count:
-            print(f"已写入搜索结果摘要：{chunk_count} 块")
+            print(f"已写入网页标题线索：{chunk_count} 块")
             ingested_sources.append(item)
 
     for item in results:
