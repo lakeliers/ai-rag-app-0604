@@ -1,5 +1,7 @@
 import os
 import inspect
+import hashlib
+from uuid import uuid4
 
 import streamlit as st
 
@@ -94,7 +96,9 @@ def format_chunking_labels(chunking_strategy):
 
 
 def file_key(uploaded_file, chunking_strategy):
-    return f"{uploaded_file.name}:{len(uploaded_file.getvalue())}:{format_chunking_strategy(chunking_strategy)}"
+    file_bytes = uploaded_file.getvalue()
+    content_hash = hashlib.sha256(file_bytes).hexdigest()[:16]
+    return f"{uploaded_file.name}:{len(file_bytes)}:{content_hash}:{format_chunking_strategy(chunking_strategy)}"
 
 
 def ingest_uploaded_files(uploaded_files, question, chunking_strategy):
@@ -102,6 +106,7 @@ def ingest_uploaded_files(uploaded_files, question, chunking_strategy):
         return []
 
     ingested_sources = []
+    metadata_scope = {"session_id": st.session_state.rag_session_id}
 
     for uploaded_file in uploaded_files:
         key = file_key(uploaded_file, chunking_strategy)
@@ -127,6 +132,7 @@ def ingest_uploaded_files(uploaded_files, question, chunking_strategy):
                 url=uploaded_file.name,
                 content_type="image",
                 chunking_strategy=chunking_strategy,
+                metadata_scope=metadata_scope,
             )
         else:
             sections = read_upload_as_sections(uploaded_file)
@@ -137,6 +143,7 @@ def ingest_uploaded_files(uploaded_files, question, chunking_strategy):
                 source_type="upload",
                 url=uploaded_file.name,
                 chunking_strategy=chunking_strategy,
+                metadata_scope=metadata_scope,
             )
 
         st.session_state.ingested_uploads[key] = source
@@ -506,6 +513,8 @@ def render_badcase_form():
                     if save_result["github_issue_url"]:
                         st.success("已创建 GitHub Issue（线上问题单）。")
                         st.write(save_result["github_issue_url"])
+                    if save_result.get("github_error"):
+                        st.warning(f"本地已保存，但 GitHub Issue 创建失败：{save_result['github_error']}")
             except Exception as error:
                 st.error(str(error))
 
@@ -737,6 +746,9 @@ with st.sidebar:
 if "messages" not in st.session_state:
     st.session_state.messages = []
 
+if "rag_session_id" not in st.session_state:
+    st.session_state.rag_session_id = f"session_{uuid4().hex[:12]}"
+
 if "last_sources" not in st.session_state:
     st.session_state.last_sources = []
 
@@ -820,6 +832,7 @@ if prompt:
                         planner_type=planner_type,
                         evaluator_type=evaluator_type,
                         memory_context=memory_context,
+                        metadata_scope={"session_id": st.session_state.rag_session_id},
                     )
                 else:
                     result = call_with_supported_kwargs(
@@ -836,6 +849,7 @@ if prompt:
                         planner_type=planner_type,
                         evaluator_type=evaluator_type,
                         memory_context=memory_context,
+                        metadata_scope={"session_id": st.session_state.rag_session_id},
                     )
                     if run_mode == "自主任务":
                         result["planner_mode"] = "autonomous_fallback"

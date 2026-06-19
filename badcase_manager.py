@@ -287,6 +287,7 @@ def save_case(
         "local_badcase_saved": False,
         "local_eval_saved": False,
         "github_issue_url": "",
+        "github_error": "",
         "errors": [],
     }
 
@@ -308,14 +309,10 @@ def save_case(
     badcase_errors = validate_badcase_log(badcase_log)
     if badcase_errors:
         result["errors"].extend(badcase_errors)
-    result["errors"].extend(validate_regression_case(case))
+    if local_requested:
+        result["errors"].extend(validate_regression_case(case))
     if result["errors"]:
         return result
-
-    if github_requested:
-        issue_url = create_github_issue(badcase_log)
-        result["github_issue_url"] = issue_url
-        badcase_log["github_issue_url"] = issue_url
 
     append_jsonl(BAD_CASES_PATH, badcase_log)
     result["local_badcase_saved"] = True
@@ -323,5 +320,13 @@ def save_case(
     if local_requested:
         append_jsonl(EVAL_CASES_PATH, case)
         result["local_eval_saved"] = True
+
+    if github_requested:
+        try:
+            issue_url = create_github_issue(badcase_log)
+            result["github_issue_url"] = issue_url
+            badcase_log["github_issue_url"] = issue_url
+        except Exception as exc:
+            result["github_error"] = str(exc)
 
     return result

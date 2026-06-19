@@ -6,6 +6,8 @@ import re
 import shlex
 import math
 import time
+import hashlib
+from uuid import uuid4
 from collections import Counter, defaultdict
 from html.parser import HTMLParser
 from urllib.parse import quote_plus, unquote, urlparse, parse_qs
@@ -140,20 +142,59 @@ INTENT_WEIGHTS = {
 }
 
 
-print("正在加载本地向量模型...")
 LOCAL_FILES_ONLY = os.getenv("LOCAL_FILES_ONLY", "0") == "1"
-embedding_model = SentenceTransformer(
-    EMBEDDING_MODEL_NAME,
-    local_files_only=LOCAL_FILES_ONLY,
-)
-
-chroma_client = chromadb.PersistentClient(path=CHROMA_PATH)
-collection = chroma_client.get_or_create_collection(name=COLLECTION_NAME)
+_embedding_model = None
+_collection_cache = {}
 
 conversation_history = []
 last_sources = []
 reranker_model = None
 reranker_load_failed = False
+
+
+def get_embedding_model():
+    global _embedding_model
+    if _embedding_model is None:
+        print("正在加载本地向量模型...")
+        _embedding_model = SentenceTransformer(
+            EMBEDDING_MODEL_NAME,
+            local_files_only=LOCAL_FILES_ONLY,
+        )
+    return _embedding_model
+
+
+def get_collection(chroma_path=CHROMA_PATH, collection_name=COLLECTION_NAME):
+    key = (chroma_path, collection_name)
+    if key not in _collection_cache:
+        client = chromadb.PersistentClient(path=chroma_path)
+        _collection_cache[key] = client.get_or_create_collection(name=collection_name)
+    return _collection_cache[key]
+
+
+def content_hash(text, length=12):
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()[:length]
+
+
+def make_document_key(source_type, source, url="", document_hash=""):
+    raw = "|".join([source_type or "", source or "", url or "", document_hash or ""])
+    return content_hash(raw, length=16)
+
+
+def normalize_metadata_scope(metadata_scope=None):
+    return {
+        key: value
+        for key, value in (metadata_scope or {}).items()
+        if value not in (None, "")
+    }
+
+
+def combine_metadata_filters(*filters):
+    valid_filters = [item for item in filters if item]
+    if not valid_filters:
+        return None
+    if len(valid_filters) == 1:
+        return valid_filters[0]
+    return {"$and": valid_filters}
 
 
 class SimpleTextExtractor(HTMLParser):
@@ -220,7 +261,7 @@ def split_section(section, chunk_size=500, chunk_overlap=80):
 
 
 def embed_texts(texts):
-    return embedding_model.encode(texts).tolist()
+    return get_embedding_model().encode(texts).tolist()
 
 
 def summarize_section_for_retrieval(section, force=False):
@@ -262,10 +303,23 @@ def summarize_section_for_retrieval(section, force=False):
 def analyze_query(question):
     lowered = question.lower()
     latest_words = ["最近", "最新", "今天", "新闻", "动态", "趋势", "刚刚", "现在"]
+    freshness_suppression_words = [
+        "不需要最新",
+        "不要最新",
+        "不用最新",
+        "无需最新",
+        "不需要新闻",
+        "不要新闻",
+        "不用联网",
+        "不要联网",
+        "不需要联网",
+        "只解释定义",
+        "只要定义",
+    ]
     definition_words = ["是什么", "定义", "概念", "解释一下", "介绍一下", "什么意思"]
     policy_words = ["prd", "需求", "规则", "政策", "制度", "上线时间", "价格", "方案", "口径"]
 
-    if any(word in question for word in latest_words):
+    if any(word in question for word in latest_words) and not any(word in lowered for word in freshness_suppression_words):
         intent = "latest_news"
     elif any(word in lowered for word in policy_words):
         intent = "policy_or_prd"
@@ -352,11 +406,12 @@ def tokenize_text(text):
     return tokens
 
 
-def bm25_retrieve(question, limit=20, metadata_filter=None):
+def bm25_retrieve(question, limit=20, metadata_filter=None, chroma_path=CHROMA_PATH):
+    active_collection = get_collection(chroma_path=chroma_path)
     if metadata_filter:
-        data = collection.get(include=["documents", "metadatas"], where=metadata_filter)
+        data = active_collection.get(include=["documents", "metadatas"], where=metadata_filter)
     else:
-        data = collection.get(include=["documents", "metadatas"])
+        data = active_collection.get(include=["documents", "metadatas"])
     ids = data.get("ids", [])
     documents = data.get("documents", [])
     metadatas = data.get("metadatas", [])
@@ -454,8 +509,14 @@ def is_failed_web_result(row):
     if source.startswith("网页搜索结果："):
         return True
 
+    failure_prefix = lowered_document[:260]
     for marker in FAILED_WEB_MARKERS:
-        if marker.lower() in lowered_document:
+        marker_lower = marker.lower()
+        if failure_prefix.startswith(marker_lower):
+            return True
+        if marker_lower in failure_prefix and any(
+            prefix in failure_prefix for prefix in ["说明：", "失败原因", "完整网页正文读取失败"]
+        ):
             return True
 
     return False
@@ -507,7 +568,7 @@ def choose_chunking_strategy(section, enabled_strategies):
         return CHUNKING_PARENT_CHILD
     if CHUNKING_PLAIN in enabled_strategies:
         return CHUNKING_PLAIN
-    return CHUNKING_PARENT_CHILD
+    return CHUNKING_PLAIN
 
 
 def build_chunk_candidates(section, source, section_index, chunking_strategy):
@@ -541,7 +602,17 @@ def build_chunk_candidates(section, source, section_index, chunking_strategy):
     return chunk_section(section, source=source, section_index=section_index)
 
 
-def add_text_to_chroma(text, source, source_type="local", url="", content_type="text", created_at=None, chunking_strategy=CHUNKING_PARENT_CHILD):
+def add_text_to_chroma(
+    text,
+    source,
+    source_type="local",
+    url="",
+    content_type="text",
+    created_at=None,
+    chunking_strategy=CHUNKING_PARENT_CHILD,
+    chroma_path=CHROMA_PATH,
+    metadata_scope=None,
+):
     section = ParsedSection(text=text, content_type=content_type)
     return add_sections_to_chroma(
         [section],
@@ -550,10 +621,21 @@ def add_text_to_chroma(text, source, source_type="local", url="", content_type="
         url=url,
         created_at=created_at,
         chunking_strategy=chunking_strategy,
+        chroma_path=chroma_path,
+        metadata_scope=metadata_scope,
     )
 
 
-def add_sections_to_chroma(sections, source, source_type="local", url="", created_at=None, chunking_strategy=CHUNKING_PARENT_CHILD):
+def add_sections_to_chroma(
+    sections,
+    source,
+    source_type="local",
+    url="",
+    created_at=None,
+    chunking_strategy=CHUNKING_PARENT_CHILD,
+    chroma_path=CHROMA_PATH,
+    metadata_scope=None,
+):
     chunk_rows = []
     enabled_strategies = normalize_chunking_strategies(chunking_strategy)
 
@@ -577,16 +659,29 @@ def add_sections_to_chroma(sections, source, source_type="local", url="", create
         return 0
 
     now = int(created_at or time.time())
+    batch_id = uuid4().hex[:12]
     ids = []
     metadatas = []
     chunks = []
-    document_key = f"{source_type}:{source}:{url or source}"
+    scope = normalize_metadata_scope(metadata_scope)
+    source_hash = content_hash(f"{source_type}|{source}|{url or source}", length=12)
+    document_hash = content_hash("\n".join(chunk.text for _, _, _, chunk in chunk_rows), length=12)
+    document_key = f"{source_type}:{safe_id(source)}:{source_hash}:{document_hash}"
 
     for index, (section_index, chunk_index, section, chunk) in enumerate(chunk_rows):
-        item_id = f"{source_type}_{safe_id(source)}_{now}_{section_index}_{chunk_index}"
+        chunk_hash = content_hash(chunk.text, length=12)
+        namespace = scope.get("eval_run_id") or scope.get("session_id") or scope.get("user_id") or "global"
+        item_id = ":".join([
+            safe_id(str(namespace)),
+            safe_id(document_key),
+            batch_id,
+            str(section_index),
+            str(chunk_index),
+            chunk_hash,
+        ])
         ids.append(item_id)
         chunks.append(chunk.text)
-        metadatas.append({
+        metadata = {
             "source": source,
             "source_type": source_type,
             "url": url,
@@ -603,11 +698,15 @@ def add_sections_to_chroma(sections, source, source_type="local", url="", create
             "chunk_type": chunk.chunk_type,
             "parent_id": chunk.parent_id,
             "parent_text": chunk.parent_text[:PARENT_TEXT_CHAR_LIMIT],
-        })
+            "batch_id": batch_id,
+            "chunk_hash": chunk_hash,
+        }
+        metadata.update(scope)
+        metadatas.append(metadata)
 
     embeddings = embed_texts(chunks)
 
-    collection.upsert(
+    get_collection(chroma_path=chroma_path).upsert(
         ids=ids,
         documents=chunks,
         metadatas=metadatas,
@@ -618,7 +717,7 @@ def add_sections_to_chroma(sections, source, source_type="local", url="", create
 
 
 def seed_local_note(file_path="my_note.md"):
-    if collection.count() > 0:
+    if get_collection().count() > 0:
         return 0
 
     if not os.path.exists(file_path):
@@ -683,16 +782,17 @@ def build_metadata_filter(query_profile):
     }
 
 
-def vector_retrieve(question, limit=20, metadata_filter=None):
+def vector_retrieve(question, limit=20, metadata_filter=None, chroma_path=CHROMA_PATH):
     query_embedding = embed_texts([question])
+    active_collection = get_collection(chroma_path=chroma_path)
     if metadata_filter:
-        results = collection.query(
+        results = active_collection.query(
             query_embeddings=query_embedding,
             n_results=limit,
             where=metadata_filter,
         )
     else:
-        results = collection.query(
+        results = active_collection.query(
             query_embeddings=query_embedding,
             n_results=limit,
         )
@@ -996,24 +1096,53 @@ def search_chroma(
     preferred_only=False,
     retrieval_strategy=RETRIEVAL_VECTOR_BM25_RRF,
     context_packing_strategy=CONTEXT_STRICT_BUDGET,
+    chroma_path=CHROMA_PATH,
+    metadata_scope=None,
 ):
     if retrieval_strategy not in RETRIEVAL_STRATEGIES:
         retrieval_strategy = RETRIEVAL_VECTOR_BM25_RRF
     query_profile = analyze_query(question)
-    metadata_filter = build_metadata_filter(query_profile)
+    scope_filter = normalize_metadata_scope(metadata_scope)
+    metadata_filter = combine_metadata_filters(
+        build_metadata_filter(query_profile),
+        scope_filter,
+    )
     preferred_sources = set(preferred_sources or [])
     if preferred_only and preferred_sources:
-        metadata_filter = {"source": {"$in": list(preferred_sources)}}
+        metadata_filter = combine_metadata_filters(
+            scope_filter,
+            {"source": {"$in": list(preferred_sources)}},
+        )
     recall_limit = max(top_k * 8, 24)
-    vector_rows = vector_retrieve(question, limit=recall_limit, metadata_filter=metadata_filter)
+    vector_rows = vector_retrieve(
+        question,
+        limit=recall_limit,
+        metadata_filter=metadata_filter,
+        chroma_path=chroma_path,
+    )
     bm25_rows = []
     if retrieval_strategy != RETRIEVAL_VECTOR_ONLY:
-        bm25_rows = bm25_retrieve(question, limit=recall_limit, metadata_filter=metadata_filter)
+        bm25_rows = bm25_retrieve(
+            question,
+            limit=recall_limit,
+            metadata_filter=metadata_filter,
+            chroma_path=chroma_path,
+        )
     if metadata_filter and not preferred_only and not vector_rows and not bm25_rows:
-        metadata_filter = None
-        vector_rows = vector_retrieve(question, limit=recall_limit)
+        metadata_filter = scope_filter or None
+        vector_rows = vector_retrieve(
+            question,
+            limit=recall_limit,
+            metadata_filter=metadata_filter,
+            chroma_path=chroma_path,
+        )
         if retrieval_strategy != RETRIEVAL_VECTOR_ONLY:
-            bm25_rows = bm25_retrieve(question, limit=recall_limit)
+            bm25_rows = bm25_retrieve(
+                question,
+                limit=recall_limit,
+                metadata_filter=metadata_filter,
+                chroma_path=chroma_path,
+            )
     question_keywords = extract_query_keywords(question)
     query_profile["keywords"] = question_keywords
 
@@ -1345,10 +1474,13 @@ def search_web(query, max_results=5):
     seen = set()
 
     def append_item(item):
+        if len(all_results) >= max_results:
+            return False
         if item["url"] in seen:
-            return
+            return False
         seen.add(item["url"])
         all_results.append(item)
+        return True
 
     baidu_results = []
     other_provider_results = []
@@ -1361,6 +1493,8 @@ def search_web(query, max_results=5):
     baidu_priority_count = min(len(baidu_results), 5)
     for item in baidu_results[:baidu_priority_count]:
         append_item(item)
+        if len(all_results) >= max_results:
+            return all_results
 
     max_other_len = max((len(results) for results in other_provider_results), default=0)
     for index in range(max_other_len):
@@ -1377,7 +1511,7 @@ def search_web(query, max_results=5):
         if len(all_results) >= max_results:
             return all_results
 
-    return all_results
+    return all_results[:max_results]
 
 
 def normalize_web_query(query):
@@ -1510,7 +1644,7 @@ def fetch_web_text(url):
     raise WebTextFetchError("；".join(errors))
 
 
-def web_collect(query, max_results=3):
+def web_collect(query, max_results=3, chroma_path=CHROMA_PATH, metadata_scope=None):
     search_query = normalize_web_query(query)
     print("正在搜索网页...")
     if search_query != query:
@@ -1545,6 +1679,8 @@ def web_collect(query, max_results=3):
             source_type="web",
             url=item["url"],
             content_type="search_result_failed",
+            chroma_path=chroma_path,
+            metadata_scope=metadata_scope,
         )
         if chunk_count:
             print(f"已写入搜索结果摘要：{chunk_count} 块")
@@ -1568,7 +1704,14 @@ def web_collect(query, max_results=3):
             continue
 
         source_name = f"网页：{title}"
-        chunk_count = add_text_to_chroma(text, source=source_name, source_type="web", url=url)
+        chunk_count = add_text_to_chroma(
+            text,
+            source=source_name,
+            source_type="web",
+            url=url,
+            chroma_path=chroma_path,
+            metadata_scope=metadata_scope,
+        )
         print(f"已写入网页资料：{chunk_count} 块")
         ingested_sources.append(item)
         successful_sources.append(item)
@@ -1662,14 +1805,18 @@ def answer_with_rag(
     top_k=3,
     web_max_results=3,
     preferred_sources=None,
+    chroma_path=CHROMA_PATH,
+    metadata_scope=None,
 ):
     if use_web:
-        web_collect(question, max_results=web_max_results)
+        web_collect(question, max_results=web_max_results, chroma_path=chroma_path, metadata_scope=metadata_scope)
 
     search_results = search_chroma(
         question,
         top_k=top_k,
         preferred_sources=preferred_sources,
+        chroma_path=chroma_path,
+        metadata_scope=metadata_scope,
     )
     answer = ask_deepseek(question, search_results)
 

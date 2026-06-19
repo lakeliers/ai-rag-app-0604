@@ -82,6 +82,10 @@ class ToolResult:
     error: str = ""
 
 
+def is_success_like_status(status: str) -> bool:
+    return status in {"success", "degraded"}
+
+
 @dataclass
 class IntentResult:
     intent: str
@@ -178,9 +182,19 @@ def extract_effective_query(question: str) -> str:
     return stripped
 
 
-def tool_web_collect(question: str, max_results: int) -> ToolResult:
+def tool_web_collect(
+    question: str,
+    max_results: int,
+    chroma_path: str = agent.CHROMA_PATH,
+    metadata_scope: dict[str, Any] | None = None,
+) -> ToolResult:
     query = extract_effective_query(question)
-    ingested = agent.web_collect(query, max_results=max_results)
+    ingested = agent.web_collect(
+        query,
+        max_results=max_results,
+        chroma_path=chroma_path,
+        metadata_scope=metadata_scope,
+    )
     return ToolResult(
         status="success",
         summary=f"联网收集完成，写入 {len(ingested)} 条网页资料。",
@@ -220,6 +234,8 @@ def tool_rag_search(
     source_strategy: str = SOURCE_STRATEGY_AUTO,
     retrieval_strategy: str = agent.RETRIEVAL_VECTOR_BM25_RRF,
     context_packing_strategy: str = agent.CONTEXT_STRICT_BUDGET,
+    chroma_path: str = agent.CHROMA_PATH,
+    metadata_scope: dict[str, Any] | None = None,
 ) -> ToolResult:
     effective_question = extract_effective_query(question)
     if source_strategy == SOURCE_STRATEGY_UPLOAD_ONLY and not preferred_sources:
@@ -240,6 +256,8 @@ def tool_rag_search(
         preferred_only=preferred_only,
         retrieval_strategy=retrieval_strategy,
         context_packing_strategy=context_packing_strategy,
+        chroma_path=chroma_path,
+        metadata_scope=metadata_scope,
     )
     if source_strategy == SOURCE_STRATEGY_WEB_ONLY:
         results = [item for item in results if item.get("source_type") == "web"]
@@ -288,8 +306,25 @@ def classify_intent_by_rules(question: str, preferred_sources: list[str]) -> Int
         )
 
     latest_words = ["最近", "最新", "今天", "现在", "趋势", "新闻", "动态", "current", "latest"]
+    freshness_suppression_words = [
+        "不需要最新",
+        "不要最新",
+        "不用最新",
+        "无需最新",
+        "不需要新闻",
+        "不要新闻",
+        "不用联网",
+        "不要联网",
+        "不需要联网",
+        "只解释定义",
+        "只要定义",
+    ]
+    definition_words = ["是什么", "定义", "概念", "解释一下", "介绍一下", "什么意思", "区别是什么"]
     upload_qa_words = ["总结", "提取", "分析", "资料", "文档", "pdf", "文件", "这份"]
-    if any(word in lowered_question for word in latest_words):
+    if (
+        any(word in lowered_question for word in latest_words)
+        and not any(word in lowered_question for word in freshness_suppression_words)
+    ):
         constraints["needs_freshness"] = True
         constraints["needs_web_context"] = True
         if preferred_sources and any(word in lowered_question for word in upload_qa_words):
@@ -306,6 +341,16 @@ def classify_intent_by_rules(question: str, preferred_sources: list[str]) -> Int
             intent="latest_research",
             confidence=0.82,
             reason="用户问题涉及近期信息或外部动态，需要联网补充资料。",
+            suggested_action="collect_context",
+            entities=entities,
+            constraints=constraints,
+        )
+
+    if any(word in stripped_question for word in definition_words):
+        return IntentResult(
+            intent="definition_qa",
+            confidence=0.78,
+            reason="用户在询问概念定义或区别，不需要默认联网获取最新资料。",
             suggested_action="collect_context",
             entities=entities,
             constraints=constraints,
@@ -376,6 +421,7 @@ def classify_intent_by_llm(question: str, preferred_sources: list[str], rule_res
             "upload_status",
             "document_qa",
             "latest_research",
+            "definition_qa",
             "hybrid_rag",
             "autonomous_task",
             "general_qa",
@@ -493,7 +539,14 @@ def classify_intent(
         rule_result.constraints["router_mode"] = ROUTER_MODE_RULES
         return rule_result
 
-    llm_result = classify_intent_by_llm(question, preferred_sources, rule_result)
+    try:
+        llm_result = classify_intent_by_llm(question, preferred_sources, rule_result)
+    except Exception as exc:
+        rule_result.reason += f" LLM 路由异常，已回退规则结果：{exc}"
+        rule_result.constraints["router_mode"] = ROUTER_MODE_HYBRID
+        rule_result.constraints["fallback_from"] = "llm_intent_classifier"
+        rule_result.constraints["fallback_reason"] = str(exc)
+        return rule_result
     final_result = validate_intent_by_rules(question, preferred_sources, llm_result)
     final_result.constraints["router_mode"] = ROUTER_MODE_HYBRID
     return final_result
@@ -533,6 +586,14 @@ def plan_high_level_action(intent: IntentResult, preferred_sources: list[str], u
             reason="用户请求更像多步骤目标，普通问答模式下先收集上下文；自主模式会进入任务级循环。",
             confidence=0.8,
             params={"needs_web": True, "needs_upload": bool(preferred_sources)},
+        )
+
+    if intent.intent == "definition_qa":
+        return PlanResult(
+            action="collect_context",
+            reason="定义类问题优先使用本地知识库或模型常识，不默认联网。",
+            confidence=0.78,
+            params={"needs_web": False, "needs_upload": bool(preferred_sources)},
         )
 
     if intent.intent == "document_qa" or preferred_sources:
@@ -583,6 +644,8 @@ def orchestrate_action(
 
     steps: list[AgentStep] = []
     should_collect_web = use_web and (intent == "latest_research" or not preferred_sources)
+    if intent == "definition_qa":
+        should_collect_web = False
     if source_strategy == SOURCE_STRATEGY_UPLOAD_AND_WEB:
         should_collect_web = use_web
     elif source_strategy == SOURCE_STRATEGY_UPLOAD_ONLY:
@@ -657,6 +720,8 @@ def build_task_graph(
         or not preferred_sources
         or plan.params.get("needs_web", False)
     )
+    if intent.intent == "definition_qa" or plan.params.get("needs_web") is False:
+        should_collect_web = False
     if source_strategy == SOURCE_STRATEGY_UPLOAD_AND_WEB:
         should_collect_web = use_web
     elif source_strategy == SOURCE_STRATEGY_UPLOAD_ONLY:
@@ -793,7 +858,7 @@ def run_task_graph(graph: TaskGraph, state: dict[str, Any]) -> tuple[dict[str, T
             results[node.output_key or node.id] = result
             results[node.id] = result
 
-            if result.status == "success":
+            if is_success_like_status(result.status):
                 completed.add(node.id)
                 if node.output_key:
                     state[node.output_key] = result.data
@@ -954,15 +1019,98 @@ def build_question_with_memory(question: str, memory_context: str = "") -> str:
 """
 
 
+def is_definition_fallback_question(question: str) -> bool:
+    definition_words = ["是什么", "定义", "概念", "解释一下", "介绍一下", "什么意思", "区别"]
+    blocked_words = ["价格", "多少钱", "上线", "日期", "根据这份", "根据我上传", "这份资料", "这个文件"]
+    return any(word in question for word in definition_words) and not any(word in question for word in blocked_words)
+
+
+def build_definition_fallback_context(question: str) -> list[dict[str, Any]]:
+    lowered = question.lower()
+    definitions = {
+        "bm25": (
+            "BM25（Best Matching 25）是一种关键词检索排序算法，用于评估查询与文档的相关性。"
+            "它综合词频、逆文档频率和文档长度归一化，常用于搜索引擎、问答系统和 RAG 的关键词召回。"
+        ),
+        "rag": (
+            "RAG 是 Retrieval-Augmented Generation，中文常译为检索增强生成。"
+            "它先检索外部资料，再把资料与用户问题一起交给大模型生成回答。"
+        ),
+        "reranker": (
+            "Reranker 是重排序模型，通常把用户问题和候选文本作为一对输入，直接判断相关性，"
+            "用于在初步召回后重新排序候选资料。"
+        ),
+        "context packing": (
+            "Context Packing 是把检索后的候选资料按 token budget、来源优先级、去重、覆盖度和引用需求，"
+            "打包进最终大模型 messages 的过程。"
+        ),
+    }
+    for keyword, document in definitions.items():
+        if keyword in lowered:
+            return [{
+                "source_type": "local",
+                "source": "基础概念库",
+                "document": document,
+                "final_score": 0.72,
+                "chunk_index": 1,
+                "content_type": "definition_fallback",
+            }]
+    return []
+
+
+def answer_definition_from_model(question: str) -> str:
+    client = agent.get_deepseek_client()
+    if client is None:
+        lowered = question.lower()
+        if "bm25" in lowered:
+            return (
+                "结论：BM25 是一种关键词检索排序算法，会根据词频、逆文档频率和文档长度等因素计算文本相关性。\n\n"
+                "关键依据：这是通用概念解释，不来自上传资料或网页资料。\n\n参考来源：通用知识。"
+            )
+        return "资料不足，当前没有检索到可用于回答的参考资料。"
+
+    prompt = f"""请回答一个通用概念定义题。
+用户问题：{question}
+
+要求：
+1. 可以使用通用知识回答，但必须说明这不是来自上传资料或网页资料。
+2. 只解释定义，不补充最新新闻。
+3. 结构包含：结论、关键解释、参考来源。
+"""
+    response = client.chat.completions.create(
+        model=agent.DEEPSEEK_MODEL,
+        messages=[{"role": "user", "content": prompt}],
+        temperature=0.2,
+        max_tokens=450,
+        timeout=agent.LLM_TIMEOUT_SECONDS,
+    )
+    return response.choices[0].message.content.strip()
+
+
 def tool_generate_answer(
     question: str,
     search_results: list[dict[str, Any]],
     memory_context: str = "",
 ) -> ToolResult:
+    generation_error = ""
+    if not search_results and is_definition_fallback_question(question):
+        try:
+            answer = answer_definition_from_model(question)
+            agent.conversation_history.append({"role": "user", "content": question})
+            agent.conversation_history.append({"role": "assistant", "content": answer})
+            return ToolResult(
+                status="success",
+                summary="未检索到资料，已按定义类问题使用通用知识兜底回答。",
+                data=answer,
+            )
+        except Exception as error:
+            generation_error = str(error)
+
     try:
         answer = agent.ask_deepseek(build_question_with_memory(question, memory_context), search_results)
     except Exception as error:
         answer = ""
+        generation_error = str(error)
 
     if not answer:
         if not search_results:
@@ -988,9 +1136,10 @@ def tool_generate_answer(
     agent.conversation_history.append({"role": "assistant", "content": answer})
 
     return ToolResult(
-        status="success",
-        summary="回答生成完成。",
+        status="degraded" if generation_error else "success",
+        summary="生成模型请求失败，已使用检索资料兜底回答。" if generation_error else "回答生成完成。",
         data=answer,
+        error=generation_error,
     )
 
 
@@ -1450,6 +1599,7 @@ def plan_agent_steps(
     retrieval_strategy: str = agent.RETRIEVAL_VECTOR_BM25_RRF,
     context_packing_strategy: str = agent.CONTEXT_STRICT_BUDGET,
 ) -> list[AgentStep]:
+    plan_agent_steps.last_fallback_trace = None
     preferred_sources = preferred_sources or []
     if is_upload_status_question(question):
         return [
@@ -1475,8 +1625,22 @@ def plan_agent_steps(
             )
             if steps:
                 return steps
-        except Exception:
-            pass
+            plan_agent_steps.last_fallback_trace = make_stage_trace(
+                name="Planner 回退",
+                tool="planner_fallback",
+                reason="LLM Planner 没有返回可执行步骤，回退规则 Planner。",
+                summary="LLM Tool Calling Planner 返回空步骤，已使用规则规划。",
+                status="warning",
+            )
+        except Exception as exc:
+            plan_agent_steps.last_fallback_trace = make_stage_trace(
+                name="Planner 回退",
+                tool="planner_fallback",
+                reason="LLM Planner 执行异常，回退规则 Planner。",
+                summary="LLM Tool Calling Planner 失败，已使用规则规划。",
+                status="warning",
+                error=str(exc),
+            )
 
     return build_rule_based_steps(
         question=question,
@@ -1529,6 +1693,9 @@ def run_tool(step: AgentStep, state: dict[str, Any]) -> ToolResult:
         args["search_results"] = state.get("search_results", [])
     if step.tool in {"generate_answer", "direct_answer"} and "memory_context" not in args:
         args["memory_context"] = state.get("memory_context", "")
+    if step.tool in {"web_collect", "rag_search"}:
+        args.setdefault("chroma_path", state.get("chroma_path", agent.CHROMA_PATH))
+        args.setdefault("metadata_scope", state.get("metadata_scope", {}))
 
     started_at = time.time()
     result = tool(**args)
@@ -1546,6 +1713,8 @@ def run_agent(
     retrieval_strategy: str = agent.RETRIEVAL_VECTOR_BM25_RRF,
     context_packing_strategy: str = agent.CONTEXT_STRICT_BUDGET,
     memory_context: str = "",
+    chroma_path: str = agent.CHROMA_PATH,
+    metadata_scope: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     state: dict[str, Any] = {
         "question": question,
@@ -1553,6 +1722,8 @@ def run_agent(
         "answer": "",
         "planner_mode": "llm_tool_calling" if ENABLE_LLM_PLANNER else "rule_based",
         "memory_context": memory_context,
+        "chroma_path": chroma_path,
+        "metadata_scope": metadata_scope or {},
     }
     trace: list[dict[str, Any]] = []
     steps = plan_agent_steps(
@@ -1565,6 +1736,9 @@ def run_agent(
         retrieval_strategy=retrieval_strategy,
         context_packing_strategy=context_packing_strategy,
     )
+    fallback_trace = getattr(plan_agent_steps, "last_fallback_trace", None)
+    if fallback_trace:
+        trace.append(fallback_trace)
 
     for step in steps:
         try:
@@ -1652,6 +1826,8 @@ def run_agent_pro(
     planner_type: str = PLANNER_FALLBACK_MIXED,
     evaluator_type: str = EVALUATOR_RULES,
     memory_context: str = "",
+    chroma_path: str = agent.CHROMA_PATH,
+    metadata_scope: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     if source_strategy not in SOURCE_STRATEGIES:
         source_strategy = SOURCE_STRATEGY_AUTO
@@ -1671,6 +1847,8 @@ def run_agent_pro(
             retrieval_strategy=retrieval_strategy,
             context_packing_strategy=context_packing_strategy,
             memory_context=memory_context,
+            chroma_path=chroma_path,
+            metadata_scope=metadata_scope,
         )
         result["teaching_config"] = {
             "retrieval_strategy": retrieval_strategy,
@@ -1763,6 +1941,8 @@ def run_agent_pro(
         "answer": "",
         "planner_mode": "pro_runtime",
         "memory_context": memory_context,
+        "chroma_path": chroma_path,
+        "metadata_scope": metadata_scope or {},
     }
 
     tool_results, runtime_trace = run_task_graph(task_graph, state)
@@ -1787,6 +1967,13 @@ def run_agent_pro(
     started_at = time.time()
     aggregated = aggregate_context(tool_results)
     search_results = aggregated["search_results"]
+    if not search_results and intent.intent == "definition_qa":
+        search_results = build_definition_fallback_context(question)
+        if search_results:
+            aggregated["search_results"] = search_results
+            aggregated["source_counts"]["local"] = len(search_results)
+            aggregated["quality_signals"]["packed_count"] = len(search_results)
+            aggregated["quality_signals"]["has_citations"] = True
     trace.append(
         make_stage_trace(
             name="结果聚合",

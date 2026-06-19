@@ -139,32 +139,37 @@ def read_xlsx_sections(file_bytes, rows_per_section=30):
     sections = []
     for sheet in workbook.worksheets:
         current_rows = []
-        row_start = 1
-        for row in sheet.iter_rows(values_only=True):
+        current_row_numbers = []
+        for excel_row_number, row in enumerate(sheet.iter_rows(values_only=True), start=1):
             values = ["" if value is None else str(value) for value in row]
             if any(values):
                 current_rows.append(" | ".join(values))
+                current_row_numbers.append(excel_row_number)
 
             if len(current_rows) >= rows_per_section:
+                row_start = current_row_numbers[0]
+                row_end = current_row_numbers[-1]
                 sections.append(ParsedSection(
                     text="\n".join(current_rows),
-                    section_title=f"{sheet.title} 行 {row_start}-{row_start + len(current_rows) - 1}",
+                    section_title=f"{sheet.title} 行 {row_start}-{row_end}",
                     content_type="table",
                     sheet=sheet.title,
                     row_start=row_start,
-                    row_end=row_start + len(current_rows) - 1,
+                    row_end=row_end,
                 ))
-                row_start += len(current_rows)
                 current_rows = []
+                current_row_numbers = []
 
         if current_rows:
+            row_start = current_row_numbers[0]
+            row_end = current_row_numbers[-1]
             sections.append(ParsedSection(
                 text="\n".join(current_rows),
-                section_title=f"{sheet.title} 行 {row_start}-{row_start + len(current_rows) - 1}",
+                section_title=f"{sheet.title} 行 {row_start}-{row_end}",
                 content_type="table",
                 sheet=sheet.title,
                 row_start=row_start,
-                row_end=row_start + len(current_rows) - 1,
+                row_end=row_end,
             ))
 
     return sections

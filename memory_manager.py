@@ -5,11 +5,13 @@ import time
 import hashlib
 from pathlib import Path
 from uuid import uuid4
+from contextlib import contextmanager
 
 
 ROOT = Path(__file__).resolve().parent
 DEFAULT_MEMORY_PATH = ROOT / "data" / "memory_store.json"
 MEMORY_PATH = Path(os.getenv("MEMORY_STORE_PATH", str(DEFAULT_MEMORY_PATH)))
+LOCK_PATH = MEMORY_PATH.with_suffix(MEMORY_PATH.suffix + ".lock")
 
 MEMORY_TYPES = [
     "user_profile",
@@ -69,15 +71,55 @@ def new_memory_id() -> str:
 def ensure_store() -> None:
     MEMORY_PATH.parent.mkdir(parents=True, exist_ok=True)
     if not MEMORY_PATH.exists():
-        MEMORY_PATH.write_text("[]", encoding="utf-8")
+        atomic_write_json([])
+
+
+@contextmanager
+def memory_file_lock():
+    LOCK_PATH.parent.mkdir(parents=True, exist_ok=True)
+    with open(LOCK_PATH, "w", encoding="utf-8") as lock_file:
+        try:
+            import fcntl
+
+            fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
+            yield
+        finally:
+            try:
+                fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
+            except Exception:
+                pass
+
+
+def backup_corrupt_store() -> None:
+    if not MEMORY_PATH.exists():
+        return
+    stamp = time.strftime("%Y%m%d_%H%M%S")
+    corrupt_path = MEMORY_PATH.with_suffix(MEMORY_PATH.suffix + f".corrupt_{stamp}")
+    try:
+        MEMORY_PATH.replace(corrupt_path)
+    except OSError:
+        corrupt_path.write_text(MEMORY_PATH.read_text(encoding="utf-8", errors="replace"), encoding="utf-8")
+
+
+def atomic_write_json(data: list[dict]) -> None:
+    MEMORY_PATH.parent.mkdir(parents=True, exist_ok=True)
+    tmp_path = MEMORY_PATH.with_suffix(MEMORY_PATH.suffix + f".tmp_{uuid4().hex[:8]}")
+    tmp_path.write_text(
+        json.dumps(data, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+    os.replace(tmp_path, MEMORY_PATH)
 
 
 def load_memories(include_deleted: bool = False) -> list[dict]:
     ensure_store()
-    try:
-        memories = json.loads(MEMORY_PATH.read_text(encoding="utf-8"))
-    except json.JSONDecodeError:
-        memories = []
+    with memory_file_lock():
+        try:
+            memories = json.loads(MEMORY_PATH.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            backup_corrupt_store()
+            atomic_write_json([])
+            memories = []
     if include_deleted:
         return memories
     return [item for item in memories if item.get("status", MEMORY_STATUS_ACTIVE) != MEMORY_STATUS_DELETED]
@@ -85,10 +127,8 @@ def load_memories(include_deleted: bool = False) -> list[dict]:
 
 def save_memories(memories: list[dict]) -> None:
     ensure_store()
-    MEMORY_PATH.write_text(
-        json.dumps(memories, ensure_ascii=False, indent=2),
-        encoding="utf-8",
-    )
+    with memory_file_lock():
+        atomic_write_json(memories)
 
 
 def normalize_item(item: dict) -> dict:

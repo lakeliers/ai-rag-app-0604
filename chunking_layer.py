@@ -14,6 +14,12 @@ def split_text_fixed(text, chunk_size=500, chunk_overlap=80):
     text = text.strip()
     if not text:
         return []
+    if chunk_size <= 0:
+        chunk_size = 500
+    if chunk_overlap < 0:
+        chunk_overlap = 0
+    if chunk_overlap >= chunk_size:
+        chunk_overlap = max(0, chunk_size // 5)
 
     chunks = []
     start = 0
@@ -23,7 +29,10 @@ def split_text_fixed(text, chunk_size=500, chunk_overlap=80):
         chunk = text[start:end].strip()
         if chunk:
             chunks.append(chunk)
-        start = start + chunk_size - chunk_overlap
+        next_start = start + chunk_size - chunk_overlap
+        if next_start <= start:
+            next_start = start + chunk_size
+        start = next_start
 
     return chunks
 

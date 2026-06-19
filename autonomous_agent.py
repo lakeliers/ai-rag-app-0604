@@ -43,6 +43,8 @@ class Task:
     depends_on: list[str] = field(default_factory=list)
     priority: int = 1
     retry_count: int = 0
+    replaces_task_id: str = ""
+    repaired_by: str = ""
 
 
 @dataclass
@@ -139,7 +141,11 @@ def create_initial_tasks(goal: Goal) -> list[Task]:
 
 
 def pick_next_task(state: AutonomousState) -> Task | None:
-    completed_ids = {task.id for task in state.tasks if task.status == "completed"}
+    completed_ids = {
+        task.id
+        for task in state.tasks
+        if task.status in {"completed", "repaired"}
+    }
     ready_tasks = [
         task
         for task in state.tasks
@@ -216,6 +222,8 @@ def execute_task_with_tool_agent(
         planner_type=state.goal.constraints.get("planner_type", "fallback_mixed"),
         evaluator_type=state.goal.constraints.get("evaluator_type", "rules"),
         memory_context=memory_context,
+        chroma_path=state.goal.constraints.get("chroma_path", agent_runtime.agent.CHROMA_PATH),
+        metadata_scope=state.goal.constraints.get("metadata_scope", {}),
     )
     return {
         "success": bool(result.get("answer")),
@@ -268,12 +276,13 @@ def reflect_repair(task: Task, critic_result: dict[str, Any]) -> Task | None:
         result_key=f"repair_{task.result_key}",
         depends_on=task.depends_on,
         priority=task.priority,
+        replaces_task_id=task.id,
     )
 
 
 def check_stop_conditions(state: AutonomousState) -> dict[str, Any]:
     max_steps = state.goal.constraints.get("max_steps", 5)
-    if all(task.status == "completed" for task in state.tasks):
+    if all(task.status in {"completed", "repaired"} for task in state.tasks):
         return {
             "should_stop": True,
             "stop_reason": "all_tasks_completed",
@@ -328,6 +337,13 @@ def update_state_after_task(
     if critic_result["passed"]:
         task.status = "completed"
         state.artifacts[task.result_key] = task_result.get("answer", "")
+        if task.replaces_task_id:
+            for original in state.tasks:
+                if original.id == task.replaces_task_id and original.status == "failed":
+                    original.status = "repaired"
+                    original.repaired_by = task.id
+                    state.artifacts[original.result_key] = task_result.get("answer", "")
+                    break
         state.consecutive_failures = 0
     else:
         task.retry_count += 1
@@ -344,6 +360,12 @@ def update_state_after_task(
 
 
 def build_final_deliverable(state: AutonomousState) -> str:
+    if state.stop_reason == "needs_confirmation":
+        return (
+            "该自主任务涉及删除、发布、外发或修改线上数据等高风险动作，需要人工确认后才能继续。"
+            "我不会自动执行这类动作；请先确认授权范围、目标对象和回滚方案。"
+        )
+
     final_artifact = state.artifacts.get("final_deliverable")
     objective = state.goal.objective
     final_text = str(final_artifact or "").strip()
@@ -464,6 +486,8 @@ def run_autonomous_agent(
     planner_type: str = "fallback_mixed",
     evaluator_type: str = "rules",
     memory_context: str = "",
+    chroma_path: str = agent_runtime.agent.CHROMA_PATH,
+    metadata_scope: dict[str, Any] | None = None,
     tool_agent_runner: Callable[..., dict[str, Any]] = agent_runtime.run_agent_pro,
 ) -> dict[str, Any]:
     preferred_sources = preferred_sources or []
@@ -474,6 +498,8 @@ def run_autonomous_agent(
     goal.constraints["context_packing_strategy"] = context_packing_strategy
     goal.constraints["planner_type"] = planner_type
     goal.constraints["evaluator_type"] = evaluator_type
+    goal.constraints["chroma_path"] = chroma_path
+    goal.constraints["metadata_scope"] = metadata_scope or {}
     state = AutonomousState(goal=goal, tasks=create_initial_tasks(goal))
 
     while not state.done:
