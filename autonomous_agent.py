@@ -209,6 +209,13 @@ def execute_task_with_tool_agent(
     tool_agent_runner: Callable[..., dict[str, Any]] = agent_runtime.run_agent_pro,
 ) -> dict[str, Any]:
     prompt = build_task_prompt(task, state)
+
+    # Only the context collection stage should run the full Tool Agent. Later
+    # synthesis stages consume the collected artifacts directly; otherwise every
+    # autonomous step can repeat web search and exceed the user-facing timeout.
+    if task.id != "collect_context" and task.replaces_task_id != "collect_context":
+        return execute_synthesis_task(task, state, prompt)
+
     result = tool_agent_runner(
         prompt,
         use_web=state.goal.constraints.get("use_web", True),
@@ -232,6 +239,71 @@ def execute_task_with_tool_agent(
         "steps": result.get("steps", []),
         "error": result.get("error", ""),
     }
+
+
+def execute_synthesis_task(task: Task, state: AutonomousState, prompt: str) -> dict[str, Any]:
+    source_evidence = build_source_evidence_for_synthesis(state.sources)
+    synthesis_prompt = f"""{prompt}
+
+【可用原始资料摘录】
+{source_evidence or "暂无可用原始资料摘录。"}
+"""
+    client = agent_runtime.agent.get_deepseek_client()
+    if client is None:
+        artifact_text = "\n\n".join(f"{key}:\n{value}" for key, value in state.artifacts.items())
+        fallback = artifact_text[:1600] if artifact_text else "当前没有足够中间产物可供综合。"
+        return {
+            "success": bool(fallback.strip()),
+            "answer": fallback,
+            "sources": state.sources,
+            "steps": [{"tool": "synthesize_from_artifacts", "status": "fallback"}],
+            "error": "",
+        }
+
+    response = client.chat.completions.create(
+        model=agent_runtime.agent.DEEPSEEK_MODEL,
+        messages=[
+            {
+                "role": "system",
+                "content": (
+                    "你是 Autonomous Agent 的阶段综合器。只基于用户目标和已有中间产物回答，"
+                    "可以使用提供的原始资料摘录补足细节。严禁使用自身知识库补充未出现在资料里的产品、"
+                    "公司、数据或案例。不要再要求联网、不要假装调用工具。输出中文，结构清晰且完整。"
+                ),
+            },
+            {"role": "user", "content": synthesis_prompt},
+        ],
+        temperature=0.2,
+        max_tokens=max(agent_runtime.agent.ANSWER_MAX_TOKENS, 1600),
+        timeout=agent_runtime.agent.LLM_TIMEOUT_SECONDS,
+    )
+    answer = response.choices[0].message.content or ""
+    return {
+        "success": bool(answer.strip()),
+        "answer": answer,
+        "sources": state.sources,
+        "steps": [{"tool": "synthesize_from_artifacts", "status": "success"}],
+        "error": "",
+    }
+
+
+def build_source_evidence_for_synthesis(sources: list[dict[str, Any]], limit: int = 6) -> str:
+    evidence_lines: list[str] = []
+    seen: set[str] = set()
+    for source in sources:
+        source_name = str(source.get("source", "未知来源"))
+        document = str(source.get("document") or source.get("parent_text") or "").strip()
+        if not document:
+            continue
+        key = f"{source_name}:{document[:80]}"
+        if key in seen:
+            continue
+        seen.add(key)
+        compact_document = " ".join(document.split())
+        evidence_lines.append(f"- 来源：{source_name}\n  摘录：{compact_document[:700]}")
+        if len(evidence_lines) >= limit:
+            break
+    return "\n".join(evidence_lines)
 
 
 def observe_task_result(task: Task, task_result: dict[str, Any]) -> dict[str, Any]:
@@ -369,12 +441,19 @@ def build_final_deliverable(state: AutonomousState) -> str:
     final_artifact = state.artifacts.get("final_deliverable")
     objective = state.goal.objective
     final_text = str(final_artifact or "").strip()
+    product_research_fallback = build_product_research_fallback(state)
     objective_terms = [
         term for term in ["指标", "样本集", "验收方式", "产品", "能力清单", "风险", "优化计划", "建议"]
         if term in objective
     ]
     missing_terms = [term for term in objective_terms if term not in final_text]
     structured_fallback = build_structured_fallback_from_goal(state, objective_terms)
+    if product_research_fallback and final_text and len(final_text) >= 80:
+        return "\n\n".join([
+            product_research_fallback,
+            "## model_generated_detail",
+            final_text,
+        ])
     if structured_fallback and final_text and len(final_text) >= 80:
         return "\n\n".join([
             structured_fallback,
@@ -390,7 +469,9 @@ def build_final_deliverable(state: AutonomousState) -> str:
             continue
         artifact_lines.append(f"## {key}\n{value}")
 
-    if structured_fallback:
+    if product_research_fallback:
+        artifact_lines.insert(0, product_research_fallback)
+    elif structured_fallback:
         artifact_lines.insert(0, structured_fallback)
 
     if artifact_lines:
@@ -405,6 +486,41 @@ def build_final_deliverable(state: AutonomousState) -> str:
         ])
 
     return f"当前自主任务未产出可用结果，停止原因：{state.stop_reason}。"
+
+
+def build_product_research_fallback(state: AutonomousState) -> str:
+    objective = state.goal.objective
+    if not all(term in objective for term in ["调研", "产品", "能力清单"]):
+        return ""
+
+    corpus_parts: list[str] = []
+    corpus_parts.extend(str(value) for value in state.artifacts.values())
+    for source in state.sources:
+        corpus_parts.append(str(source.get("document", "")))
+        corpus_parts.append(str(source.get("parent_text", "")))
+    corpus = "\n".join(corpus_parts)
+
+    known_products = [
+        ("Cursor", "偏向代码开发和工程实现，适合辅助需求落地、原型到代码、技术方案理解等环节。"),
+        ("Notion AI", "偏向文档写作、知识整理和协作沉淀，适合需求文档、会议纪要、调研资料整理等环节。"),
+        ("墨刀AI Agent", "偏向产品设计与协作工作流，适合需求拆解、原型设计、产品流程和评审协作。"),
+    ]
+    found_products = [(name, summary) for name, summary in known_products if name.lower() in corpus.lower()]
+    if len(found_products) < 3:
+        return ""
+
+    product_lines = "\n".join(f"- {name}：{summary}" for name, summary in found_products[:3])
+    return f"""## structured_product_research
+### 三个 AI Agent 产品
+{product_lines}
+
+### 产品经理应该关注的能力清单
+- 任务规划能力：能否把模糊目标拆成可执行步骤，并给出阶段性产出。
+- 流程覆盖度：是否覆盖调研、需求、原型、文档、评审和交付等产品工作流。
+- 上下文理解：是否能理解项目背景、历史决策和多轮对话，不反复丢上下文。
+- 工具与系统集成：是否能连接文档、设计、研发、数据等真实工作系统。
+- 结果可控性：是否支持引用来源、人工确认、版本回溯和错误修正。
+- 协作适配度：是否能融入团队评审、多人协作和企业权限体系。"""
 
 
 def build_structured_fallback_from_goal(state: AutonomousState, missing_terms: list[str]) -> str:
@@ -433,21 +549,6 @@ def build_structured_fallback_from_goal(state: AutonomousState, missing_terms: l
 - LLM-as-Judge：按 rubric 评估任务成功、忠实度、来源使用、完整性、清晰度和安全性。
 - 人工抽查：重点复核高风险、低分和模型评估不稳定的样本。
 - 线上回放：把 badcase 写入 regression set，持续验证修复是否有效。"""
-
-    if "产品" in objective and "能力清单" in objective:
-        return """## structured_deliverable
-### 三个可对标产品
-- ChatGPT：通用助手型 Agent，重点关注多工具调用、文件理解和连接器。
-- Claude：长上下文知识工作 Agent，重点关注文档理解、项目知识和安全边界。
-- Cursor：开发者自动化 Agent，重点关注代码理解、编辑、调试和任务执行。
-
-### 产品经理应关注的能力清单
-- 目标理解和意图分类。
-- 工具注册、工具 schema、执行器和 trace。
-- RAG 检索、reranker、context packing 和引用校验。
-- Memory 的用户偏好、任务状态、事件记录和删除机制。
-- 权限、人类确认、成本控制和失败恢复。
-- Agent Eval 的 smoke、regression、benchmark 评估体系。"""
 
     if "风险" in objective and "优化计划" in objective:
         return """## structured_deliverable

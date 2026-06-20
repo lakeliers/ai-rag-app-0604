@@ -26,6 +26,7 @@ COLLECTION_NAME = "file_docs"
 DEEPSEEK_MODEL = os.getenv("DEEPSEEK_MODEL", "deepseek-v4-flash")
 QWEN_VL_MODEL = os.getenv("QWEN_VL_MODEL", "qwen-vl-plus")
 LLM_TIMEOUT_SECONDS = float(os.getenv("LLM_TIMEOUT_SECONDS", "45"))
+ANSWER_MAX_TOKENS = int(os.getenv("ANSWER_MAX_TOKENS", "1400"))
 RERANKER_MODEL_NAME = os.getenv("RERANKER_MODEL_NAME", "BAAI/bge-reranker-base")
 ENABLE_RERANKER = os.getenv("ENABLE_RERANKER", "1") == "1"
 RERANK_LIMIT = int(os.getenv("RERANK_LIMIT", "12"))
@@ -1439,7 +1440,7 @@ def ask_deepseek(question, search_results):
         model=DEEPSEEK_MODEL,
         messages=[{"role": "user", "content": prompt}],
         temperature=0.3,
-        max_tokens=700,
+        max_tokens=ANSWER_MAX_TOKENS,
         timeout=LLM_TIMEOUT_SECONDS,
     )
 
@@ -1460,7 +1461,7 @@ def ask_deepseek_stream(question, search_results, on_delta=None):
         model=DEEPSEEK_MODEL,
         messages=[{"role": "user", "content": prompt}],
         temperature=0.3,
-        max_tokens=700,
+        max_tokens=ANSWER_MAX_TOKENS,
         timeout=LLM_TIMEOUT_SECONDS,
         stream=True,
     )
@@ -1519,6 +1520,10 @@ def expand_web_queries(query):
     compact_query = query.strip()
     queries = [compact_query]
     lowered = compact_query.lower()
+    is_ai_agent_query = "agent" in lowered or "智能体" in compact_query
+    is_time_sensitive_query = any(word in compact_query for word in ["今天", "最近", "最新", "动态", "新闻", "发布"])
+    is_rag_query = "rag" in lowered or "检索增强" in compact_query or "向量检索" in compact_query
+    is_agent_memory_query = "memory" in lowered or "记忆" in compact_query
 
     if is_finance_query(compact_query):
         spaced_query = re.sub(r"([A-Za-z0-9]+|20\d{2}|19\d{2})", r" \1 ", compact_query)
@@ -1534,6 +1539,20 @@ def expand_web_queries(query):
                 "Li Auto first quarter 2026 earnings",
                 "Li Auto investor relations Q1 2026",
             ])
+
+    if is_agent_memory_query and is_time_sensitive_query:
+        queries.extend([
+            "Agent Memory 长期记忆 实践 趋势",
+            "AI Agent memory architecture long term memory",
+            "AI Agent 记忆系统 用户记忆 任务记忆 实践",
+        ])
+    elif is_ai_agent_query and is_time_sensitive_query and not is_rag_query:
+        queries.extend([
+            "AI Agent 产品动态 2026 6月",
+            "AI Agent 产品发布 2026 最新",
+            "AI Agent 新产品 融资 发布 2026",
+            "AI Agent product updates 2026 June",
+        ])
 
     return unique_preserve_order(queries)[:4]
 

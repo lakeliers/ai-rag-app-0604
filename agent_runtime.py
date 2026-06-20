@@ -185,10 +185,16 @@ def extract_effective_query(question: str) -> str:
 def tool_web_collect(
     question: str,
     max_results: int,
+    preferred_sources: list[str] | None = None,
     chroma_path: str = agent.CHROMA_PATH,
     metadata_scope: dict[str, Any] | None = None,
 ) -> ToolResult:
-    query = extract_effective_query(question)
+    query = build_web_collect_query(
+        question,
+        preferred_sources=preferred_sources or [],
+        chroma_path=chroma_path,
+        metadata_scope=metadata_scope,
+    )
     ingested = agent.web_collect(
         query,
         max_results=max_results,
@@ -200,6 +206,90 @@ def tool_web_collect(
         summary=f"联网收集完成，写入 {len(ingested)} 条网页资料。",
         data=ingested,
     )
+
+
+def extract_context_keywords(text: str, limit: int = 8) -> list[str]:
+    candidates = re.findall(r"[A-Za-z][A-Za-z0-9 +/#.-]{1,40}|[\u4e00-\u9fff]{2,12}", text or "")
+    stop_words = {
+        "上传",
+        "资料",
+        "文件",
+        "这个",
+        "这份",
+        "用户",
+        "问题",
+        "最近",
+        "类似",
+        "案例",
+        "结合",
+        "再查",
+        "一下",
+        "需要",
+        "包含",
+        "负责",
+        "观察",
+        "质量",
+        "来源",
+        "失败原因",
+    }
+    seen: set[str] = set()
+    keywords: list[str] = []
+    for raw in candidates:
+        keyword = re.sub(r"\s+", " ", raw).strip(" ：:，,。.;；()（）")
+        if len(keyword) < 2 or keyword in stop_words:
+            continue
+        normalized = keyword.lower()
+        if normalized in seen:
+            continue
+        seen.add(normalized)
+        keywords.append(keyword)
+        if len(keywords) >= limit:
+            break
+    return keywords
+
+
+def build_web_collect_query(
+    question: str,
+    preferred_sources: list[str],
+    chroma_path: str = agent.CHROMA_PATH,
+    metadata_scope: dict[str, Any] | None = None,
+) -> str:
+    effective_question = extract_effective_query(question)
+    needs_upload_topic = bool(preferred_sources) and any(
+        word in effective_question for word in ["类似案例", "相关案例", "对标案例", "最近有没有", "再查一下"]
+    )
+    if not needs_upload_topic:
+        return effective_question
+
+    try:
+        upload_rows = agent.search_chroma(
+            effective_question,
+            top_k=3,
+            preferred_sources=preferred_sources,
+            preferred_only=True,
+            retrieval_strategy=agent.RETRIEVAL_VECTOR_BM25_RRF,
+            context_packing_strategy=agent.CONTEXT_SOURCE_PRIORITY,
+            chroma_path=chroma_path,
+            metadata_scope=metadata_scope,
+        )
+    except Exception:
+        upload_rows = []
+
+    context_text = " ".join(str(item.get("document", "")) for item in upload_rows)
+    keywords = extract_context_keywords(context_text)
+    if not keywords:
+        return effective_question
+
+    context_lower = context_text.lower()
+    if "rag" in context_lower or "检索增强" in context_text:
+        return "RAG 检索增强生成 最近 落地案例"
+    if "agent eval" in context_lower or "评估" in context_text:
+        return "AI Agent 评估体系 最近 实践案例"
+    if "tool agent" in context_lower or "工具调用" in context_text:
+        return "Tool Agent 工具调用 最近 实践案例"
+
+    topic = " ".join(keywords[:6])
+    return f"{topic} 最近 类似案例"
 
 
 def is_strict_upload_context_question(question: str, preferred_sources: list[str]) -> bool:
@@ -658,7 +748,11 @@ def orchestrate_action(
                 name="联网收集资料",
                 tool="web_collect",
                 reason="DAG 节点：收集外部网页资料并写入资料库。",
-                args={"question": question, "max_results": web_max_results},
+                args={
+                    "question": question,
+                    "max_results": web_max_results,
+                    "preferred_sources": preferred_sources,
+                },
             )
         )
 
@@ -736,7 +830,11 @@ def build_task_graph(
                 name="联网收集资料",
                 tool="web_collect",
                 reason="工作流模板：先收集外部网页资料，并写入资料库。",
-                args={"question": question, "max_results": web_max_results},
+                args={
+                    "question": question,
+                    "max_results": web_max_results,
+                    "preferred_sources": preferred_sources,
+                },
                 output_key="web_collect",
                 retry=1,
                 required=False,
@@ -1044,6 +1142,19 @@ def build_definition_fallback_context(question: str) -> list[dict[str, Any]]:
             "Context Packing 是把检索后的候选资料按 token budget、来源优先级、去重、覆盖度和引用需求，"
             "打包进最终大模型 messages 的过程。"
         ),
+        "tool agent": (
+            "Tool Agent 是围绕一次用户请求进行工具规划、工具调用、观察结果并生成回答的智能体形态。"
+            "它通常关注单轮或短链路任务，例如检索资料、调用 API、生成答案。"
+            "Autonomous Agent 则更偏任务级自主执行，会维护目标、任务队列、循环状态、停止条件和必要的人类确认。"
+        ),
+        "autonomous agent": (
+            "Autonomous Agent 是围绕较长期目标自主拆解任务、执行、观察、反思和停止的智能体形态。"
+            "Tool Agent 可以作为它执行某个具体子任务时的工具调用层。"
+        ),
+        "agent": (
+            "Agent（智能体）是能够围绕目标感知上下文、规划行动、调用工具、观察结果并生成输出的 AI 系统。"
+            "在大模型应用里，Agent 通常比普通聊天机器人多了工具调用、状态管理、执行跟踪和必要的自检机制。"
+        ),
     }
     for keyword, document in definitions.items():
         if keyword in lowered:
@@ -1056,6 +1167,19 @@ def build_definition_fallback_context(question: str) -> list[dict[str, Any]]:
                 "content_type": "definition_fallback",
             }]
     return []
+
+
+def merge_definition_fallback_context(question: str, search_results: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    fallback_results = build_definition_fallback_context(question)
+    if not fallback_results:
+        return search_results
+
+    existing_documents = {str(item.get("document", "")) for item in search_results}
+    merged = list(search_results)
+    for item in reversed(fallback_results):
+        if str(item.get("document", "")) not in existing_documents:
+            merged.insert(0, item)
+    return merged
 
 
 def answer_definition_from_model(question: str) -> str:
@@ -2010,11 +2134,13 @@ def run_agent_pro(
     started_at = time.time()
     aggregated = aggregate_context(tool_results)
     search_results = aggregated["search_results"]
-    if not search_results and intent.intent == "definition_qa":
-        search_results = build_definition_fallback_context(question)
+    if intent.intent == "definition_qa":
+        search_results = merge_definition_fallback_context(question, search_results)
         if search_results:
             aggregated["search_results"] = search_results
-            aggregated["source_counts"]["local"] = len(search_results)
+            aggregated["source_counts"]["local"] = sum(
+                1 for item in search_results if item.get("source_type") == "local"
+            )
             aggregated["quality_signals"]["packed_count"] = len(search_results)
             aggregated["quality_signals"]["has_citations"] = True
     trace.append(
@@ -2055,6 +2181,24 @@ def run_agent_pro(
         )
     else:
         evaluation = evaluate_context(intent.intent, aggregated)
+        if intent.intent == "definition_qa" and not evaluation["sufficient"]:
+            fallback_results = merge_definition_fallback_context(question, search_results)
+            if fallback_results:
+                search_results = fallback_results
+                aggregated["search_results"] = search_results
+                aggregated["source_counts"]["local"] = sum(
+                    1 for item in search_results if item.get("source_type") == "local"
+                )
+                aggregated["quality_signals"]["packed_count"] = len(search_results)
+                aggregated["quality_signals"]["has_citations"] = True
+                evaluation = {
+                    "sufficient": True,
+                    "confidence": 0.72,
+                    "reason": "定义类问题检索资料不足，已启用基础概念库兜底。",
+                    "source_count": len(search_results),
+                    "missing_aspects": [],
+                    "next_action": "generate_answer",
+                }
         trace.append(
             make_stage_trace(
                 name="资料评估",
