@@ -295,6 +295,7 @@ def build_current_config():
         "evaluator_type": evaluator_type,
         "memory_enabled": memory_enabled,
         "memory_write_mode": memory_write_mode,
+        "streaming_enabled": streaming_enabled,
         "reranker_enabled": agent.ENABLE_RERANKER,
         "top_k": top_k,
         "web_max_results": web_max_results,
@@ -704,6 +705,14 @@ with st.sidebar:
 
     st.divider()
     st.subheader("可观测性")
+    streaming_enabled = st.toggle(
+        "启用 Streaming（流式输出）",
+        value=True,
+        help=(
+            "Streaming 会在最终大模型生成回答时边生成边展示；"
+            "关闭后会等完整回答生成完再一次性展示。当前主要覆盖普通问答和 RAG 链路。"
+        ),
+    )
     trace_level = st.radio(
         "Trace（执行轨迹）展示级别",
         ["简洁", "完整", "隐藏"],
@@ -735,6 +744,7 @@ with st.sidebar:
     st.write("Chunking（切分）:", "、".join(chunking_strategy_labels))
     st.write("Model（模型）:", deepseek_model_label)
     st.write("Evaluator（评估器）:", evaluator_type_label)
+    st.write("Streaming（流式输出）:", "已启用" if streaming_enabled else "未启用")
 
     if "upload_status" in st.session_state and st.session_state.upload_status:
         st.divider()
@@ -800,6 +810,13 @@ if prompt:
 
     with st.chat_message("assistant"):
         try:
+            stream_placeholder = st.empty()
+            streamed_answer = {"text": ""}
+
+            def handle_answer_stream(delta, full_text):
+                streamed_answer["text"] = full_text
+                stream_placeholder.markdown(full_text + "▌")
+
             with st.spinner("执行 Agent（智能体）计划中..."):
                 uploaded_sources = ingest_uploaded_files(uploaded_files, prompt, chunking_strategy)
                 memory_context = ""
@@ -835,6 +852,7 @@ if prompt:
                         metadata_scope={"session_id": st.session_state.rag_session_id},
                     )
                 else:
+                    answer_stream_callback = handle_answer_stream if streaming_enabled else None
                     result = call_with_supported_kwargs(
                         agent_runtime.run_agent_pro,
                         prompt,
@@ -850,6 +868,7 @@ if prompt:
                         evaluator_type=evaluator_type,
                         memory_context=memory_context,
                         metadata_scope={"session_id": st.session_state.rag_session_id},
+                        stream_callback=answer_stream_callback,
                     )
                     if run_mode == "自主任务":
                         result["planner_mode"] = "autonomous_fallback"
@@ -866,6 +885,8 @@ if prompt:
                             *result.get("steps", []),
                         ]
 
+            if streamed_answer["text"]:
+                stream_placeholder.empty()
             badcase_run = {
                 "user_input": prompt,
                 "actual_answer": result["answer"],

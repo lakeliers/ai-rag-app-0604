@@ -1446,6 +1446,40 @@ def ask_deepseek(question, search_results):
     return response.choices[0].message.content
 
 
+def ask_deepseek_stream(question, search_results, on_delta=None):
+    client = get_deepseek_client()
+    if client is None:
+        print("没有找到 DEEPSEEK_API_KEY。")
+        print("请在终端设置：export DEEPSEEK_API_KEY=\"sk-xxx\"")
+        return None
+
+    prompt = build_answer_prompt(question, search_results)
+    chunks = []
+
+    stream = client.chat.completions.create(
+        model=DEEPSEEK_MODEL,
+        messages=[{"role": "user", "content": prompt}],
+        temperature=0.3,
+        max_tokens=700,
+        timeout=LLM_TIMEOUT_SECONDS,
+        stream=True,
+    )
+
+    for chunk in stream:
+        choices = getattr(chunk, "choices", None) or []
+        if not choices:
+            continue
+        delta = getattr(choices[0], "delta", None)
+        text = getattr(delta, "content", None) if delta else None
+        if not text:
+            continue
+        chunks.append(text)
+        if on_delta:
+            on_delta(text, "".join(chunks))
+
+    return "".join(chunks)
+
+
 def normalize_search_url(raw_url):
     parsed_url = html.unescape(raw_url)
 

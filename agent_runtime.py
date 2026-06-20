@@ -1091,6 +1091,7 @@ def tool_generate_answer(
     question: str,
     search_results: list[dict[str, Any]],
     memory_context: str = "",
+    stream_callback: Callable[[str, str], None] | None = None,
 ) -> ToolResult:
     generation_error = ""
     if not search_results and is_definition_fallback_question(question):
@@ -1107,7 +1108,14 @@ def tool_generate_answer(
             generation_error = str(error)
 
     try:
-        answer = agent.ask_deepseek(build_question_with_memory(question, memory_context), search_results)
+        if stream_callback:
+            answer = agent.ask_deepseek_stream(
+                build_question_with_memory(question, memory_context),
+                search_results,
+                on_delta=stream_callback,
+            )
+        else:
+            answer = agent.ask_deepseek(build_question_with_memory(question, memory_context), search_results)
     except Exception as error:
         answer = ""
         generation_error = str(error)
@@ -1143,7 +1151,11 @@ def tool_generate_answer(
     )
 
 
-def tool_direct_answer(question: str, memory_context: str = "") -> ToolResult:
+def tool_direct_answer(
+    question: str,
+    memory_context: str = "",
+    stream_callback: Callable[[str, str], None] | None = None,
+) -> ToolResult:
     if asks_for_capability_intro(question):
         answer = (
             "我可以帮你做三类事情：\n\n"
@@ -1152,6 +1164,8 @@ def tool_direct_answer(question: str, memory_context: str = "") -> ToolResult:
             "3. 帮你学习和实操 AI 产品经理相关主题，比如 RAG、Tool Agent、Autonomous Agent 和 Agent Eval。\n\n"
             "你可以直接上传文件，或者问我一个具体问题。"
         )
+        if stream_callback:
+            stream_callback(answer, answer)
         agent.conversation_history.append({"role": "user", "content": question})
         agent.conversation_history.append({"role": "assistant", "content": answer})
         return ToolResult(
@@ -1164,12 +1178,10 @@ def tool_direct_answer(question: str, memory_context: str = "") -> ToolResult:
     if client is None:
         raise RuntimeError("没有找到 DEEPSEEK_API_KEY。")
 
-    response = client.chat.completions.create(
-        model=agent.DEEPSEEK_MODEL,
-        messages=[
-            {
-                "role": "user",
-                "content": f"""请直接回复用户。
+    messages = [
+        {
+            "role": "user",
+            "content": f"""请直接回复用户。
 要求：
 1. 如果是寒暄、自我介绍、普通对话，简洁自然地回应。
 2. 不要声称自己检索了资料。
@@ -1182,12 +1194,36 @@ def tool_direct_answer(question: str, memory_context: str = "") -> ToolResult:
 用户输入：
 {question}
 """,
-            }
-        ],
-        temperature=0.3,
-        max_tokens=300,
-    )
-    answer = response.choices[0].message.content
+        }
+    ]
+    if stream_callback:
+        chunks = []
+        stream = client.chat.completions.create(
+            model=agent.DEEPSEEK_MODEL,
+            messages=messages,
+            temperature=0.3,
+            max_tokens=300,
+            stream=True,
+        )
+        for chunk in stream:
+            choices = getattr(chunk, "choices", None) or []
+            if not choices:
+                continue
+            delta = getattr(choices[0], "delta", None)
+            text = getattr(delta, "content", None) if delta else None
+            if not text:
+                continue
+            chunks.append(text)
+            stream_callback(text, "".join(chunks))
+        answer = "".join(chunks)
+    else:
+        response = client.chat.completions.create(
+            model=agent.DEEPSEEK_MODEL,
+            messages=messages,
+            temperature=0.3,
+            max_tokens=300,
+        )
+        answer = response.choices[0].message.content
     agent.conversation_history.append({"role": "user", "content": question})
     agent.conversation_history.append({"role": "assistant", "content": answer})
 
@@ -1693,6 +1729,8 @@ def run_tool(step: AgentStep, state: dict[str, Any]) -> ToolResult:
         args["search_results"] = state.get("search_results", [])
     if step.tool in {"generate_answer", "direct_answer"} and "memory_context" not in args:
         args["memory_context"] = state.get("memory_context", "")
+    if step.tool in {"generate_answer", "direct_answer"} and state.get("stream_callback"):
+        args.setdefault("stream_callback", state.get("stream_callback"))
     if step.tool in {"web_collect", "rag_search"}:
         args.setdefault("chroma_path", state.get("chroma_path", agent.CHROMA_PATH))
         args.setdefault("metadata_scope", state.get("metadata_scope", {}))
@@ -1715,6 +1753,7 @@ def run_agent(
     memory_context: str = "",
     chroma_path: str = agent.CHROMA_PATH,
     metadata_scope: dict[str, Any] | None = None,
+    stream_callback: Callable[[str, str], None] | None = None,
 ) -> dict[str, Any]:
     state: dict[str, Any] = {
         "question": question,
@@ -1724,6 +1763,7 @@ def run_agent(
         "memory_context": memory_context,
         "chroma_path": chroma_path,
         "metadata_scope": metadata_scope or {},
+        "stream_callback": stream_callback,
     }
     trace: list[dict[str, Any]] = []
     steps = plan_agent_steps(
@@ -1828,6 +1868,7 @@ def run_agent_pro(
     memory_context: str = "",
     chroma_path: str = agent.CHROMA_PATH,
     metadata_scope: dict[str, Any] | None = None,
+    stream_callback: Callable[[str, str], None] | None = None,
 ) -> dict[str, Any]:
     if source_strategy not in SOURCE_STRATEGIES:
         source_strategy = SOURCE_STRATEGY_AUTO
@@ -1849,6 +1890,7 @@ def run_agent_pro(
             memory_context=memory_context,
             chroma_path=chroma_path,
             metadata_scope=metadata_scope,
+            stream_callback=stream_callback,
         )
         result["teaching_config"] = {
             "retrieval_strategy": retrieval_strategy,
@@ -1943,6 +1985,7 @@ def run_agent_pro(
         "memory_context": memory_context,
         "chroma_path": chroma_path,
         "metadata_scope": metadata_scope or {},
+        "stream_callback": stream_callback,
     }
 
     tool_results, runtime_trace = run_task_graph(task_graph, state)
