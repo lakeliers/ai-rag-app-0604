@@ -428,6 +428,14 @@ def merge_plan_event(plan_steps, event):
 def render_plan_progress(plan_placeholder, plan_steps):
     completed = sum(1 for step in plan_steps if step["status"] in {"completed", "skipped"})
     total = len(plan_steps)
+    current_step = next((step for step in plan_steps if step.get("status") == "running"), None)
+    if current_step is None:
+        current_step = next((step for step in plan_steps if step.get("status") == "failed"), None)
+    if current_step is None:
+        current_step = next((step for step in plan_steps if step.get("status") == "pending"), None)
+    if current_step is None and plan_steps:
+        current_step = plan_steps[-1]
+
     rows = []
     for step in plan_steps:
         status = step.get("status", "pending")
@@ -437,11 +445,22 @@ def render_plan_progress(plan_placeholder, plan_steps):
         elapsed = step.get("elapsed_ms", 0)
         elapsed_text = f" · {elapsed}ms" if elapsed else ""
         rows.append(f"{icon} **{label}**｜{step['name']}｜{summary}{elapsed_text}")
-    plan_placeholder.markdown(
-        "**Agent 执行进度**  \n"
-        f"{completed}/{total} 个环节已完成\n\n"
-        + "\n\n".join(rows)
-    )
+
+    with plan_placeholder.container():
+        if current_step:
+            current_status = current_step.get("status", "pending")
+            current_label = PLAN_STATUS_LABELS.get(current_status, current_status)
+            current_icon = PLAN_STATUS_ICONS.get(current_status, "○")
+            current_summary = current_step.get("summary", "")
+            st.markdown(
+                "**Agent 当前环节**  \n"
+                f"{current_icon} **{current_label}**｜{current_step['name']}｜{current_summary}"
+            )
+        else:
+            st.markdown("**Agent 当前环节**  \n○ 等待开始")
+
+        with st.expander(f"查看完整 Plan（计划）执行进度：{completed}/{total} 已完成", expanded=False):
+            st.markdown("\n\n".join(rows) if rows else "暂无执行步骤。")
 
 
 def render_badcase_form():
