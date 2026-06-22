@@ -280,6 +280,39 @@ def extract_source_types(sources):
     return source_types
 
 
+def generate_trace_id():
+    return f"trace_{uuid4().hex[:12]}"
+
+
+def compact_steps_for_log(steps, limit=30):
+    compacted = []
+    for step in (steps or [])[:limit]:
+        compacted.append({
+            "name": step.get("name", ""),
+            "tool": step.get("tool", ""),
+            "status": step.get("status", ""),
+            "summary": str(step.get("summary", ""))[:600],
+            "elapsed_ms": step.get("elapsed_ms", 0),
+            "error": str(step.get("error", ""))[:600],
+        })
+    return compacted
+
+
+def compact_sources_for_log(sources, limit=10):
+    compacted = []
+    for source in (sources or [])[:limit]:
+        compacted.append({
+            "source": source.get("source", ""),
+            "source_type": source.get("source_type", ""),
+            "url": source.get("url", ""),
+            "final_score": source.get("final_score", 0),
+            "rerank_score": source.get("rerank_score", ""),
+            "answerability_score": source.get("answerability_score", 0),
+            "document_preview": str(source.get("document", ""))[:600],
+        })
+    return compacted
+
+
 def build_current_config():
     return {
         "run_mode": run_mode,
@@ -313,6 +346,8 @@ def render_assistant_message(content, run=None, key_suffix=""):
     left, right = st.columns([0.94, 0.06], vertical_alignment="top")
     with left:
         st.write(content)
+        if run and run.get("trace_id"):
+            st.caption(f"Trace ID（运行追踪编号）：{run['trace_id']}")
     if run:
         with right:
             st.button(
@@ -416,6 +451,8 @@ def render_badcase_form():
 
     with st.expander("反馈 badcase（不良案例）：补充 Regression Case（回归用例）信息", expanded=True):
         st.markdown("**当前问题现场**")
+        if run.get("trace_id"):
+            st.code(run["trace_id"], language="text")
         st.write("User Prompt（用户问题）：", run["user_input"])
         st.write("Agent Answer（智能体回答）：", run["actual_answer"])
         st.caption("工具调用：" + (", ".join(run["tools_called"]) or "无"))
@@ -585,6 +622,8 @@ def render_badcase_form():
                     config=run["config"],
                     tools_called=run["tools_called"],
                     sources_used=run["sources_used"],
+                    trace_id=run.get("trace_id", ""),
+                    run_snapshot=run.get("run_snapshot", {}),
                     severity=severity,
                     problem_description=problem_description,
                     note=note,
@@ -593,6 +632,9 @@ def render_badcase_form():
                     for error in save_result["errors"]:
                         st.error(error)
                 else:
+                    st.success(f"Badcase ID（不良案例编号）：{save_result['badcase_id']}")
+                    if save_result.get("trace_id"):
+                        st.info(f"Trace ID（运行追踪编号）：{save_result['trace_id']}")
                     if save_result["local_eval_saved"]:
                         st.success("已写入本地 eval_cases.jsonl。")
                     if save_result["local_badcase_saved"]:
@@ -894,6 +936,7 @@ if prompt:
         st.error("请先配置 DEEPSEEK_API_KEY。")
         st.stop()
 
+    trace_id = generate_trace_id()
     st.session_state.messages.append({"role": "user", "content": prompt})
 
     with st.chat_message("user"):
@@ -999,6 +1042,7 @@ if prompt:
             if streamed_answer["text"]:
                 stream_placeholder.empty()
             badcase_run = {
+                "trace_id": trace_id,
                 "user_input": prompt,
                 "actual_answer": result["answer"],
                 "config": build_current_config(),
@@ -1006,6 +1050,16 @@ if prompt:
                 "sources_used": extract_source_types(result.get("sources", [])),
                 "planner_mode": result.get("planner_mode", ""),
                 "memory_used": [item.get("id") for item in retrieved_memories],
+                "run_snapshot": {
+                    "trace_id": trace_id,
+                    "planner_mode": result.get("planner_mode", ""),
+                    "tools_called": extract_tools_from_steps(result.get("steps", [])),
+                    "sources_used": extract_source_types(result.get("sources", [])),
+                    "memory_used": [item.get("id") for item in retrieved_memories],
+                    "steps": compact_steps_for_log(result.get("steps", [])),
+                    "sources": compact_sources_for_log(result.get("sources", [])),
+                    "answer_preview": str(result.get("answer", ""))[:1200],
+                },
             }
             render_assistant_message(
                 result["answer"],
@@ -1134,7 +1188,30 @@ if prompt:
                         st.divider()
 
         except Exception as e:
-            st.error(f"调用失败：{e}")
+            error_answer = f"调用失败：{e}"
+            error_run = {
+                "trace_id": trace_id,
+                "user_input": prompt,
+                "actual_answer": error_answer,
+                "config": build_current_config(),
+                "tools_called": [],
+                "sources_used": [],
+                "planner_mode": "error",
+                "memory_used": [],
+                "run_snapshot": {
+                    "trace_id": trace_id,
+                    "planner_mode": "error",
+                    "error": str(e)[:1200],
+                    "answer_preview": error_answer,
+                },
+            }
+            st.error(error_answer)
+            render_assistant_message(error_answer, error_run, key_suffix=f"error_{len(st.session_state.messages)}")
+            st.session_state.messages.append({
+                "role": "assistant",
+                "content": error_answer,
+                "badcase_run": error_run,
+            })
 
 render_badcase_form()
 if st.session_state.memory_notice:

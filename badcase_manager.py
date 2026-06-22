@@ -6,6 +6,7 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 from typing import Any
+from uuid import uuid4
 
 
 ROOT = Path(__file__).resolve().parent
@@ -77,7 +78,7 @@ def generate_case_id(user_input: str, category: str = "chitchat") -> str:
 
 
 def generate_badcase_id() -> str:
-    return f"badcase_{time.strftime('%Y%m%d_%H%M%S')}"
+    return f"badcase_{time.strftime('%Y%m%d_%H%M%S')}_{uuid4().hex[:6]}"
 
 
 def append_jsonl(path: Path, row: dict[str, Any]) -> None:
@@ -169,11 +170,13 @@ def validate_regression_case(case: dict[str, Any]) -> list[str]:
 def build_badcase_log(
     *,
     badcase_id: str,
+    trace_id: str = "",
     case: dict[str, Any],
     actual_answer: str,
     config: dict[str, Any],
     tools_called: list[str],
     sources_used: list[str],
+    run_snapshot: dict[str, Any] | None = None,
     severity: str,
     problem_description: str,
     note: str,
@@ -182,6 +185,7 @@ def build_badcase_log(
 ) -> dict[str, Any]:
     return {
         "badcase_id": badcase_id,
+        "trace_id": trace_id,
         "created_at": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
         "user_input": case.get("user_input", ""),
         "actual_answer": actual_answer,
@@ -192,6 +196,7 @@ def build_badcase_log(
         "config": config,
         "tools_called": tools_called,
         "sources_used": sources_used,
+        "run_snapshot": run_snapshot or {},
         "note": note,
         "review_status": review_status,
         "github_issue_url": github_issue_url,
@@ -205,7 +210,12 @@ def format_github_issue_body(badcase_log: dict[str, Any]) -> str:
         indent=2,
     )
     config_json = json.dumps(badcase_log.get("config", {}), ensure_ascii=False, indent=2)
+    run_snapshot_json = json.dumps(badcase_log.get("run_snapshot", {}), ensure_ascii=False, indent=2)
     return f"""
+## IDs
+- Badcase ID: {badcase_log.get("badcase_id", "")}
+- Trace ID: {badcase_log.get("trace_id", "") or "none"}
+
 ## User Prompt
 {badcase_log.get("user_input", "")}
 
@@ -224,6 +234,11 @@ def format_github_issue_body(badcase_log: dict[str, Any]) -> str:
 ## Config
 ```json
 {config_json}
+```
+
+## Run Snapshot
+```json
+{run_snapshot_json}
 ```
 
 ## Suggested regression case
@@ -246,7 +261,7 @@ def create_github_issue(badcase_log: dict[str, Any]) -> str:
 
     title_prompt = badcase_log.get("user_input", "")[:40] or badcase_log["badcase_id"]
     payload = {
-        "title": f"[Bad Case] {title_prompt}",
+        "title": f"[Bad Case] {badcase_log['badcase_id']}｜{title_prompt}",
         "body": format_github_issue_body(badcase_log),
         "labels": ["bad-case", "agent-eval", badcase_log.get("severity", "medium")],
     }
@@ -278,12 +293,16 @@ def save_case(
     config: dict[str, Any],
     tools_called: list[str],
     sources_used: list[str],
+    trace_id: str = "",
+    run_snapshot: dict[str, Any] | None = None,
     severity: str,
     problem_description: str,
     note: str,
 ) -> dict[str, Any]:
     badcase_id = generate_badcase_id()
     result = {
+        "badcase_id": badcase_id,
+        "trace_id": trace_id,
         "local_badcase_saved": False,
         "local_eval_saved": False,
         "github_issue_url": "",
@@ -296,11 +315,13 @@ def save_case(
 
     badcase_log = build_badcase_log(
         badcase_id=badcase_id,
+        trace_id=trace_id,
         case=case,
         actual_answer=actual_answer,
         config=config,
         tools_called=tools_called,
         sources_used=sources_used,
+        run_snapshot=run_snapshot,
         severity=severity,
         problem_description=problem_description,
         note=note,
