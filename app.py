@@ -296,6 +296,7 @@ def build_current_config():
         "memory_enabled": memory_enabled,
         "memory_write_mode": memory_write_mode,
         "streaming_enabled": streaming_enabled,
+        "plan_progress_enabled": plan_progress_enabled,
         "reranker_enabled": agent.ENABLE_RERANKER,
         "top_k": top_k,
         "web_max_results": web_max_results,
@@ -321,6 +322,91 @@ def render_assistant_message(content, run=None, key_suffix=""):
                 on_click=set_badcase_target,
                 args=(run,),
             )
+
+
+PLAN_STATUS_LABELS = {
+    "pending": "未执行",
+    "running": "正在执行",
+    "completed": "已完成",
+    "failed": "失败",
+    "warning": "提示",
+    "skipped": "跳过",
+}
+
+PLAN_STATUS_ICONS = {
+    "pending": "○",
+    "running": "●",
+    "completed": "✓",
+    "failed": "!",
+    "warning": "!",
+    "skipped": "-",
+}
+
+
+def base_plan_steps(run_mode_value):
+    if run_mode_value == "自主任务":
+        return [
+            {"id": "goal_manager", "name": "目标结构化", "tool": "Goal Manager", "status": "pending", "summary": "把用户请求转成结构化目标。"},
+            {"id": "task_queue", "name": "生成任务队列", "tool": "Task Queue", "status": "pending", "summary": "拆解任务和依赖关系。"},
+            {"id": "stop_condition", "name": "检查停止条件", "tool": "Stop Condition", "status": "pending", "summary": "判断是否继续执行。"},
+            {"id": "task_collect_context", "name": "收集背景资料", "tool": "Observe-Act Loop", "status": "pending", "summary": "收集上传资料和网页资料。"},
+            {"id": "task_extract_findings", "name": "提取关键发现", "tool": "Observe-Act Loop", "status": "pending", "summary": "整理关键发现和缺口。"},
+            {"id": "task_write_deliverable", "name": "生成最终交付物", "tool": "Observe-Act Loop", "status": "pending", "summary": "生成结构化任务交付。"},
+            {"id": "final_answer", "name": "生成最终回答", "tool": "Final Answer", "status": "pending", "summary": "输出给前端展示。"},
+        ]
+    return [
+        {"id": "memory_retriever", "name": "读取长期记忆", "tool": "Memory", "status": "pending", "summary": "如启用 Memory，会先读取相关记忆。"},
+        {"id": "intent_classifier", "name": "意图分类", "tool": "Intent Classifier", "status": "pending", "summary": "判断问题类型。"},
+        {"id": "planner", "name": "高层规划", "tool": "Planner", "status": "pending", "summary": "决定走普通回答、上传资料、联网或混合 RAG。"},
+        {"id": "orchestrator", "name": "任务编排", "tool": "Orchestrator", "status": "pending", "summary": "把计划展开成可执行节点。"},
+        {"id": "web_collect", "name": "联网收集资料", "tool": "Web Collect", "status": "pending", "summary": "需要联网时读取网页正文。"},
+        {"id": "rag_search", "name": "RAG 检索", "tool": "RAG Search", "status": "pending", "summary": "检索上传资料、网页资料和本地知识。"},
+        {"id": "aggregator", "name": "结果聚合", "tool": "Aggregator", "status": "pending", "summary": "去重、排序并整理候选资料。"},
+        {"id": "evaluator", "name": "资料评估", "tool": "Evaluator", "status": "pending", "summary": "判断资料是否足够支撑回答。"},
+        {"id": "generate_answer", "name": "生成最终回答", "tool": "Final Answer", "status": "pending", "summary": "调用大模型生成回答。"},
+        {"id": "answer_validator", "name": "答案校验", "tool": "Validator", "status": "pending", "summary": "做空答案、引用和资料不足提示校验。"},
+    ]
+
+
+def merge_plan_event(plan_steps, event):
+    step_id = event.get("id") or event.get("tool") or event.get("name")
+    for step in plan_steps:
+        if step["id"] == step_id:
+            step.update({
+                "status": event.get("status", step["status"]),
+                "summary": event.get("summary", step.get("summary", "")),
+                "elapsed_ms": event.get("elapsed_ms", step.get("elapsed_ms", 0)),
+                "error": event.get("error", ""),
+            })
+            return
+    plan_steps.append({
+        "id": step_id,
+        "name": event.get("name", step_id),
+        "tool": event.get("tool", ""),
+        "status": event.get("status", "pending"),
+        "summary": event.get("summary", ""),
+        "elapsed_ms": event.get("elapsed_ms", 0),
+        "error": event.get("error", ""),
+    })
+
+
+def render_plan_progress(plan_placeholder, plan_steps):
+    completed = sum(1 for step in plan_steps if step["status"] in {"completed", "skipped"})
+    total = len(plan_steps)
+    rows = []
+    for step in plan_steps:
+        status = step.get("status", "pending")
+        icon = PLAN_STATUS_ICONS.get(status, "○")
+        label = PLAN_STATUS_LABELS.get(status, status)
+        summary = step.get("summary", "")
+        elapsed = step.get("elapsed_ms", 0)
+        elapsed_text = f" · {elapsed}ms" if elapsed else ""
+        rows.append(f"{icon} **{label}**｜{step['name']}｜{summary}{elapsed_text}")
+    plan_placeholder.markdown(
+        "**Agent 执行进度**  \n"
+        f"{completed}/{total} 个环节已完成\n\n"
+        + "\n\n".join(rows)
+    )
 
 
 def render_badcase_form():
@@ -705,6 +791,11 @@ with st.sidebar:
 
     st.divider()
     st.subheader("可观测性")
+    plan_progress_enabled = st.toggle(
+        "显示 Plan（计划）执行进度",
+        value=True,
+        help="在 Agent 运行过程中展示已完成、正在执行、未执行的计划环节。展示的是代码执行状态，不是模型隐藏推理内容。",
+    )
     streaming_enabled = st.toggle(
         "启用 Streaming（流式输出）",
         value=True,
@@ -810,6 +901,17 @@ if prompt:
 
     with st.chat_message("assistant"):
         try:
+            plan_placeholder = st.empty()
+            live_plan_steps = base_plan_steps(run_mode)
+            if plan_progress_enabled:
+                render_plan_progress(plan_placeholder, live_plan_steps)
+
+            def handle_plan_progress(event):
+                if not plan_progress_enabled:
+                    return
+                merge_plan_event(live_plan_steps, event)
+                render_plan_progress(plan_placeholder, live_plan_steps)
+
             stream_placeholder = st.empty()
             streamed_answer = {"text": ""}
 
@@ -850,6 +952,7 @@ if prompt:
                         evaluator_type=evaluator_type,
                         memory_context=memory_context,
                         metadata_scope={"session_id": st.session_state.rag_session_id},
+                        progress_callback=handle_plan_progress,
                     )
                 else:
                     answer_stream_callback = handle_answer_stream if streaming_enabled else None
@@ -869,8 +972,16 @@ if prompt:
                         memory_context=memory_context,
                         metadata_scope={"session_id": st.session_state.rag_session_id},
                         stream_callback=answer_stream_callback,
+                        progress_callback=handle_plan_progress,
                     )
                     if run_mode == "自主任务":
+                        handle_plan_progress({
+                            "id": "goal_manager",
+                            "name": "自主模式入口判断",
+                            "tool": "goal_router",
+                            "status": "completed",
+                            "summary": f"已回退普通问答：{autonomous_route_reason}",
+                        })
                         result["planner_mode"] = "autonomous_fallback"
                         result["steps"] = [
                             {

@@ -207,6 +207,7 @@ def execute_task_with_tool_agent(
     preferred_sources: list[str],
     memory_context: str = "",
     tool_agent_runner: Callable[..., dict[str, Any]] = agent_runtime.run_agent_pro,
+    progress_callback: agent_runtime.ProgressCallback | None = None,
 ) -> dict[str, Any]:
     prompt = build_task_prompt(task, state)
 
@@ -231,6 +232,7 @@ def execute_task_with_tool_agent(
         memory_context=memory_context,
         chroma_path=state.goal.constraints.get("chroma_path", agent_runtime.agent.CHROMA_PATH),
         metadata_scope=state.goal.constraints.get("metadata_scope", {}),
+        progress_callback=progress_callback,
     )
     return {
         "success": bool(result.get("answer")),
@@ -443,7 +445,7 @@ def build_final_deliverable(state: AutonomousState) -> str:
     final_text = str(final_artifact or "").strip()
     product_research_fallback = build_product_research_fallback(state)
     objective_terms = [
-        term for term in ["指标", "样本集", "验收方式", "产品", "能力清单", "风险", "优化计划", "建议"]
+        term for term in ["指标", "样本集", "验收方式", "产品", "趋势", "学习建议", "能力清单", "风险", "优化计划", "建议"]
         if term in objective
     ]
     missing_terms = [term for term in objective_terms if term not in final_text]
@@ -590,8 +592,17 @@ def run_autonomous_agent(
     chroma_path: str = agent_runtime.agent.CHROMA_PATH,
     metadata_scope: dict[str, Any] | None = None,
     tool_agent_runner: Callable[..., dict[str, Any]] = agent_runtime.run_agent_pro,
+    progress_callback: agent_runtime.ProgressCallback | None = None,
 ) -> dict[str, Any]:
     preferred_sources = preferred_sources or []
+    if progress_callback:
+        progress_callback({
+            "id": "goal_manager",
+            "name": "目标结构化",
+            "tool": "goal_manager",
+            "status": "running",
+            "summary": "把用户请求转成目标、约束和成功标准。",
+        })
     goal = create_goal(user_request, max_steps=max_steps, top_k=top_k, web_max_results=web_max_results)
     goal.constraints["router_mode"] = router_mode
     goal.constraints["source_strategy"] = source_strategy
@@ -602,13 +613,52 @@ def run_autonomous_agent(
     goal.constraints["chroma_path"] = chroma_path
     goal.constraints["metadata_scope"] = metadata_scope or {}
     state = AutonomousState(goal=goal, tasks=create_initial_tasks(goal))
+    if progress_callback:
+        progress_callback({
+            "id": "goal_manager",
+            "name": "目标结构化",
+            "tool": "goal_manager",
+            "status": "completed",
+            "summary": f"目标：{goal.objective}",
+        })
+        progress_callback({
+            "id": "task_queue",
+            "name": "生成任务队列",
+            "tool": "task_queue",
+            "status": "completed",
+            "summary": "任务：" + " → ".join(task.id for task in state.tasks),
+        })
 
     while not state.done:
+        if progress_callback:
+            progress_callback({
+                "id": "stop_condition",
+                "name": "检查停止条件",
+                "tool": "stop_condition",
+                "status": "running",
+                "summary": "检查任务是否完成、是否超出最大步数、是否需要停止。",
+            })
         stop = check_stop_conditions(state)
         if stop["should_stop"]:
+            if progress_callback:
+                progress_callback({
+                    "id": "stop_condition",
+                    "name": "检查停止条件",
+                    "tool": "stop_condition",
+                    "status": "completed",
+                    "summary": stop["message"],
+                })
             state.done = True
             state.stop_reason = stop["stop_reason"]
             break
+        if progress_callback:
+            progress_callback({
+                "id": "stop_condition",
+                "name": "检查停止条件",
+                "tool": "stop_condition",
+                "status": "completed",
+                "summary": "未触发停止条件，继续执行。",
+            })
 
         task = pick_next_task(state)
         if task is None:
@@ -617,6 +667,14 @@ def run_autonomous_agent(
             break
 
         gate = human_gate(task)
+        if progress_callback:
+            progress_callback({
+                "id": f"human_gate_{task.id}",
+                "name": f"权限确认：{task.title}",
+                "tool": "human_in_the_loop",
+                "status": "completed" if gate["decision"] == "allow" else "failed",
+                "summary": gate["reason"],
+            })
         state.trace.append({
             "task_id": task.id,
             "title": task.title,
@@ -630,16 +688,40 @@ def run_autonomous_agent(
             break
 
         task.status = "running"
+        if progress_callback:
+            progress_callback({
+                "id": f"task_{task.id}",
+                "name": task.title,
+                "tool": "observe_act_loop",
+                "status": "running",
+                "summary": task.description,
+            })
         task_result = execute_task_with_tool_agent(
             task,
             state,
             preferred_sources=preferred_sources,
             memory_context=memory_context,
             tool_agent_runner=tool_agent_runner,
+            progress_callback=progress_callback,
         )
         observation = observe_task_result(task, task_result)
         critic_result = critic_task_result(task, observation)
         update_state_after_task(state, task, task_result, observation, critic_result)
+        if progress_callback:
+            progress_callback({
+                "id": f"task_{task.id}",
+                "name": task.title,
+                "tool": "observe_act_loop",
+                "status": "completed" if critic_result["passed"] else "failed",
+                "summary": observation["summary"] or "任务执行完成。",
+            })
+            progress_callback({
+                "id": f"critic_{task.id}",
+                "name": f"Critic 检查：{task.title}",
+                "tool": "critic",
+                "status": "completed" if critic_result["passed"] else "failed",
+                "summary": "通过" if critic_result["passed"] else "；".join(critic_result["issues"]),
+            })
 
         repair_task = reflect_repair(task, critic_result)
         if repair_task is not None:
@@ -650,13 +732,45 @@ def run_autonomous_agent(
                 "issues": critic_result["issues"],
             })
             state.tasks.append(repair_task)
+            if progress_callback:
+                progress_callback({
+                    "id": f"reflect_{task.id}",
+                    "name": f"Reflection 补救：{task.title}",
+                    "tool": "reflection",
+                    "status": "completed",
+                    "summary": f"新增补救任务：{repair_task.id}",
+                })
 
         stop = check_stop_conditions(state)
         if stop["should_stop"]:
+            if progress_callback:
+                progress_callback({
+                    "id": "stop_condition",
+                    "name": "检查停止条件",
+                    "tool": "stop_condition",
+                    "status": "completed",
+                    "summary": stop["message"],
+                })
             state.done = True
             state.stop_reason = stop["stop_reason"]
 
+    if progress_callback:
+        progress_callback({
+            "id": "final_answer",
+            "name": "生成最终交付",
+            "tool": "final_answer",
+            "status": "running",
+            "summary": "汇总任务产物并生成最终回答。",
+        })
     state.final_answer = build_final_deliverable(state)
+    if progress_callback:
+        progress_callback({
+            "id": "final_answer",
+            "name": "生成最终交付",
+            "tool": "final_answer",
+            "status": "completed",
+            "summary": f"停止原因：{state.stop_reason}",
+        })
     return {
         "answer": state.final_answer,
         "sources": state.sources,

@@ -31,6 +31,8 @@ EVALUATOR_OFF = "off"
 EVALUATOR_RULES = "rules"
 EVALUATOR_TYPES = {EVALUATOR_OFF, EVALUATOR_RULES}
 
+ProgressCallback = Callable[[dict[str, Any]], None]
+
 GREETING_PATTERNS = [
     r"^(你好|您好|嗨|hello|hi)(呀|啊|哈|，|,|。|！|!|\s)*$",
     r"^(你好|您好|嗨|hello|hi).{0,8}(我是|我叫)",
@@ -914,6 +916,17 @@ def get_ready_nodes(graph: TaskGraph, completed: set[str], failed: set[str]) -> 
     ]
 
 
+def emit_progress(state: dict[str, Any], event: dict[str, Any]) -> None:
+    callback = state.get("progress_callback")
+    if not callback:
+        return
+    try:
+        callback(event)
+    except Exception:
+        # Progress rendering must never break the agent execution path.
+        pass
+
+
 def run_task_graph(graph: TaskGraph, state: dict[str, Any]) -> tuple[dict[str, ToolResult], list[dict[str, Any]]]:
     validate_task_graph(graph)
     completed: set[str] = set()
@@ -935,12 +948,32 @@ def run_task_graph(graph: TaskGraph, state: dict[str, Any]) -> tuple[dict[str, T
                 summary="本批节点：" + "、".join(node.id for node in ready_nodes),
             )
         )
+        emit_progress(
+            state,
+            {
+                "id": f"dag_batch_{batch_index}",
+                "name": f"DAG 执行批次 {batch_index}",
+                "tool": "dag_runtime",
+                "status": "completed",
+                "summary": "本批节点：" + "、".join(node.id for node in ready_nodes),
+            },
+        )
 
         for node in ready_nodes:
             step = task_node_to_step(node)
             last_result: ToolResult | None = None
             for attempt in range(node.retry + 1):
                 try:
+                    emit_progress(
+                        state,
+                        {
+                            "id": node.id,
+                            "name": node.name,
+                            "tool": node.tool,
+                            "status": "running",
+                            "summary": node.reason,
+                        },
+                    )
                     last_result = run_tool(step, state)
                     break
                 except Exception as exc:
@@ -953,6 +986,18 @@ def run_task_graph(graph: TaskGraph, state: dict[str, Any]) -> tuple[dict[str, T
                         break
 
             result = last_result or ToolResult(status="failed", summary="节点没有返回结果。")
+            emit_progress(
+                state,
+                {
+                    "id": node.id,
+                    "name": node.name,
+                    "tool": node.tool,
+                    "status": "completed" if is_success_like_status(result.status) else "failed",
+                    "summary": result.summary,
+                    "elapsed_ms": result.elapsed_ms,
+                    "error": result.error,
+                },
+            )
             results[node.output_key or node.id] = result
             results[node.id] = result
 
@@ -1878,6 +1923,7 @@ def run_agent(
     chroma_path: str = agent.CHROMA_PATH,
     metadata_scope: dict[str, Any] | None = None,
     stream_callback: Callable[[str, str], None] | None = None,
+    progress_callback: ProgressCallback | None = None,
 ) -> dict[str, Any]:
     state: dict[str, Any] = {
         "question": question,
@@ -1888,8 +1934,16 @@ def run_agent(
         "chroma_path": chroma_path,
         "metadata_scope": metadata_scope or {},
         "stream_callback": stream_callback,
+        "progress_callback": progress_callback,
     }
     trace: list[dict[str, Any]] = []
+    emit_progress(state, {
+        "id": "llm_planner",
+        "name": "生成工具调用计划",
+        "tool": "planner",
+        "status": "running",
+        "summary": "根据用户问题规划需要调用的工具。",
+    })
     steps = plan_agent_steps(
         question=question,
         use_web=use_web,
@@ -1903,9 +1957,23 @@ def run_agent(
     fallback_trace = getattr(plan_agent_steps, "last_fallback_trace", None)
     if fallback_trace:
         trace.append(fallback_trace)
+    emit_progress(state, {
+        "id": "llm_planner",
+        "name": "生成工具调用计划",
+        "tool": "planner",
+        "status": "completed",
+        "summary": "计划步骤：" + " → ".join(step.tool for step in steps),
+    })
 
     for step in steps:
         try:
+            emit_progress(state, {
+                "id": step.tool,
+                "name": step.name,
+                "tool": step.tool,
+                "status": "running",
+                "summary": step.reason,
+            })
             result = run_tool(step, state)
             if step.tool == "rag_search":
                 state["search_results"] = result.data
@@ -1918,9 +1986,25 @@ def run_agent(
                 error=str(exc),
             )
             trace.append(format_trace_item(step, result))
+            emit_progress(state, {
+                "id": step.tool,
+                "name": step.name,
+                "tool": step.tool,
+                "status": "failed",
+                "summary": result.summary,
+                "error": result.error,
+            })
             raise
 
         trace.append(format_trace_item(step, result))
+        emit_progress(state, {
+            "id": step.tool,
+            "name": step.name,
+            "tool": step.tool,
+            "status": "completed",
+            "summary": result.summary,
+            "elapsed_ms": result.elapsed_ms,
+        })
 
     return {
         "answer": state["answer"],
@@ -1993,6 +2077,7 @@ def run_agent_pro(
     chroma_path: str = agent.CHROMA_PATH,
     metadata_scope: dict[str, Any] | None = None,
     stream_callback: Callable[[str, str], None] | None = None,
+    progress_callback: ProgressCallback | None = None,
 ) -> dict[str, Any]:
     if source_strategy not in SOURCE_STRATEGIES:
         source_strategy = SOURCE_STRATEGY_AUTO
@@ -2015,6 +2100,7 @@ def run_agent_pro(
             chroma_path=chroma_path,
             metadata_scope=metadata_scope,
             stream_callback=stream_callback,
+            progress_callback=progress_callback,
         )
         result["teaching_config"] = {
             "retrieval_strategy": retrieval_strategy,
@@ -2033,6 +2119,14 @@ def run_agent_pro(
     search_results: list[dict[str, Any]] = []
 
     if memory_context.strip():
+        if progress_callback:
+            progress_callback({
+                "id": "memory_retriever",
+                "name": "读取长期记忆",
+                "tool": "memory_retriever",
+                "status": "completed",
+                "summary": "已读取与当前问题相关的长期记忆。",
+            })
         trace.append(
             make_stage_trace(
                 name="读取长期记忆",
@@ -2043,7 +2137,24 @@ def run_agent_pro(
         )
 
     started_at = time.time()
+    if progress_callback:
+        progress_callback({
+            "id": "intent_classifier",
+            "name": "意图分类",
+            "tool": "intent_classifier",
+            "status": "running",
+            "summary": "判断用户请求类型和资料需求。",
+        })
     intent = classify_intent(question, effective_preferred_sources, router_mode=router_mode)
+    if progress_callback:
+        progress_callback({
+            "id": "intent_classifier",
+            "name": "意图分类",
+            "tool": "intent_classifier",
+            "status": "completed",
+            "summary": f"识别为 {intent.intent}，置信度 {intent.confidence:.2f}。",
+            "elapsed_ms": int((time.time() - started_at) * 1000),
+        })
     trace.append(
         make_stage_trace(
             name="意图分类",
@@ -2055,6 +2166,14 @@ def run_agent_pro(
     )
 
     started_at = time.time()
+    if progress_callback:
+        progress_callback({
+            "id": "planner",
+            "name": "高层规划",
+            "tool": "planner",
+            "status": "running",
+            "summary": "根据意图选择业务级动作。",
+        })
     plan = plan_high_level_action(intent, effective_preferred_sources, effective_use_web)
     if source_strategy == SOURCE_STRATEGY_UPLOAD_AND_WEB:
         plan.params["needs_web"] = True
@@ -2074,8 +2193,25 @@ def run_agent_pro(
             elapsed_ms=int((time.time() - started_at) * 1000),
         )
     )
+    if progress_callback:
+        progress_callback({
+            "id": "planner",
+            "name": "高层规划",
+            "tool": "planner",
+            "status": "completed",
+            "summary": f"选择动作：{plan.action}。",
+            "elapsed_ms": int((time.time() - started_at) * 1000),
+        })
 
     started_at = time.time()
+    if progress_callback:
+        progress_callback({
+            "id": "orchestrator",
+            "name": "任务编排",
+            "tool": "orchestrator",
+            "status": "running",
+            "summary": "把高层动作展开成可执行 DAG 任务图。",
+        })
     task_graph = build_task_graph(
         plan=plan,
         question=question,
@@ -2100,6 +2236,15 @@ def run_agent_pro(
             elapsed_ms=int((time.time() - started_at) * 1000),
         )
     )
+    if progress_callback:
+        progress_callback({
+            "id": "orchestrator",
+            "name": "任务编排",
+            "tool": "orchestrator",
+            "status": "completed",
+            "summary": "执行节点：" + " → ".join(node.id for node in task_graph.nodes),
+            "elapsed_ms": int((time.time() - started_at) * 1000),
+        })
 
     state = {
         "question": question,
@@ -2110,6 +2255,7 @@ def run_agent_pro(
         "chroma_path": chroma_path,
         "metadata_scope": metadata_scope or {},
         "stream_callback": stream_callback,
+        "progress_callback": progress_callback,
     }
 
     tool_results, runtime_trace = run_task_graph(task_graph, state)
@@ -2132,6 +2278,14 @@ def run_agent_pro(
         }
 
     started_at = time.time()
+    if progress_callback:
+        progress_callback({
+            "id": "aggregator",
+            "name": "结果聚合",
+            "tool": "aggregator",
+            "status": "running",
+            "summary": "合并检索、网页和上传资料结果。",
+        })
     aggregated = aggregate_context(tool_results)
     search_results = aggregated["search_results"]
     if intent.intent == "definition_qa":
@@ -2159,8 +2313,25 @@ def run_agent_pro(
             elapsed_ms=int((time.time() - started_at) * 1000),
         )
     )
+    if progress_callback:
+        progress_callback({
+            "id": "aggregator",
+            "name": "结果聚合",
+            "tool": "aggregator",
+            "status": "completed",
+            "summary": f"聚合到 {len(search_results)} 条检索资料。",
+            "elapsed_ms": int((time.time() - started_at) * 1000),
+        })
 
     started_at = time.time()
+    if progress_callback:
+        progress_callback({
+            "id": "evaluator",
+            "name": "资料评估",
+            "tool": "evaluator",
+            "status": "running",
+            "summary": "判断资料是否足够支撑最终回答。",
+        })
     if evaluator_type == EVALUATOR_OFF:
         evaluation = {
             "sufficient": True,
@@ -2179,6 +2350,15 @@ def run_agent_pro(
                 elapsed_ms=int((time.time() - started_at) * 1000),
             )
         )
+        if progress_callback:
+            progress_callback({
+                "id": "evaluator",
+                "name": "资料评估",
+                "tool": "evaluator",
+                "status": "completed",
+                "summary": "Evaluator 已关闭，跳过资料充分性判断。",
+                "elapsed_ms": int((time.time() - started_at) * 1000),
+            })
     else:
         evaluation = evaluate_context(intent.intent, aggregated)
         if intent.intent == "definition_qa" and not evaluation["sufficient"]:
@@ -2213,6 +2393,15 @@ def run_agent_pro(
                 elapsed_ms=int((time.time() - started_at) * 1000),
             )
         )
+        if progress_callback:
+            progress_callback({
+                "id": "evaluator",
+                "name": "资料评估",
+                "tool": "evaluator",
+                "status": "completed",
+                "summary": f"资料是否足够：{'是' if evaluation['sufficient'] else '否'}；资料数：{evaluation['source_count']}。",
+                "elapsed_ms": int((time.time() - started_at) * 1000),
+            })
 
     final_step = AgentStep(
         name="生成最终回答",
@@ -2220,11 +2409,36 @@ def run_agent_pro(
         reason="基于聚合并评估后的资料生成最终回答。",
         args={"question": question, "search_results": search_results},
     )
+    if progress_callback:
+        progress_callback({
+            "id": "generate_answer",
+            "name": "生成最终回答",
+            "tool": "generate_answer",
+            "status": "running",
+            "summary": "正在调用大模型生成最终回答。",
+        })
     final_result = run_tool(final_step, state)
     answer = final_result.data
     trace.append(format_trace_item(final_step, final_result))
+    if progress_callback:
+        progress_callback({
+            "id": "generate_answer",
+            "name": "生成最终回答",
+            "tool": "generate_answer",
+            "status": "completed",
+            "summary": final_result.summary,
+            "elapsed_ms": final_result.elapsed_ms,
+        })
 
     validation = validate_final_answer(answer, search_results, evaluation)
+    if progress_callback:
+        progress_callback({
+            "id": "answer_validator",
+            "name": "答案校验",
+            "tool": "answer_validator",
+            "status": "completed" if validation["passed"] else "warning",
+            "summary": "校验通过。" if validation["passed"] else "发现提示：" + "；".join(validation["warnings"]),
+        })
     trace.append(
         make_stage_trace(
             name="答案校验",

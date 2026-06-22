@@ -36,7 +36,9 @@ JUDGE_SYSTEM_PROMPT = """
 你必须基于 case、reference_context、tool_trace、rule_result 和 rubric 评分。
 不要因为答案更长就给更高分。
 不要因为语气自信就默认正确。
-如果关键结论无法从 reference_context 或工具轨迹中验证，应降低 groundedness 分。
+如果关键事实、案例、数据、来源、时间点无法从 reference_context 或工具轨迹中验证，应降低 groundedness 分。
+如果答案明确把内容标注为“基于资料的建议、推导、学习路径或下一步计划”，且没有伪造事实、案例、数据或来源，不应仅因它是建议性内容而判为幻觉。
+如果答案明确指出资料不足、信息缺口或需要补充资料，应把这种边界说明视为正向表现。
 如果答案使用了错误来源，source_usage 必须低分。
 只输出合法 JSON，不要输出 Markdown，不要补充解释。
 """.strip()
@@ -61,8 +63,8 @@ JUDGE_RUBRIC = {
         "score_1": "基本没有完成用户任务，或答非所问。",
     },
     "groundedness": {
-        "score_5": "关键结论都能从参考资料、工具结果或可见上下文中找到依据。",
-        "score_3": "大部分结论有依据，但存在少量无依据推断。",
+        "score_5": "关键事实、案例、数据和来源都能从参考资料、工具结果或可见上下文中找到依据；建议性内容清楚标注为基于资料的推导。",
+        "score_3": "大部分事实有依据，但存在少量无依据事实，或建议性内容的边界不够清楚。",
         "score_1": "大量内容无法从资料支持，或出现明显幻觉。",
     },
     "source_usage": {
@@ -752,10 +754,18 @@ def run_case_isolated(
 ) -> dict[str, Any]:
     context = mp.get_context("spawn")
     queue = context.Queue()
-    os.environ["EVAL_RUN_ID"] = EVAL_RUN_ID
-    process = context.Process(target=run_case_child, args=(case, queue, router_mode, source_strategy))
-    process.start()
-    process.join(case_timeout if case_timeout > 0 else None)
+    previous_eval_run_id = os.environ.get("EVAL_RUN_ID")
+    case_eval_run_id = f"{EVAL_RUN_ID}_{case.get('case_id', 'case')}_{os.getpid()}"
+    os.environ["EVAL_RUN_ID"] = case_eval_run_id
+    try:
+        process = context.Process(target=run_case_child, args=(case, queue, router_mode, source_strategy))
+        process.start()
+        process.join(case_timeout if case_timeout > 0 else None)
+    finally:
+        if previous_eval_run_id is None:
+            os.environ.pop("EVAL_RUN_ID", None)
+        else:
+            os.environ["EVAL_RUN_ID"] = previous_eval_run_id
 
     if process.is_alive():
         process.terminate()
@@ -929,6 +939,8 @@ def evaluate_case(case: dict[str, Any], result: dict[str, Any]) -> dict[str, Any
             "stop_reason": result.get("stop_reason", ""),
             "sources": result.get("sources", []),
             "answer": result.get("answer", ""),
+            "artifacts": result.get("artifacts", {}),
+            "observations": result.get("observations", []),
         },
     }
 
@@ -959,6 +971,18 @@ def build_reference_context(evaluation: dict[str, Any]) -> list[dict[str, Any]]:
             "document": source.get("document", "")[:1200],
             "final_score": source.get("final_score", ""),
         })
+    artifacts = evaluation["result"].get("artifacts", {})
+    if isinstance(artifacts, dict):
+        for key, value in artifacts.items():
+            text = str(value).strip()
+            if text:
+                references.append({
+                    "source_type": "agent_artifact",
+                    "source": f"autonomous_artifact:{key}",
+                    "url": "",
+                    "document": text[:1200],
+                    "final_score": "runtime_artifact",
+                })
     return references
 
 
