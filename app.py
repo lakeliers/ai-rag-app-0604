@@ -68,9 +68,6 @@ st.set_page_config(
     layout="wide",
 )
 
-st.title("RAG Agent Pro（检索增强智能体教学版）")
-
-
 
 def read_upload_as_sections(uploaded_file):
     return parsing_layer.read_upload_as_sections(uploaded_file)
@@ -713,7 +710,8 @@ def render_memory_confirmation():
             st.divider()
 
 
-with st.sidebar:
+def render_settings_panel():
+    global uploaded_files, run_mode, router_mode_label, router_mode, max_autonomous_steps, planner_type_label, planner_type, evaluator_type_label, evaluator_type, memory_enabled, memory_write_mode_label, memory_write_mode, source_strategy_label, source_strategy, retrieval_strategy_label, retrieval_strategy, context_packing_label, context_packing_strategy, chunking_strategy_labels, chunking_strategy, top_k, web_max_results, plan_progress_enabled, streaming_enabled, trace_level, deepseek_model_label, deepseek_model
     st.header("资料")
     uploaded_files = st.file_uploader(
         "上传文件或图片",
@@ -936,303 +934,391 @@ if "memory_notice" not in st.session_state:
     st.session_state.memory_notice = ""
 
 
-for index, message in enumerate(st.session_state.messages):
-    with st.chat_message(message["role"]):
-        if message["role"] == "assistant":
-            render_assistant_message(
-                message["content"],
-                message.get("badcase_run"),
-                key_suffix=f"history_{index}",
-            )
-        else:
-            st.write(message["content"])
+st.markdown("""
+<style>
+[data-testid="stSidebar"] {display: none;}
+.block-container {padding-top: 1.4rem; max-width: 100%;}
+.main-header-card {
+    border: 1px solid #e2e6ee;
+    border-radius: 8px;
+    padding: 1rem 1.1rem;
+    background: #ffffff;
+    box-shadow: 0 10px 28px rgba(23, 31, 56, 0.06);
+    margin-bottom: 0.9rem;
+}
+.main-header-card h1 {font-size: 1.7rem; margin: 0 0 0.25rem 0;}
+.main-header-card p {margin: 0; color: #6b7280;}
+.settings-panel, .observe-panel {
+    border: 1px solid #e2e6ee;
+    border-radius: 8px;
+    background: #ffffff;
+    padding: 0.9rem;
+    box-shadow: 0 10px 28px rgba(23, 31, 56, 0.06);
+}
+.settings-panel {margin-bottom: 0.9rem;}
+.workspace-note {
+    border: 1px solid #e2e6ee;
+    border-radius: 8px;
+    background: #ffffff;
+    padding: 0.8rem 1rem;
+    margin-bottom: 0.9rem;
+}
+.workspace-note p {margin: 0; color: #6b7280;}
+.badcase-inline button {
+    border-radius: 7px !important;
+}
+.workspace-composer {
+    border: 1px solid #e2e6ee;
+    border-radius: 8px;
+    background: #ffffff;
+    padding: 0.8rem;
+    margin-top: 1rem;
+    box-shadow: 0 10px 28px rgba(23, 31, 56, 0.06);
+}
+</style>
+""", unsafe_allow_html=True)
+
+settings_col, workspace_col = st.columns([0.28, 0.72], gap="large")
+
+with settings_col:
+    st.markdown('<div class="settings-panel">', unsafe_allow_html=True)
+    render_settings_panel()
+    st.markdown('</div>', unsafe_allow_html=True)
+
+    st.markdown('<div class="observe-panel">', unsafe_allow_html=True)
+    st.subheader("观察面板")
+    st.caption("运行过程、引用来源、badcase 与 Memory 候选会在工作区内跟随回答展示；这里保留当前配置快照。")
+    st.write("运行模式：", run_mode)
+    st.write("路由：", router_mode_label)
+    st.write("资料来源：", source_strategy_label)
+    st.write("检索：", retrieval_strategy_label)
+    st.write("上下文打包：", context_packing_label)
+    st.write("切分：", "、".join(chunking_strategy_labels))
+    st.write("模型：", deepseek_model_label)
+    st.write("Trace：", trace_level)
+    st.markdown('</div>', unsafe_allow_html=True)
+
+with workspace_col:
+    st.markdown(
+        '<div class="main-header-card"><h1>RAG Agent Pro（检索增强智能体教学版）</h1>'
+        '<p>Agent 工作区：对话、执行进度、回答主体、参考来源和反馈闭环集中在这里。</p></div>',
+        unsafe_allow_html=True,
+    )
+    st.markdown(
+        '<div class="workspace-note"><p>当前工作区已移到右侧。左侧保留设置和观察面板，右侧优先展示用户任务和 Agent 产物。</p></div>',
+        unsafe_allow_html=True,
+    )
 
 
-prompt = st.chat_input("输入问题，Agent（智能体）会自动检索上传资料和网络资料")
+    for index, message in enumerate(st.session_state.messages):
+        with st.chat_message(message["role"]):
+            if message["role"] == "assistant":
+                render_assistant_message(
+                    message["content"],
+                    message.get("badcase_run"),
+                    key_suffix=f"history_{index}",
+                )
+            else:
+                st.write(message["content"])
 
-if prompt:
-    if not deepseek_key:
-        st.error("请先配置 DEEPSEEK_API_KEY。")
-        st.stop()
 
-    trace_id = generate_trace_id()
-    st.session_state.messages.append({"role": "user", "content": prompt})
+    prompt = None
+    with st.form("workspace_prompt_form", clear_on_submit=True):
+        st.markdown('<div class="workspace-composer">', unsafe_allow_html=True)
+        prompt_text = st.text_area(
+            "输入问题",
+            placeholder="输入问题，Agent（智能体）会自动检索上传资料和网络资料",
+            label_visibility="collapsed",
+            height=82,
+        )
+        submitted_prompt = st.form_submit_button("发送")
+        st.markdown('</div>', unsafe_allow_html=True)
+        if submitted_prompt:
+            prompt = prompt_text.strip()
 
-    with st.chat_message("user"):
-        st.write(prompt)
+    if prompt:
+        if not deepseek_key:
+            st.error("请先配置 DEEPSEEK_API_KEY。")
+            st.stop()
 
-    with st.chat_message("assistant"):
-        try:
-            plan_placeholder = st.empty()
-            live_plan_steps = base_plan_steps(run_mode)
-            if plan_progress_enabled:
-                render_plan_progress(plan_placeholder, live_plan_steps)
+        trace_id = generate_trace_id()
+        st.session_state.messages.append({"role": "user", "content": prompt})
 
-            def handle_plan_progress(event):
-                if not plan_progress_enabled:
-                    return
-                merge_plan_event(live_plan_steps, event)
-                render_plan_progress(plan_placeholder, live_plan_steps)
+        with st.chat_message("user"):
+            st.write(prompt)
 
-            stream_placeholder = st.empty()
-            streamed_answer = {"text": ""}
+        with st.chat_message("assistant"):
+            try:
+                plan_placeholder = st.empty()
+                live_plan_steps = base_plan_steps(run_mode)
+                if plan_progress_enabled:
+                    render_plan_progress(plan_placeholder, live_plan_steps)
 
-            def handle_answer_stream(delta, full_text):
-                streamed_answer["text"] = full_text
-                stream_placeholder.markdown(full_text + "▌")
+                def handle_plan_progress(event):
+                    if not plan_progress_enabled:
+                        return
+                    merge_plan_event(live_plan_steps, event)
+                    render_plan_progress(plan_placeholder, live_plan_steps)
 
-            with st.spinner("执行 Agent（智能体）计划中..."):
-                uploaded_sources = ingest_uploaded_files(uploaded_files, prompt, chunking_strategy)
-                memory_context = ""
-                retrieved_memories = []
-                if memory_enabled:
-                    retrieved_memories = memory_manager.retrieve_memories(prompt)
-                    memory_context = memory_manager.build_memory_context(retrieved_memories)
+                stream_placeholder = st.empty()
+                streamed_answer = {"text": ""}
 
-                use_autonomous_mode = False
-                autonomous_route_reason = ""
-                if run_mode == "自主任务":
-                    use_autonomous_mode, autonomous_route_reason = call_with_supported_kwargs(
-                        autonomous_agent.should_use_autonomous_mode,
-                        prompt,
-                        router_mode=router_mode,
-                    )
+                def handle_answer_stream(delta, full_text):
+                    streamed_answer["text"] = full_text
+                    stream_placeholder.markdown(full_text + "▌")
 
-                if run_mode == "自主任务" and use_autonomous_mode:
-                    result = call_with_supported_kwargs(
-                        autonomous_agent.run_autonomous_agent,
-                        prompt,
-                        top_k=top_k,
-                        web_max_results=web_max_results,
-                        max_steps=max_autonomous_steps,
-                        preferred_sources=uploaded_sources,
-                        router_mode=router_mode,
-                        source_strategy=source_strategy,
-                        retrieval_strategy=retrieval_strategy,
-                        context_packing_strategy=context_packing_strategy,
-                        planner_type=planner_type,
-                        evaluator_type=evaluator_type,
-                        memory_context=memory_context,
-                        metadata_scope={"session_id": st.session_state.rag_session_id},
-                        progress_callback=handle_plan_progress,
-                    )
-                else:
-                    answer_stream_callback = handle_answer_stream if streaming_enabled else None
-                    result = call_with_supported_kwargs(
-                        agent_runtime.run_agent_pro,
-                        prompt,
-                        use_web=True,
-                        top_k=top_k,
-                        web_max_results=web_max_results,
-                        preferred_sources=uploaded_sources,
-                        router_mode=router_mode,
-                        source_strategy=source_strategy,
-                        retrieval_strategy=retrieval_strategy,
-                        context_packing_strategy=context_packing_strategy,
-                        planner_type=planner_type,
-                        evaluator_type=evaluator_type,
-                        memory_context=memory_context,
-                        metadata_scope={"session_id": st.session_state.rag_session_id},
-                        stream_callback=answer_stream_callback,
-                        progress_callback=handle_plan_progress,
-                    )
+                with st.spinner("执行 Agent（智能体）计划中..."):
+                    uploaded_sources = ingest_uploaded_files(uploaded_files, prompt, chunking_strategy)
+                    memory_context = ""
+                    retrieved_memories = []
+                    if memory_enabled:
+                        retrieved_memories = memory_manager.retrieve_memories(prompt)
+                        memory_context = memory_manager.build_memory_context(retrieved_memories)
+
+                    use_autonomous_mode = False
+                    autonomous_route_reason = ""
                     if run_mode == "自主任务":
-                        handle_plan_progress({
-                            "id": "goal_manager",
-                            "name": "自主模式入口判断",
-                            "tool": "goal_router",
-                            "status": "completed",
-                            "summary": f"已回退普通问答：{autonomous_route_reason}",
-                        })
-                        result["planner_mode"] = "autonomous_fallback"
-                        result["steps"] = [
-                            {
+                        use_autonomous_mode, autonomous_route_reason = call_with_supported_kwargs(
+                            autonomous_agent.should_use_autonomous_mode,
+                            prompt,
+                            router_mode=router_mode,
+                        )
+
+                    if run_mode == "自主任务" and use_autonomous_mode:
+                        result = call_with_supported_kwargs(
+                            autonomous_agent.run_autonomous_agent,
+                            prompt,
+                            top_k=top_k,
+                            web_max_results=web_max_results,
+                            max_steps=max_autonomous_steps,
+                            preferred_sources=uploaded_sources,
+                            router_mode=router_mode,
+                            source_strategy=source_strategy,
+                            retrieval_strategy=retrieval_strategy,
+                            context_packing_strategy=context_packing_strategy,
+                            planner_type=planner_type,
+                            evaluator_type=evaluator_type,
+                            memory_context=memory_context,
+                            metadata_scope={"session_id": st.session_state.rag_session_id},
+                            progress_callback=handle_plan_progress,
+                        )
+                    else:
+                        answer_stream_callback = handle_answer_stream if streaming_enabled else None
+                        result = call_with_supported_kwargs(
+                            agent_runtime.run_agent_pro,
+                            prompt,
+                            use_web=True,
+                            top_k=top_k,
+                            web_max_results=web_max_results,
+                            preferred_sources=uploaded_sources,
+                            router_mode=router_mode,
+                            source_strategy=source_strategy,
+                            retrieval_strategy=retrieval_strategy,
+                            context_packing_strategy=context_packing_strategy,
+                            planner_type=planner_type,
+                            evaluator_type=evaluator_type,
+                            memory_context=memory_context,
+                            metadata_scope={"session_id": st.session_state.rag_session_id},
+                            stream_callback=answer_stream_callback,
+                            progress_callback=handle_plan_progress,
+                        )
+                        if run_mode == "自主任务":
+                            handle_plan_progress({
+                                "id": "goal_manager",
                                 "name": "自主模式入口判断",
                                 "tool": "goal_router",
-                                "reason": "Goal Manager（目标管理器）先判断输入是否值得进入任务级 Autonomous Runtime（自主任务运行时）。",
-                                "status": "success",
+                                "status": "completed",
                                 "summary": f"已回退普通问答：{autonomous_route_reason}",
-                                "elapsed_ms": 0,
-                                "error": "",
-                            },
-                            *result.get("steps", []),
-                        ]
+                            })
+                            result["planner_mode"] = "autonomous_fallback"
+                            result["steps"] = [
+                                {
+                                    "name": "自主模式入口判断",
+                                    "tool": "goal_router",
+                                    "reason": "Goal Manager（目标管理器）先判断输入是否值得进入任务级 Autonomous Runtime（自主任务运行时）。",
+                                    "status": "success",
+                                    "summary": f"已回退普通问答：{autonomous_route_reason}",
+                                    "elapsed_ms": 0,
+                                    "error": "",
+                                },
+                                *result.get("steps", []),
+                            ]
 
-            if streamed_answer["text"]:
-                stream_placeholder.empty()
-            badcase_run = {
-                "trace_id": trace_id,
-                "user_input": prompt,
-                "actual_answer": result["answer"],
-                "config": build_current_config(),
-                "tools_called": extract_tools_from_steps(result.get("steps", [])),
-                "sources_used": extract_source_types(result.get("sources", [])),
-                "planner_mode": result.get("planner_mode", ""),
-                "memory_used": [item.get("id") for item in retrieved_memories],
-                "run_snapshot": {
+                if streamed_answer["text"]:
+                    stream_placeholder.empty()
+                badcase_run = {
                     "trace_id": trace_id,
-                    "planner_mode": result.get("planner_mode", ""),
+                    "user_input": prompt,
+                    "actual_answer": result["answer"],
+                    "config": build_current_config(),
                     "tools_called": extract_tools_from_steps(result.get("steps", [])),
                     "sources_used": extract_source_types(result.get("sources", [])),
+                    "planner_mode": result.get("planner_mode", ""),
                     "memory_used": [item.get("id") for item in retrieved_memories],
-                    "steps": compact_steps_for_log(result.get("steps", [])),
-                    "sources": compact_sources_for_log(result.get("sources", [])),
-                    "answer_preview": str(result.get("answer", ""))[:1200],
-                },
-            }
-            render_assistant_message(
-                result["answer"],
-                badcase_run,
-                key_suffix=f"live_{len(st.session_state.messages)}",
-            )
-            st.session_state.messages.append({
-                "role": "assistant",
-                "content": result["answer"],
-                "badcase_run": badcase_run,
-            })
-            st.session_state.last_sources = result["sources"]
+                    "run_snapshot": {
+                        "trace_id": trace_id,
+                        "planner_mode": result.get("planner_mode", ""),
+                        "tools_called": extract_tools_from_steps(result.get("steps", [])),
+                        "sources_used": extract_source_types(result.get("sources", [])),
+                        "memory_used": [item.get("id") for item in retrieved_memories],
+                        "steps": compact_steps_for_log(result.get("steps", [])),
+                        "sources": compact_sources_for_log(result.get("sources", [])),
+                        "answer_preview": str(result.get("answer", ""))[:1200],
+                    },
+                }
+                render_assistant_message(
+                    result["answer"],
+                    badcase_run,
+                    key_suffix=f"live_{len(st.session_state.messages)}",
+                )
+                st.session_state.messages.append({
+                    "role": "assistant",
+                    "content": result["answer"],
+                    "badcase_run": badcase_run,
+                })
+                st.session_state.last_sources = result["sources"]
 
-            if memory_enabled and memory_write_mode == "confirm":
-                candidates = memory_manager.suggest_memory_candidates(prompt)
-                for candidate in candidates:
-                    candidate["candidate_id"] = memory_manager.candidate_id(candidate)
-                st.session_state.pending_memory_candidates = candidates
-                render_memory_confirmation()
+                if memory_enabled and memory_write_mode == "confirm":
+                    candidates = memory_manager.suggest_memory_candidates(prompt)
+                    for candidate in candidates:
+                        candidate["candidate_id"] = memory_manager.candidate_id(candidate)
+                    st.session_state.pending_memory_candidates = candidates
+                    render_memory_confirmation()
 
-            if trace_level != "隐藏":
-                with st.expander("查看 Agent（智能体）执行步骤"):
-                    planner_label = (
-                        "Autonomous Runtime（自主任务运行时）"
-                        if result.get("planner_mode") == "autonomous_runtime"
-                        else
-                        "LLM Tool Calling（大模型工具调用）"
-                        if result.get("planner_mode") == "llm_tool_calling"
-                        else "自主模式回退普通问答"
-                        if result.get("planner_mode") == "autonomous_fallback"
-                        else "行业主流 Runtime（运行时）雏形"
-                        if result.get("planner_mode") == "pro_runtime"
-                        else "规则兜底"
-                    )
-                    st.caption(
-                        f"Planner（规划器）来源：{planner_label}｜Router（路由器）：{router_mode_label}｜"
-                        f"Source（资料来源）：{source_strategy_label}｜Retrieval（检索）：{retrieval_strategy_label}｜"
-                        f"Packing（上下文打包）：{context_packing_label}｜"
-                        f"Chunking（切分）：{'、'.join(chunking_strategy_labels)}｜"
-                        f"Model（模型）：{deepseek_model_label}｜Evaluator（评估器）：{evaluator_type_label}"
-                    )
-                    for index, step in enumerate(result.get("steps", []), start=1):
-                        status_map = {
-                            "success": "成功",
-                            "warning": "提示",
-                            "failed": "失败",
-                        }
-                        status = status_map.get(step["status"], step["status"])
-                        st.markdown(f"**{index}. {step['name']}**")
-                        st.caption(
-                            f"工具：{step['tool']} | 状态：{status} | 耗时：{step['elapsed_ms']} ms"
+                if trace_level != "隐藏":
+                    with st.expander("查看 Agent（智能体）执行步骤"):
+                        planner_label = (
+                            "Autonomous Runtime（自主任务运行时）"
+                            if result.get("planner_mode") == "autonomous_runtime"
+                            else
+                            "LLM Tool Calling（大模型工具调用）"
+                            if result.get("planner_mode") == "llm_tool_calling"
+                            else "自主模式回退普通问答"
+                            if result.get("planner_mode") == "autonomous_fallback"
+                            else "行业主流 Runtime（运行时）雏形"
+                            if result.get("planner_mode") == "pro_runtime"
+                            else "规则兜底"
                         )
-                        if trace_level == "完整":
-                            st.write(step["reason"])
-                            st.write(step["summary"])
-                        else:
-                            st.write(step["summary"])
-                        if step.get("error"):
-                            st.error(step["error"])
-                        st.divider()
-
-            if result.get("planner_mode") == "autonomous_runtime":
-                with st.expander("查看 Autonomous Agent（自主智能体）任务状态"):
-                    goal = result.get("goal")
-                    if goal:
-                        st.markdown("**目标**")
-                        st.write(goal.objective)
-                        st.caption(f"停止原因：{result.get('stop_reason', '')}")
-
-                    st.markdown("**任务队列**")
-                    for task in result.get("tasks", []):
-                        st.write(f"{task.id}｜{task.title}｜{task.status}")
-                        st.caption(f"依赖：{', '.join(task.depends_on) or '无'}｜预期产物：{task.expected_output}")
-
-                    if result.get("critic_results"):
-                        st.markdown("**Critic（批判器）结果**")
-                        for critic in result["critic_results"]:
-                            status = "通过" if critic["passed"] else "未通过"
-                            st.write(f"{critic['task_id']}｜{status}｜分数：{critic['score']}")
-                            if critic["issues"]:
-                                st.caption("问题：" + "；".join(critic["issues"]))
-
-                    if result.get("reflections"):
-                        st.markdown("**Reflect（反思）补救建议**")
-                        for reflection in result["reflections"]:
-                            st.write(f"{reflection['task_id']} → {reflection['repair_task_id']}")
-                            st.caption("问题：" + "；".join(reflection["issues"]))
-
-            if result["sources"]:
-                with st.expander("查看参考来源"):
-                    for index, source in enumerate(result["sources"], start=1):
-                        title = source["source"]
-                        url = source.get("url", "")
-                        source_type = source.get("source_type", "unknown")
-                        label = source_label(source)
-                        st.markdown(f"**{index}. {title}**")
-                        st.markdown(f"`{label}`")
-                        st.caption(f"类型：{source_type} | chunk（资料片段）类型：{source.get('chunk_type', 'child')}")
-                        location_parts = []
-                        if source.get("section_title"):
-                            location_parts.append(f"小节：{source['section_title']}")
-                        if source.get("page"):
-                            location_parts.append(f"页码：{source['page']}")
-                        if source.get("sheet"):
-                            location_parts.append(f"工作表：{source['sheet']}")
-                        if source.get("row_start"):
-                            location_parts.append(f"行：{source.get('row_start')}-{source.get('row_end')}")
-                        if location_parts:
-                            st.caption(" | ".join(location_parts))
                         st.caption(
-                            "融合分："
-                            f"{source.get('final_score', 0):.4f} | "
-                            f"原始分：{source.get('pre_rerank_score', source.get('final_score', 0)):.4f} | "
-                            f"意图：{source.get('query_intent', 'general')} | "
-                            f"新鲜度：{source.get('freshness_score', 0):.2f} | "
-                            f"答案性：{source.get('answerability_score', 0):.2f} | "
-                            f"Rerank（重排序）：{source.get('rerank_status', '未启用')} | "
-                            f"Rerank（重排序）分：{source.get('rerank_score', '无')} | "
-                            f"向量排名：{source.get('vector_rank', '未召回')} | "
-                            f"关键词排名：{source.get('bm25_rank', '未召回')} | "
-                            f"上下文顺序：{source.get('context_order', index)}"
+                            f"Planner（规划器）来源：{planner_label}｜Router（路由器）：{router_mode_label}｜"
+                            f"Source（资料来源）：{source_strategy_label}｜Retrieval（检索）：{retrieval_strategy_label}｜"
+                            f"Packing（上下文打包）：{context_packing_label}｜"
+                            f"Chunking（切分）：{'、'.join(chunking_strategy_labels)}｜"
+                            f"Model（模型）：{deepseek_model_label}｜Evaluator（评估器）：{evaluator_type_label}"
                         )
-                        if url:
-                            st.write(url)
-                        st.write(source["document"][:300])
-                        st.divider()
+                        for index, step in enumerate(result.get("steps", []), start=1):
+                            status_map = {
+                                "success": "成功",
+                                "warning": "提示",
+                                "failed": "失败",
+                            }
+                            status = status_map.get(step["status"], step["status"])
+                            st.markdown(f"**{index}. {step['name']}**")
+                            st.caption(
+                                f"工具：{step['tool']} | 状态：{status} | 耗时：{step['elapsed_ms']} ms"
+                            )
+                            if trace_level == "完整":
+                                st.write(step["reason"])
+                                st.write(step["summary"])
+                            else:
+                                st.write(step["summary"])
+                            if step.get("error"):
+                                st.error(step["error"])
+                            st.divider()
 
-        except Exception as e:
-            error_answer = f"调用失败：{e}"
-            error_run = {
-                "trace_id": trace_id,
-                "user_input": prompt,
-                "actual_answer": error_answer,
-                "config": build_current_config(),
-                "tools_called": [],
-                "sources_used": [],
-                "planner_mode": "error",
-                "memory_used": [],
-                "run_snapshot": {
+                if result.get("planner_mode") == "autonomous_runtime":
+                    with st.expander("查看 Autonomous Agent（自主智能体）任务状态"):
+                        goal = result.get("goal")
+                        if goal:
+                            st.markdown("**目标**")
+                            st.write(goal.objective)
+                            st.caption(f"停止原因：{result.get('stop_reason', '')}")
+
+                        st.markdown("**任务队列**")
+                        for task in result.get("tasks", []):
+                            st.write(f"{task.id}｜{task.title}｜{task.status}")
+                            st.caption(f"依赖：{', '.join(task.depends_on) or '无'}｜预期产物：{task.expected_output}")
+
+                        if result.get("critic_results"):
+                            st.markdown("**Critic（批判器）结果**")
+                            for critic in result["critic_results"]:
+                                status = "通过" if critic["passed"] else "未通过"
+                                st.write(f"{critic['task_id']}｜{status}｜分数：{critic['score']}")
+                                if critic["issues"]:
+                                    st.caption("问题：" + "；".join(critic["issues"]))
+
+                        if result.get("reflections"):
+                            st.markdown("**Reflect（反思）补救建议**")
+                            for reflection in result["reflections"]:
+                                st.write(f"{reflection['task_id']} → {reflection['repair_task_id']}")
+                                st.caption("问题：" + "；".join(reflection["issues"]))
+
+                if result["sources"]:
+                    with st.expander("查看参考来源"):
+                        for index, source in enumerate(result["sources"], start=1):
+                            title = source["source"]
+                            url = source.get("url", "")
+                            source_type = source.get("source_type", "unknown")
+                            label = source_label(source)
+                            st.markdown(f"**{index}. {title}**")
+                            st.markdown(f"`{label}`")
+                            st.caption(f"类型：{source_type} | chunk（资料片段）类型：{source.get('chunk_type', 'child')}")
+                            location_parts = []
+                            if source.get("section_title"):
+                                location_parts.append(f"小节：{source['section_title']}")
+                            if source.get("page"):
+                                location_parts.append(f"页码：{source['page']}")
+                            if source.get("sheet"):
+                                location_parts.append(f"工作表：{source['sheet']}")
+                            if source.get("row_start"):
+                                location_parts.append(f"行：{source.get('row_start')}-{source.get('row_end')}")
+                            if location_parts:
+                                st.caption(" | ".join(location_parts))
+                            st.caption(
+                                "融合分："
+                                f"{source.get('final_score', 0):.4f} | "
+                                f"原始分：{source.get('pre_rerank_score', source.get('final_score', 0)):.4f} | "
+                                f"意图：{source.get('query_intent', 'general')} | "
+                                f"新鲜度：{source.get('freshness_score', 0):.2f} | "
+                                f"答案性：{source.get('answerability_score', 0):.2f} | "
+                                f"Rerank（重排序）：{source.get('rerank_status', '未启用')} | "
+                                f"Rerank（重排序）分：{source.get('rerank_score', '无')} | "
+                                f"向量排名：{source.get('vector_rank', '未召回')} | "
+                                f"关键词排名：{source.get('bm25_rank', '未召回')} | "
+                                f"上下文顺序：{source.get('context_order', index)}"
+                            )
+                            if url:
+                                st.write(url)
+                            st.write(source["document"][:300])
+                            st.divider()
+
+            except Exception as e:
+                error_answer = f"调用失败：{e}"
+                error_run = {
                     "trace_id": trace_id,
+                    "user_input": prompt,
+                    "actual_answer": error_answer,
+                    "config": build_current_config(),
+                    "tools_called": [],
+                    "sources_used": [],
                     "planner_mode": "error",
-                    "error": str(e)[:1200],
-                    "answer_preview": error_answer,
-                },
-            }
-            st.error(error_answer)
-            render_assistant_message(error_answer, error_run, key_suffix=f"error_{len(st.session_state.messages)}")
-            st.session_state.messages.append({
-                "role": "assistant",
-                "content": error_answer,
-                "badcase_run": error_run,
-            })
+                    "memory_used": [],
+                    "run_snapshot": {
+                        "trace_id": trace_id,
+                        "planner_mode": "error",
+                        "error": str(e)[:1200],
+                        "answer_preview": error_answer,
+                    },
+                }
+                st.error(error_answer)
+                render_assistant_message(error_answer, error_run, key_suffix=f"error_{len(st.session_state.messages)}")
+                st.session_state.messages.append({
+                    "role": "assistant",
+                    "content": error_answer,
+                    "badcase_run": error_run,
+                })
 
-render_badcase_form()
-if st.session_state.memory_notice:
-    st.info(st.session_state.memory_notice)
-render_memory_confirmation()
+    render_badcase_form()
+    if st.session_state.memory_notice:
+        st.info(st.session_state.memory_notice)
+    render_memory_confirmation()
