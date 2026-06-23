@@ -425,13 +425,20 @@ def merge_plan_event(plan_steps, event):
 def render_plan_progress(plan_placeholder, plan_steps):
     completed = sum(1 for step in plan_steps if step["status"] in {"completed", "skipped"})
     total = len(plan_steps)
-    current_step = next((step for step in plan_steps if step.get("status") == "running"), None)
-    if current_step is None:
-        current_step = next((step for step in plan_steps if step.get("status") == "failed"), None)
-    if current_step is None:
-        current_step = next((step for step in plan_steps if step.get("status") == "pending"), None)
-    if current_step is None and plan_steps:
-        current_step = plan_steps[-1]
+    display_title = "Agent 当前环节"
+    display_step = next((step for step in plan_steps if step.get("status") == "running"), None)
+    if display_step is None:
+        display_step = next(
+            (step for step in reversed(plan_steps) if step.get("status") in {"failed", "warning"}),
+            None,
+        )
+    if display_step is None:
+        display_step = next(
+            (step for step in reversed(plan_steps) if step.get("status") in {"completed", "skipped"}),
+            None,
+        )
+        if display_step is not None:
+            display_title = "Agent 最近完成"
 
     rows = []
     for step in plan_steps:
@@ -444,14 +451,14 @@ def render_plan_progress(plan_placeholder, plan_steps):
         rows.append(f"{icon} **{label}**｜{step['name']}｜{summary}{elapsed_text}")
 
     with plan_placeholder.container():
-        if current_step:
-            current_status = current_step.get("status", "pending")
+        if display_step:
+            current_status = display_step.get("status", "pending")
             current_label = PLAN_STATUS_LABELS.get(current_status, current_status)
             current_icon = PLAN_STATUS_ICONS.get(current_status, "○")
-            current_summary = current_step.get("summary", "")
+            current_summary = display_step.get("summary", "")
             st.markdown(
-                "**Agent 当前环节**  \n"
-                f"{current_icon} **{current_label}**｜{current_step['name']}｜{current_summary}"
+                f"**{display_title}**  \n"
+                f"{current_icon} **{current_label}**｜{display_step['name']}｜{current_summary}"
             )
         else:
             st.markdown("**Agent 当前环节**  \n○ 等待开始")
