@@ -1,4 +1,7 @@
 streamlit
+fastapi
+uvicorn
+python-multipart
 openai
 chromadb
 sentence-transformers

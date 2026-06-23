@@ -1,0 +1,621 @@
+:root {
+  --bg: #f5f7fb;
+  --panel: #ffffff;
+  --panel-soft: #f8fafc;
+  --text: #1f2430;
+  --muted: #687084;
+  --line: #dfe5ef;
+  --accent: #ef4f4f;
+  --accent-dark: #d9363e;
+  --ok: #16a34a;
+  --warning: #f59e0b;
+  --shadow: 0 16px 42px rgba(31, 36, 48, 0.08);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  min-height: 100%;
+  background: var(--bg);
+  color: var(--text);
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+button,
+textarea,
+select,
+input {
+  font: inherit;
+}
+
+button {
+  cursor: pointer;
+}
+
+.appShell {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 360px;
+  gap: 24px;
+  max-width: 1440px;
+  margin: 0 auto;
+  padding: 28px;
+}
+
+.workspace {
+  min-width: 0;
+}
+
+.hero,
+.composerCard,
+.uploadState,
+.panelCard,
+.messageBody,
+.modal {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  box-shadow: var(--shadow);
+}
+
+.hero {
+  display: flex;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 24px;
+  margin-bottom: 16px;
+}
+
+.eyebrow {
+  margin: 0 0 8px;
+  color: var(--accent);
+  font-weight: 700;
+}
+
+.hero h1 {
+  margin: 0;
+  font-size: 30px;
+  line-height: 1.2;
+  letter-spacing: 0;
+}
+
+.hero p {
+  margin: 10px 0 0;
+  color: var(--muted);
+}
+
+.statusGroup {
+  display: inline-flex;
+  align-items: center;
+  align-self: flex-start;
+  gap: 8px;
+  min-width: max-content;
+  color: var(--muted);
+  font-size: 14px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 8px 12px;
+}
+
+.okDot,
+.badDot {
+  width: 9px;
+  height: 9px;
+  border-radius: 99px;
+}
+
+.okDot {
+  background: var(--ok);
+}
+
+.badDot {
+  background: var(--warning);
+}
+
+.composerCard {
+  padding: 16px;
+  margin-bottom: 16px;
+}
+
+.composerCard textarea {
+  width: 100%;
+  min-height: 112px;
+  resize: vertical;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 14px;
+  outline: none;
+  color: var(--text);
+  background: var(--panel-soft);
+}
+
+.composerCard textarea:focus {
+  border-color: var(--accent);
+  background: #fff;
+}
+
+.composerActions {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.uploadInline {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 10px 12px;
+  background: #fff;
+  color: var(--text);
+  min-height: 42px;
+}
+
+.uploadInline input {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.primaryButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border: 0;
+  border-radius: 8px;
+  padding: 11px 18px;
+  color: white;
+  background: var(--accent);
+  min-height: 42px;
+}
+
+.primaryButton:hover {
+  background: var(--accent-dark);
+}
+
+.primaryButton:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.quickPrompts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.quickPrompts button,
+.feedbackButton,
+.modalActions button,
+.advancedToggle {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--text);
+  padding: 9px 11px;
+}
+
+.quickPrompts button:hover,
+.feedbackButton:hover,
+.modalActions button:hover,
+.advancedToggle:hover {
+  border-color: #b7c1d3;
+  background: var(--panel-soft);
+}
+
+.uploadState {
+  padding: 16px;
+  margin-bottom: 16px;
+}
+
+.sectionTitle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 700;
+  margin-bottom: 12px;
+}
+
+.uploadGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 10px;
+}
+
+.uploadItem {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 10px;
+  background: var(--panel-soft);
+}
+
+.uploadItem span {
+  color: var(--muted);
+  font-size: 14px;
+}
+
+.conversation {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding-bottom: 32px;
+}
+
+.emptyConversation {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  border: 1px dashed #c8d0dd;
+  border-radius: 8px;
+  padding: 32px;
+  color: var(--muted);
+  background: rgba(255, 255, 255, 0.7);
+}
+
+.emptyConversation strong {
+  color: var(--text);
+}
+
+.message {
+  display: grid;
+  grid-template-columns: 38px minmax(0, 1fr);
+  gap: 12px;
+}
+
+.message.user {
+  max-width: 88%;
+  margin-left: auto;
+}
+
+.message.user .messageBody {
+  background: #fff4f4;
+}
+
+.avatar {
+  width: 38px;
+  height: 38px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  background: var(--accent);
+  color: white;
+}
+
+.message.user .avatar {
+  background: #2f3545;
+}
+
+.messageBody {
+  padding: 14px;
+  min-width: 0;
+}
+
+.messageText {
+  white-space: pre-wrap;
+  line-height: 1.65;
+}
+
+.thinking {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--muted);
+}
+
+.resultDetails {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.progressStrip {
+  display: grid;
+  gap: 4px;
+  border-left: 3px solid var(--accent);
+  background: var(--panel-soft);
+  padding: 10px 12px;
+  border-radius: 6px;
+}
+
+.progressStrip span,
+.progressStrip em {
+  color: var(--muted);
+  font-style: normal;
+  font-size: 14px;
+}
+
+.sourcesBlock,
+.debugBlock {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 10px 12px;
+  background: #fff;
+}
+
+.sourcesBlock summary,
+.debugBlock summary {
+  cursor: pointer;
+  font-weight: 700;
+}
+
+.sourceCards {
+  display: grid;
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.sourceCard {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 10px;
+  background: var(--panel-soft);
+}
+
+.sourceCard div {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 6px;
+}
+
+.sourceCard span {
+  color: var(--muted);
+  font-size: 13px;
+  min-width: max-content;
+}
+
+.sourceCard p {
+  margin: 0;
+  color: #3f4655;
+  line-height: 1.55;
+}
+
+.traceMeta,
+.traceItem {
+  margin-top: 8px;
+  color: var(--muted);
+  font-size: 14px;
+}
+
+.traceItem {
+  display: grid;
+  gap: 2px;
+  border-top: 1px solid var(--line);
+  padding-top: 8px;
+}
+
+.feedbackButton {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.sidePanel {
+  position: sticky;
+  top: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  align-self: start;
+}
+
+.panelCard {
+  padding: 16px;
+}
+
+.subtle {
+  display: grid;
+  gap: 7px;
+  color: var(--muted);
+  font-size: 14px;
+}
+
+.subtle strong {
+  color: var(--text);
+}
+
+.pillList {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.pillList span {
+  display: inline-flex;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--panel-soft);
+  padding: 6px 9px;
+  color: #495164;
+  font-size: 13px;
+}
+
+.fieldGroup {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
+.fieldGroup label,
+.fieldGroup span,
+.fieldGroup > label {
+  font-weight: 650;
+}
+
+.fieldGroup select,
+.fieldGroup input[type="range"] {
+  width: 100%;
+}
+
+.fieldGroup select {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 10px;
+  background: #fff;
+  color: var(--text);
+}
+
+.segmented {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 3px;
+  background: var(--panel-soft);
+}
+
+.segmented button {
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  padding: 9px;
+}
+
+.segmented .selected {
+  background: var(--accent);
+  color: white;
+}
+
+.advancedToggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  font-weight: 700;
+}
+
+.advancedContent {
+  margin-top: 14px;
+}
+
+.rotate {
+  transform: rotate(180deg);
+}
+
+.checkList {
+  display: grid;
+  gap: 8px;
+}
+
+.checkList label,
+.toggleRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text);
+}
+
+.modalBackdrop {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  background: rgba(15, 23, 42, 0.45);
+  z-index: 10;
+}
+
+.modal {
+  width: min(560px, 100%);
+  padding: 20px;
+}
+
+.modal h2 {
+  margin: 0 0 8px;
+}
+
+.modal p {
+  margin: 0 0 16px;
+  color: var(--muted);
+}
+
+.modal label {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 14px;
+  font-weight: 700;
+}
+
+.modal textarea {
+  width: 100%;
+  min-height: 90px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 10px;
+}
+
+.modalActions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.spin {
+  animation: spin 0.9s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (max-width: 980px) {
+  .appShell {
+    grid-template-columns: 1fr;
+    padding: 16px;
+  }
+
+  .sidePanel {
+    position: static;
+    order: 2;
+  }
+
+  .workspace {
+    order: 1;
+  }
+
+  .hero {
+    flex-direction: column;
+  }
+
+  .hero h1 {
+    font-size: 24px;
+  }
+
+  .composerActions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .primaryButton,
+  .uploadInline {
+    width: 100%;
+  }
+
+  .message.user {
+    max-width: 100%;
+  }
+
+  .sourceCard div {
+    flex-direction: column;
+  }
+}

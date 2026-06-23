@@ -3,3 +3,5 @@ __pycache__/
 chroma_db/
 .streamlit/secrets.toml
 data/memory_store.json
+frontend/node_modules/
+frontend/.next/
