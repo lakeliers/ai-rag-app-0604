@@ -3,6 +3,7 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
+echo "Experimental Next.js UI. Production Streamlit entry remains app.py."
 echo "Starting Python Agent API on http://127.0.0.1:8000"
 python3 -m uvicorn api_server:app --reload --port 8000 &
 API_PID=$!

@@ -1,6 +1,8 @@
 # RAG Agent Pro Next.js Frontend
 
-这是 React / Next.js 版前端，用于替代 Streamlit 的主要用户交互体验。
+这是 React / Next.js 版前端实验工程，用于后续产品级 UI 探索和教学对比。
+
+当前生产入口仍然是根目录的 `app.py`，线上 Streamlit Cloud 不会运行这个目录。
 
 ## 本地启动
 
@@ -42,4 +44,4 @@ NEXT_PUBLIC_AGENT_API=http://127.0.0.1:8000 npm run dev
 
 Next.js 负责前端体验；`api_server.py` 负责复用原 Python Agent 能力。
 
-Streamlit 版 `app.py` 暂时保留，便于对比教学和回滚。
+Streamlit 版 `app.py` 是当前主线；Next.js 版只是实验入口，暂不作为线上生产版本。
