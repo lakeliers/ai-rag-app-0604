@@ -677,6 +677,10 @@ def dismiss_memory_candidate(candidate_id):
     st.session_state.dismissed_memory_candidates.add(candidate_id)
 
 
+def set_prompt_seed(prompt):
+    st.session_state.prompt_seed = prompt
+
+
 def render_memory_confirmation():
     candidates = st.session_state.get("pending_memory_candidates", [])
     visible_candidates = [
@@ -712,7 +716,7 @@ def render_memory_confirmation():
 
 def render_settings_panel():
     global uploaded_files, run_mode, router_mode_label, router_mode, max_autonomous_steps, planner_type_label, planner_type, evaluator_type_label, evaluator_type, memory_enabled, memory_write_mode_label, memory_write_mode, source_strategy_label, source_strategy, retrieval_strategy_label, retrieval_strategy, context_packing_label, context_packing_strategy, chunking_strategy_labels, chunking_strategy, top_k, web_max_results, plan_progress_enabled, streaming_enabled, trace_level, deepseek_model_label, deepseek_model
-    st.header("资料")
+    st.markdown("### 资料")
     uploaded_files = st.file_uploader(
         "上传文件或图片",
         type=[
@@ -733,174 +737,162 @@ def render_settings_panel():
     )
 
     st.divider()
-    st.subheader("Agent（智能体）配置")
+    st.markdown("### 核心设置")
     run_mode = st.radio(
         "运行模式",
         ["普通问答", "自主任务"],
+        horizontal=True,
         help="Agent 是智能体；Tool Agent 是会调用工具完成任务的智能体。",
     )
-    router_mode_label = st.radio(
-        "路由模式",
-        ["规则路由", "规则-LLM-规则路由"],
-        help="LLM 是大语言模型；规则-LLM-规则表示先规则兜底，再模型分类，最后规则复核。",
-    )
-    router_mode = (
-        "hybrid"
-        if router_mode_label == "规则-LLM-规则路由"
-        else "rules"
-    )
-    max_autonomous_steps = st.slider("自主任务最大步数", 1, 5, 3)
-    planner_type_label = st.selectbox(
-        "Planner（规划器）类型",
-        list(PLANNER_TYPE_LABELS.keys()),
-        index=2,
-        help="Planner 是规划器；Tool Calling 是工具调用；fallback 是失败后的回退策略。",
-    )
-    planner_type = PLANNER_TYPE_LABELS[planner_type_label]
-    evaluator_type_label = st.selectbox(
-        "Evaluator / Critic（评估器 / 批判器）",
-        list(EVALUATOR_TYPE_LABELS.keys()),
-        index=1,
-        help="Evaluator 判断资料是否足够；Critic 检查中间产物或最终回答是否达标。",
-    )
-    evaluator_type = EVALUATOR_TYPE_LABELS[evaluator_type_label]
-
-    st.divider()
-    st.subheader("Memory（记忆）配置")
-    memory_enabled = st.toggle(
-        "启用 Memory（长期记忆）",
-        value=True,
-        help="Memory 会记住用户画像、学习偏好和任务进度；它不同于 RAG 资料库。",
-    )
-    memory_write_mode_label = st.selectbox(
-        "Memory 写入模式",
-        list(MEMORY_WRITE_MODE_LABELS.keys()),
-        index=1,
-        help="手动 + 半自动确认表示用户说“记住”或出现长期偏好时，先生成候选，确认后才保存。",
-    )
-    memory_write_mode = MEMORY_WRITE_MODE_LABELS[memory_write_mode_label]
-    if st.button("初始化教学 Memory", help="写入一组教学默认记忆，用于体验 User Memory 和 Task Memory。"):
-        seeded = memory_manager.seed_default_memories_if_empty()
-        st.success("已初始化默认记忆。" if seeded else "已有记忆，未重复初始化。")
-    stats = memory_manager.memory_stats()
-    st.caption(
-        f"active（生效）：{stats['active']}｜archived（归档）：{stats['archived']}｜deleted（删除）：{stats['deleted']}"
-    )
-    with st.expander("查看 / 删除 Memory（记忆）"):
-        for item in memory_manager.load_memories():
-            if item.get("status") != memory_manager.MEMORY_STATUS_ACTIVE:
-                continue
-            st.markdown(f"**{memory_manager.TYPE_LABELS.get(item['type'], item['type'])}**")
-            st.write(item["value"])
-            st.caption(f"key：{item['key']}｜confidence（置信度）：{item['confidence']:.2f}｜use_count（使用次数）：{item.get('use_count', 0)}")
-            st.button(
-                "删除这条记忆",
-                key=f"delete_memory_{item['id']}",
-                on_click=memory_manager.delete_memory,
-                args=(item["id"],),
-            )
-            st.divider()
-
-    st.divider()
-    st.subheader("RAG（检索增强生成）配置")
     source_strategy_label = st.radio(
         "资料来源策略",
         list(SOURCE_STRATEGY_LABELS.keys()),
+        horizontal=False,
         help="用于观察上传资料、网页资料和自动策略对结果的影响。",
     )
     source_strategy = SOURCE_STRATEGY_LABELS[source_strategy_label]
-    retrieval_strategy_label = st.selectbox(
-        "检索策略",
-        list(RETRIEVAL_STRATEGY_LABELS.keys()),
-        index=2,
-        help="BM25 是关键词检索算法；RRF 是多路召回结果融合排序方法。",
-    )
-    retrieval_strategy = RETRIEVAL_STRATEGY_LABELS[retrieval_strategy_label]
-    context_packing_label = st.selectbox(
-        "Context Packing（上下文打包）策略",
-        list(CONTEXT_PACKING_LABELS.keys()),
-        index=3,
-        help="Context Packing 是把候选资料筛选、去重并打包进模型上下文的过程。",
-    )
-    context_packing_strategy = CONTEXT_PACKING_LABELS[context_packing_label]
-    chunking_strategy_labels = st.multiselect(
-        "Chunking（切分）策略",
-        list(CHUNKING_STRATEGY_LABELS.keys()),
-        default=["Parent-child（父子关系）", "表格专用"],
-        help=(
-            "Chunking 是把文档切成适合检索的小片段；这里是启用哪些切分能力。"
-            "后端会根据解析出的内容类型自动路由，摘要 chunk 是附加策略。"
-        ),
-    )
-    if not chunking_strategy_labels:
-        st.warning("至少选择一种 Chunking（切分）策略；当前已按 Parent-child（父子关系）处理。")
-        chunking_strategy_labels = ["Parent-child（父子关系）"]
-    chunking_strategy = [
-        CHUNKING_STRATEGY_LABELS[label]
-        for label in chunking_strategy_labels
-    ]
-    top_k = st.slider("资料条数", 1, 5, 3)
-    web_max_results = st.slider("网页结果数", 1, 5, 2)
-    reranker_enabled = st.toggle(
-        "启用 Reranker（重排序器）",
-        value=agent.ENABLE_RERANKER,
-        help="Reranker 会对初步召回的资料做精排，让更相关的资料排前面。",
-    )
-    agent.ENABLE_RERANKER = reranker_enabled
+
+    with st.expander("检索与切分设置", expanded=False):
+        retrieval_strategy_label = st.selectbox(
+            "检索策略",
+            list(RETRIEVAL_STRATEGY_LABELS.keys()),
+            index=2,
+            help="BM25 是关键词检索算法；RRF 是多路召回结果融合排序方法。",
+        )
+        retrieval_strategy = RETRIEVAL_STRATEGY_LABELS[retrieval_strategy_label]
+        context_packing_label = st.selectbox(
+            "Context Packing（上下文打包）策略",
+            list(CONTEXT_PACKING_LABELS.keys()),
+            index=3,
+            help="Context Packing 是把候选资料筛选、去重并打包进模型上下文的过程。",
+        )
+        context_packing_strategy = CONTEXT_PACKING_LABELS[context_packing_label]
+        chunking_strategy_labels = st.multiselect(
+            "Chunking（切分）策略",
+            list(CHUNKING_STRATEGY_LABELS.keys()),
+            default=["Parent-child（父子关系）", "表格专用"],
+            help=(
+                "Chunking 是把文档切成适合检索的小片段；这里是启用哪些切分能力。"
+                "后端会根据解析出的内容类型自动路由，摘要 chunk 是附加策略。"
+            ),
+        )
+        if not chunking_strategy_labels:
+            st.warning("至少选择一种 Chunking（切分）策略；当前已按 Parent-child（父子关系）处理。")
+            chunking_strategy_labels = ["Parent-child（父子关系）"]
+        chunking_strategy = [
+            CHUNKING_STRATEGY_LABELS[label]
+            for label in chunking_strategy_labels
+        ]
+        top_k = st.slider("资料条数", 1, 5, 3)
+        web_max_results = st.slider("网页结果数", 1, 5, 2)
+        reranker_enabled = st.toggle(
+            "启用 Reranker（重排序器）",
+            value=agent.ENABLE_RERANKER,
+            help="Reranker 会对初步召回的资料做精排，让更相关的资料排前面。",
+        )
+        agent.ENABLE_RERANKER = reranker_enabled
+
+    with st.expander("Agent 高级设置", expanded=False):
+        router_mode_label = st.radio(
+            "路由模式",
+            ["规则路由", "规则-LLM-规则路由"],
+            help="LLM 是大语言模型；规则-LLM-规则表示先规则兜底，再模型分类，最后规则复核。",
+        )
+        router_mode = (
+            "hybrid"
+            if router_mode_label == "规则-LLM-规则路由"
+            else "rules"
+        )
+        max_autonomous_steps = st.slider("自主任务最大步数", 1, 5, 3)
+        planner_type_label = st.selectbox(
+            "Planner（规划器）类型",
+            list(PLANNER_TYPE_LABELS.keys()),
+            index=2,
+            help="Planner 是规划器；Tool Calling 是工具调用；fallback 是失败后的回退策略。",
+        )
+        planner_type = PLANNER_TYPE_LABELS[planner_type_label]
+        evaluator_type_label = st.selectbox(
+            "Evaluator / Critic（评估器 / 批判器）",
+            list(EVALUATOR_TYPE_LABELS.keys()),
+            index=1,
+            help="Evaluator 判断资料是否足够；Critic 检查中间产物或最终回答是否达标。",
+        )
+        evaluator_type = EVALUATOR_TYPE_LABELS[evaluator_type_label]
+
+    with st.expander("Memory（记忆）", expanded=False):
+        memory_enabled = st.toggle(
+            "启用 Memory（长期记忆）",
+            value=True,
+            help="Memory 会记住用户画像、学习偏好和任务进度；它不同于 RAG 资料库。",
+        )
+        memory_write_mode_label = st.selectbox(
+            "Memory 写入模式",
+            list(MEMORY_WRITE_MODE_LABELS.keys()),
+            index=1,
+            help="手动 + 半自动确认表示用户说“记住”或出现长期偏好时，先生成候选，确认后才保存。",
+        )
+        memory_write_mode = MEMORY_WRITE_MODE_LABELS[memory_write_mode_label]
+        if st.button("初始化教学 Memory", help="写入一组教学默认记忆，用于体验 User Memory 和 Task Memory。"):
+            seeded = memory_manager.seed_default_memories_if_empty()
+            st.success("已初始化默认记忆。" if seeded else "已有记忆，未重复初始化。")
+        stats = memory_manager.memory_stats()
+        st.caption(
+            f"active（生效）：{stats['active']}｜archived（归档）：{stats['archived']}｜deleted（删除）：{stats['deleted']}"
+        )
+        with st.expander("查看 / 删除 Memory（记忆）"):
+            for item in memory_manager.load_memories():
+                if item.get("status") != memory_manager.MEMORY_STATUS_ACTIVE:
+                    continue
+                st.markdown(f"**{memory_manager.TYPE_LABELS.get(item['type'], item['type'])}**")
+                st.write(item["value"])
+                st.caption(f"key：{item['key']}｜confidence（置信度）：{item['confidence']:.2f}｜use_count（使用次数）：{item.get('use_count', 0)}")
+                st.button(
+                    "删除这条记忆",
+                    key=f"delete_memory_{item['id']}",
+                    on_click=memory_manager.delete_memory,
+                    args=(item["id"],),
+                )
+                st.divider()
+
+    with st.expander("模型与可观测性", expanded=False):
+        plan_progress_enabled = st.toggle(
+            "显示 Plan（计划）执行进度",
+            value=True,
+            help="在 Agent 运行过程中展示已完成、正在执行、未执行的计划环节。展示的是代码执行状态，不是模型隐藏推理内容。",
+        )
+        streaming_enabled = st.toggle(
+            "启用 Streaming（流式输出）",
+            value=True,
+            help=(
+                "Streaming 会在最终大模型生成回答时边生成边展示；"
+                "关闭后会等完整回答生成完再一次性展示。当前主要覆盖普通问答和 RAG 链路。"
+            ),
+        )
+        trace_level = st.radio(
+            "Trace（执行轨迹）展示级别",
+            ["简洁", "完整", "隐藏"],
+            help="Trace 是 Agent 每一步做了什么、调用了什么工具、耗时多少的记录。",
+        )
+        default_deepseek_model_index = list(DEEPSEEK_MODEL_LABELS.values()).index(agent.DEEPSEEK_MODEL) if agent.DEEPSEEK_MODEL in DEEPSEEK_MODEL_LABELS.values() else 0
+        deepseek_model_label = st.selectbox(
+            "DeepSeek Model（模型）",
+            list(DEEPSEEK_MODEL_LABELS.keys()),
+            index=default_deepseek_model_index,
+            help="Flash 更快更省；Pro 通常质量更高但成本和耗时更高。两者共用同一个 DeepSeek API key。",
+        )
+        deepseek_model = DEEPSEEK_MODEL_LABELS[deepseek_model_label]
+        agent.DEEPSEEK_MODEL = deepseek_model
+        agent_runtime.PLANNER_MODEL = deepseek_model
 
     st.divider()
-    st.subheader("可观测性")
-    plan_progress_enabled = st.toggle(
-        "显示 Plan（计划）执行进度",
-        value=True,
-        help="在 Agent 运行过程中展示已完成、正在执行、未执行的计划环节。展示的是代码执行状态，不是模型隐藏推理内容。",
-    )
-    streaming_enabled = st.toggle(
-        "启用 Streaming（流式输出）",
-        value=True,
-        help=(
-            "Streaming 会在最终大模型生成回答时边生成边展示；"
-            "关闭后会等完整回答生成完再一次性展示。当前主要覆盖普通问答和 RAG 链路。"
-        ),
-    )
-    trace_level = st.radio(
-        "Trace（执行轨迹）展示级别",
-        ["简洁", "完整", "隐藏"],
-        help="Trace 是 Agent 每一步做了什么、调用了什么工具、耗时多少的记录。",
-    )
-
-    st.divider()
-    st.caption("Agent（智能体）会自动使用上传资料，并联网补充资料；没有上传资料时，会直接联网收集。")
-    st.write("DeepSeek（大模型服务）:", "已配置" if deepseek_key else "未配置")
-    default_deepseek_model_index = list(DEEPSEEK_MODEL_LABELS.values()).index(agent.DEEPSEEK_MODEL) if agent.DEEPSEEK_MODEL in DEEPSEEK_MODEL_LABELS.values() else 0
-    deepseek_model_label = st.selectbox(
-        "DeepSeek Model（模型）",
-        list(DEEPSEEK_MODEL_LABELS.keys()),
-        index=default_deepseek_model_index,
-        help="Flash 更快更省；Pro 通常质量更高但成本和耗时更高。两者共用同一个 DeepSeek API key。",
-    )
-    deepseek_model = DEEPSEEK_MODEL_LABELS[deepseek_model_label]
-    agent.DEEPSEEK_MODEL = deepseek_model
-    agent_runtime.PLANNER_MODEL = deepseek_model
-    st.write("通义百炼:", "已配置" if dashscope_key else "未配置")
-    reranker_status = "已启用" if agent.ENABLE_RERANKER else "未启用"
-    st.write("Reranker（重排序器）:", reranker_status)
-    planner_status = "行业主流 Runtime（运行时）雏形"
-    st.write("Planner（规划器）:", planner_status)
-    st.write("Router（路由器）:", router_mode_label)
-    st.write("Source（资料来源）:", source_strategy_label)
-    st.write("Retrieval（检索）:", retrieval_strategy_label)
-    st.write("Packing（上下文打包）:", context_packing_label)
-    st.write("Chunking（切分）:", "、".join(chunking_strategy_labels))
-    st.write("Model（模型）:", deepseek_model_label)
-    st.write("Evaluator（评估器）:", evaluator_type_label)
-    st.write("Streaming（流式输出）:", "已启用" if streaming_enabled else "未启用")
+    st.caption("状态")
+    st.caption(f"DeepSeek：{'已配置' if deepseek_key else '未配置'}｜通义百炼：{'已配置' if dashscope_key else '未配置'}")
+    st.caption(f"Reranker：{'已启用' if agent.ENABLE_RERANKER else '未启用'}｜Streaming：{'已启用' if streaming_enabled else '未启用'}")
 
     if "upload_status" in st.session_state and st.session_state.upload_status:
-        st.divider()
-        st.caption("已入库资料")
-        for item in st.session_state.upload_status[-8:]:
-            st.write(item)
+        with st.expander("已入库资料", expanded=False):
+            for item in st.session_state.upload_status[-8:]:
+                st.write(item)
 
 
 if "messages" not in st.session_state:
@@ -932,6 +924,9 @@ if "dismissed_memory_candidates" not in st.session_state:
 
 if "memory_notice" not in st.session_state:
     st.session_state.memory_notice = ""
+
+if "prompt_seed" not in st.session_state:
+    st.session_state.prompt_seed = ""
 
 
 st.markdown("""
@@ -975,6 +970,43 @@ st.markdown("""
     margin-top: 1rem;
     box-shadow: 0 10px 28px rgba(23, 31, 56, 0.06);
 }
+.config-summary {
+    border: 1px solid #e2e6ee;
+    border-radius: 8px;
+    background: #ffffff;
+    padding: 0.9rem 1rem;
+    margin-bottom: 0.9rem;
+    box-shadow: 0 10px 28px rgba(23, 31, 56, 0.06);
+}
+.config-summary-title {
+    font-weight: 700;
+    margin-bottom: 0.45rem;
+}
+.config-pill {
+    display: inline-block;
+    border: 1px solid #d7dfeb;
+    border-radius: 999px;
+    padding: 0.22rem 0.55rem;
+    margin: 0.18rem 0.2rem 0.18rem 0;
+    background: #f8fafc;
+    color: #4b5563;
+    font-size: 0.82rem;
+}
+.empty-state {
+    border: 1px dashed #cfd6e3;
+    border-radius: 8px;
+    background: #fbfcfe;
+    padding: 1rem;
+    margin-bottom: 0.9rem;
+}
+.empty-state strong {
+    display: block;
+    margin-bottom: 0.35rem;
+}
+.compact-help {
+    color: #6b7280;
+    font-size: 0.9rem;
+}
 </style>
 """, unsafe_allow_html=True)
 
@@ -1001,13 +1033,41 @@ with settings_col:
 with workspace_col:
     st.markdown(
         '<div class="main-header-card"><h1>RAG Agent Pro（检索增强智能体教学版）</h1>'
-        '<p>Agent 工作区：对话、执行进度、回答主体、参考来源和反馈闭环集中在这里。</p></div>',
+        '<p>提问、观察执行过程、检查证据来源、反馈 badcase。</p></div>',
         unsafe_allow_html=True,
     )
     st.markdown(
-        '<div class="workspace-note"><p>当前工作区已移到右侧。左侧保留设置和观察面板，右侧优先展示用户任务和 Agent 产物。</p></div>',
+        '<div class="config-summary"><div class="config-summary-title">本轮配置</div>'
+        f'<span class="config-pill">{run_mode}</span>'
+        f'<span class="config-pill">{source_strategy_label}</span>'
+        f'<span class="config-pill">{retrieval_strategy_label}</span>'
+        f'<span class="config-pill">{context_packing_label}</span>'
+        f'<span class="config-pill">{deepseek_model_label}</span>'
+        '</div>',
         unsafe_allow_html=True,
     )
+
+    if not st.session_state.messages:
+        st.markdown(
+            '<div class="empty-state"><strong>可以直接开始提问</strong>'
+            '<div class="compact-help">上传资料后会优先检索上传内容；没有上传资料时，会按当前资料来源策略联网或使用本地基础资料。</div></div>',
+            unsafe_allow_html=True,
+        )
+        prompt_cols = st.columns(3)
+        examples = [
+            "你能做些什么？",
+            "RAG 是什么？用产品经理能听懂的话解释",
+            "最近 AI Agent 有什么新趋势？",
+        ]
+        for col, example in zip(prompt_cols, examples):
+            with col:
+                st.button(
+                    example,
+                    key=f"prompt_example_{example}",
+                    on_click=set_prompt_seed,
+                    args=(example,),
+                    use_container_width=True,
+                )
 
 
     for index, message in enumerate(st.session_state.messages):
@@ -1024,17 +1084,16 @@ with workspace_col:
 
     prompt = None
     with st.form("workspace_prompt_form", clear_on_submit=True):
-        st.markdown('<div class="workspace-composer">', unsafe_allow_html=True)
         prompt_text = st.text_area(
             "输入问题",
             placeholder="输入问题，Agent（智能体）会自动检索上传资料和网络资料",
-            label_visibility="collapsed",
+            value=st.session_state.prompt_seed,
             height=82,
         )
-        submitted_prompt = st.form_submit_button("发送")
-        st.markdown('</div>', unsafe_allow_html=True)
+        submitted_prompt = st.form_submit_button("发送", use_container_width=True)
         if submitted_prompt:
             prompt = prompt_text.strip()
+            st.session_state.prompt_seed = ""
 
     if prompt:
         if not deepseek_key:
