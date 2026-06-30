@@ -6,6 +6,7 @@ from dataclasses import dataclass, field
 from typing import Any, Callable
 
 import rag_agent_core as agent
+import permission_gate
 
 
 ENABLE_LLM_PLANNER = os.getenv("ENABLE_LLM_PLANNER", "1") == "1"
@@ -149,6 +150,31 @@ def is_lightweight_direct_intent(question: str) -> tuple[bool, str, str]:
         return True, "chitchat", "用户输入更像寒暄、自我介绍或普通对话。"
 
     return False, "", ""
+
+
+def looks_like_external_entity_lookup(question: str) -> bool:
+    normalized = normalize_user_text(question)
+    lookup_words = [
+        "你知道",
+        "是什么",
+        "介绍一下",
+        "了解",
+        "查一下",
+        "搜一下",
+        "有没有",
+        "是哪",
+        "什么品牌",
+        "什么产品",
+    ]
+    if not any(word in normalized for word in lookup_words):
+        return False
+    if any(word in normalized for word in ["rag", "bm25", "agent", "reranker", "contextpacking"]):
+        return False
+
+    has_model_like_token = bool(re.search(r"[a-zA-Z]{1,12}\d+[a-zA-Z0-9_-]{0,16}", normalized))
+    has_mixed_entity = bool(re.search(r"[\u4e00-\u9fff]{2,8}[a-zA-Z0-9_-]{2,24}", normalized))
+    has_quoted_entity = bool(re.search(r"[“\"']{1}[^“\"']{2,32}[”\"']{1}", question))
+    return has_model_like_token or has_mixed_entity or has_quoted_entity
 
 
 def extract_json_object(text: str) -> dict[str, Any]:
@@ -433,6 +459,17 @@ def classify_intent_by_rules(question: str, preferred_sources: list[str]) -> Int
             intent="latest_research",
             confidence=0.82,
             reason="用户问题涉及近期信息或外部动态，需要联网补充资料。",
+            suggested_action="collect_context",
+            entities=entities,
+            constraints=constraints,
+        )
+
+    if looks_like_external_entity_lookup(stripped_question) and not any(word in lowered_question for word in freshness_suppression_words):
+        constraints["needs_web_context"] = True
+        return IntentResult(
+            intent="latest_research",
+            confidence=0.8,
+            reason="用户在询问疑似外部实体、品牌或产品型号，需要联网核验事实。",
             suggested_action="collect_context",
             entities=entities,
             constraints=constraints,
@@ -1266,8 +1303,6 @@ def tool_generate_answer(
     if not search_results and is_definition_fallback_question(question):
         try:
             answer = answer_definition_from_model(question)
-            agent.conversation_history.append({"role": "user", "content": question})
-            agent.conversation_history.append({"role": "assistant", "content": answer})
             return ToolResult(
                 status="success",
                 summary="未检索到资料，已按定义类问题使用通用知识兜底回答。",
@@ -1282,9 +1317,14 @@ def tool_generate_answer(
                 build_question_with_memory(question, memory_context),
                 search_results,
                 on_delta=stream_callback,
+                include_history=False,
             )
         else:
-            answer = agent.ask_deepseek(build_question_with_memory(question, memory_context), search_results)
+            answer = agent.ask_deepseek(
+                build_question_with_memory(question, memory_context),
+                search_results,
+                include_history=False,
+            )
     except Exception as error:
         answer = ""
         generation_error = str(error)
@@ -1309,9 +1349,6 @@ def tool_generate_answer(
                 + "\n".join(source_lines)
             )
 
-    agent.conversation_history.append({"role": "user", "content": question})
-    agent.conversation_history.append({"role": "assistant", "content": answer})
-
     return ToolResult(
         status="degraded" if generation_error else "success",
         summary="生成模型请求失败，已使用检索资料兜底回答。" if generation_error else "回答生成完成。",
@@ -1335,8 +1372,6 @@ def tool_direct_answer(
         )
         if stream_callback:
             stream_callback(answer, answer)
-        agent.conversation_history.append({"role": "user", "content": question})
-        agent.conversation_history.append({"role": "assistant", "content": answer})
         return ToolResult(
             status="success",
             summary="识别为能力介绍问题，已直接说明可用能力。",
@@ -1393,9 +1428,6 @@ def tool_direct_answer(
             max_tokens=300,
         )
         answer = response.choices[0].message.content
-    agent.conversation_history.append({"role": "user", "content": question})
-    agent.conversation_history.append({"role": "assistant", "content": answer})
-
     return ToolResult(
         status="success",
         summary="无需检索，已直接生成回复。",
@@ -1890,6 +1922,29 @@ def is_upload_status_question(question: str) -> bool:
     return matches_any_pattern(normalized, status_patterns)
 
 
+def action_for_step(step: AgentStep, state: dict[str, Any]) -> dict[str, Any]:
+    operation_map = {
+        "web_collect": ("collect", "public_web"),
+        "rag_search": ("retrieve", "public_web"),
+        "generate_answer": ("generate", "final_answer"),
+        "direct_answer": ("generate", "final_answer"),
+        "upload_status": ("generate", "final_answer"),
+    }
+    operation, object_type = operation_map.get(step.tool, ("execute", "final_answer"))
+    return permission_gate.make_action(
+        tool=step.tool,
+        operation=operation,
+        object_type=object_type,
+        content=state.get("question", ""),
+        params={
+            "trace_id": state.get("trace_id", ""),
+            "max_results": step.args.get("max_results", 0),
+            "top_k": step.args.get("top_k", 0),
+            "content_origin": "user_request",
+        },
+    )
+
+
 def run_tool(step: AgentStep, state: dict[str, Any]) -> ToolResult:
     tool = TOOLS[step.tool]
     args = step.args.copy()
@@ -1904,9 +1959,37 @@ def run_tool(step: AgentStep, state: dict[str, Any]) -> ToolResult:
         args.setdefault("chroma_path", state.get("chroma_path", agent.CHROMA_PATH))
         args.setdefault("metadata_scope", state.get("metadata_scope", {}))
 
+    action = action_for_step(step, state)
+    permission_context = dict(state.get("permission_context", {}))
+    permission_context["tool_calls_used"] = int(state.get("tool_calls_used", 0) or 0)
+    permission = permission_gate.permission_gate(action, permission_context)
+    permission_gate.write_audit(action, permission, event="permission_checked")
+    state.setdefault("permission_trace", []).append(permission)
+    if permission["decision"] == permission_gate.DECISION_BLOCK:
+        return ToolResult(
+            status="failed",
+            summary=f"Permission Gate 阻断：{permission['reason']}",
+            error=permission["reason"],
+            data=[],
+        )
+    if permission["decision"] == permission_gate.DECISION_REQUIRE_CONFIRMATION:
+        return ToolResult(
+            status="warning",
+            summary=f"Permission Gate 要求确认：{permission['confirmation_message']}",
+            error="",
+            data=[],
+        )
+    state["tool_calls_used"] = int(state.get("tool_calls_used", 0) or 0) + 1
+    permission_gate.write_audit(action, permission, event="action_allowed")
+
     started_at = time.time()
     result = tool(**args)
     result.elapsed_ms = int((time.time() - started_at) * 1000)
+    permission_gate.write_audit(action, permission, event="action_executed", result={
+        "status": result.status,
+        "summary": result.summary,
+        "elapsed_ms": result.elapsed_ms,
+    })
     return result
 
 
@@ -1924,6 +2007,8 @@ def run_agent(
     metadata_scope: dict[str, Any] | None = None,
     stream_callback: Callable[[str, str], None] | None = None,
     progress_callback: ProgressCallback | None = None,
+    permission_context: dict[str, Any] | None = None,
+    trace_id: str = "",
 ) -> dict[str, Any]:
     state: dict[str, Any] = {
         "question": question,
@@ -1935,6 +2020,10 @@ def run_agent(
         "metadata_scope": metadata_scope or {},
         "stream_callback": stream_callback,
         "progress_callback": progress_callback,
+        "permission_context": permission_context or {},
+        "permission_trace": [],
+        "tool_calls_used": 0,
+        "trace_id": trace_id,
     }
     trace: list[dict[str, Any]] = []
     emit_progress(state, {
@@ -2011,6 +2100,7 @@ def run_agent(
         "sources": state["search_results"],
         "steps": trace,
         "planner_mode": state["planner_mode"],
+        "permission_trace": state.get("permission_trace", []),
     }
 
 
@@ -2078,6 +2168,8 @@ def run_agent_pro(
     metadata_scope: dict[str, Any] | None = None,
     stream_callback: Callable[[str, str], None] | None = None,
     progress_callback: ProgressCallback | None = None,
+    permission_context: dict[str, Any] | None = None,
+    trace_id: str = "",
 ) -> dict[str, Any]:
     if source_strategy not in SOURCE_STRATEGIES:
         source_strategy = SOURCE_STRATEGY_AUTO
@@ -2101,6 +2193,8 @@ def run_agent_pro(
             metadata_scope=metadata_scope,
             stream_callback=stream_callback,
             progress_callback=progress_callback,
+            permission_context=permission_context,
+            trace_id=trace_id,
         )
         result["teaching_config"] = {
             "retrieval_strategy": retrieval_strategy,
@@ -2256,6 +2350,10 @@ def run_agent_pro(
         "metadata_scope": metadata_scope or {},
         "stream_callback": stream_callback,
         "progress_callback": progress_callback,
+        "permission_context": permission_context or {},
+        "permission_trace": [],
+        "tool_calls_used": 0,
+        "trace_id": trace_id,
     }
 
     tool_results, runtime_trace = run_task_graph(task_graph, state)
@@ -2269,6 +2367,7 @@ def run_agent_pro(
             "sources": search_results,
             "steps": trace,
             "planner_mode": "pro_runtime",
+            "permission_trace": state.get("permission_trace", []),
             "teaching_config": {
                 "retrieval_strategy": retrieval_strategy,
                 "context_packing_strategy": context_packing_strategy,
@@ -2458,6 +2557,7 @@ def run_agent_pro(
         "sources": search_results,
         "steps": trace,
         "planner_mode": "pro_runtime",
+        "permission_trace": state.get("permission_trace", []),
         "teaching_config": {
             "retrieval_strategy": retrieval_strategy,
             "context_packing_strategy": context_packing_strategy,

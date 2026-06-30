@@ -56,6 +56,7 @@ import agent_runtime
 import autonomous_agent
 import badcase_manager
 import memory_manager
+import permission_gate
 
 agent.seed_local_note()
 if seed_teaching_memory != "0":
@@ -331,7 +332,91 @@ def build_current_config():
         "top_k": top_k,
         "web_max_results": web_max_results,
         "max_autonomous_steps": max_autonomous_steps,
+        "safety_mode": safety_mode,
+        "confirmation_policy": confirmation_policy,
+        "prompt_injection_guard": prompt_injection_guard,
+        "max_tool_calls_per_run": max_tool_calls_per_run,
+        "max_web_pages_per_run": max_web_pages_per_run,
     }
+
+
+SAFETY_MODE_LABELS = {
+    "教学模式（推荐）": permission_gate.SAFETY_MODE_LEARNING,
+    "严格模式": permission_gate.SAFETY_MODE_STRICT,
+    "宽松模式": permission_gate.SAFETY_MODE_RELAXED,
+}
+
+CONFIRMATION_POLICY_LABELS = {
+    "智能确认（推荐）": permission_gate.CONFIRM_POLICY_SMART,
+    "中高风险都确认": permission_gate.CONFIRM_POLICY_ALWAYS,
+    "尽量少确认": permission_gate.CONFIRM_POLICY_MINIMAL,
+}
+
+
+def current_permission_context(extra: dict | None = None) -> dict:
+    context = {
+        "safety_mode": safety_mode,
+        "confirmation_policy": confirmation_policy,
+        "prompt_injection_guard": prompt_injection_guard,
+        "max_tool_calls": max_tool_calls_per_run,
+        "max_web_pages": max_web_pages_per_run,
+        "tool_calls_used": 0,
+        "confirmed_actions": [],
+    }
+    if extra:
+        context.update(extra)
+    return context
+
+
+def check_permission(action, *, confirmed=False):
+    context = current_permission_context({
+        "confirmed_actions": [action["id"]] if confirmed else [],
+    })
+    permission = permission_gate.permission_gate(action, context)
+    permission_gate.write_audit(action, permission, event="permission_checked")
+    return permission
+
+
+def render_permission_trace(permission_trace):
+    if not permission_trace:
+        st.caption("本轮没有记录 Permission Gate（权限门）判断。")
+        return
+    for item in permission_trace:
+        st.markdown(f"**{item.get('tool')} / {item.get('operation')} → {item.get('object_type')}**")
+        st.caption(
+            f"decision（决策）：{item.get('decision')}｜risk（风险）：{item.get('risk_level')}｜"
+            f"mode（模式）：{item.get('safety_mode')}"
+        )
+        st.write(item.get("reason", ""))
+        if item.get("confirmation_message"):
+            st.info(item["confirmation_message"])
+        if item.get("signals"):
+            st.json(item["signals"], expanded=False)
+        st.divider()
+
+
+def permission_action_for_memory(candidate, operation="write", action_id=None):
+    return permission_gate.make_action(
+        tool="memory",
+        operation=operation,
+        object_type="user_memory",
+        content=str(candidate.get("value", "")),
+        params={"memory_type": candidate.get("type", ""), "memory_key": candidate.get("key", "")},
+        action_id=action_id,
+        source="streamlit_ui",
+    )
+
+
+def permission_action_for_memory_id(memory_id, operation):
+    return permission_gate.make_action(
+        tool="memory",
+        operation=operation,
+        object_type="user_memory",
+        content=f"memory_id={memory_id}",
+        params={"memory_id": memory_id},
+        action_id=f"memory_{operation}_{memory_id}",
+        source="streamlit_ui",
+    )
 
 
 def set_badcase_target(run):
@@ -469,7 +554,7 @@ def render_assistant_message(content, run=None, key_suffix=""):
                 args=(run,),
             )
     if run:
-        tab_names = ["执行过程", "来源", "反馈"]
+        tab_names = ["执行过程", "来源", "Safety", "反馈"]
         if run.get("memory_used") or st.session_state.get("pending_memory_candidates"):
             tab_names.append("Memory")
         if run.get("autonomous"):
@@ -481,6 +566,8 @@ def render_assistant_message(content, run=None, key_suffix=""):
                     render_trace_panel(run, run.get("trace_level", trace_level))
                 elif tab_name == "来源":
                     render_sources_panel(run.get("sources", []), run.get("trace_level", trace_level))
+                elif tab_name == "Safety":
+                    render_permission_trace(run.get("permission_trace", []))
                 elif tab_name == "反馈":
                     st.caption("如果这轮回答有问题，点击回答右侧的 ! 反馈 badcase（不良案例）。")
                     if run.get("trace_id"):
@@ -769,6 +856,29 @@ def render_badcase_form():
                 case["success_criteria"] = success_criteria
 
             try:
+                badcase_operations = ["save_local"]
+                if save_target in {badcase_manager.SAVE_TARGET_GITHUB, badcase_manager.SAVE_TARGET_BOTH}:
+                    badcase_operations.append("create_github_issue")
+                blocked_permissions = []
+                for operation in badcase_operations:
+                    action = permission_gate.make_action(
+                        tool="badcase",
+                        operation=operation,
+                        object_type="regression_case",
+                        content=f"{run['user_input']}\n{run['actual_answer']}",
+                        params={"trace_id": run.get("trace_id", ""), "save_target": save_target},
+                        action_id=f"badcase_{operation}_{case_id}",
+                        source="streamlit_ui",
+                    )
+                    permission = check_permission(action, confirmed=True)
+                    if permission["decision"] == permission_gate.DECISION_BLOCK:
+                        blocked_permissions.append(permission)
+                    else:
+                        permission_gate.write_audit(action, permission, event="action_allowed")
+                if blocked_permissions:
+                    for permission in blocked_permissions:
+                        st.error(f"Permission Gate 阻断：{permission['reason']}")
+                    return
                 save_result = badcase_manager.save_case(
                     save_target=save_target,
                     case=case,
@@ -803,16 +913,49 @@ def render_badcase_form():
 
 
 def confirm_memory_candidate(candidate):
+    action = permission_action_for_memory(
+        candidate,
+        operation="write",
+        action_id=f"memory_write_{candidate.get('candidate_id', '')}",
+    )
+    permission = check_permission(action, confirmed=True)
+    if permission["decision"] == permission_gate.DECISION_BLOCK:
+        st.session_state.memory_notice = "Permission Gate 阻断写入：" + permission["reason"]
+        return
     result = memory_manager.upsert_memory(candidate)
     if result["ok"]:
+        permission_gate.write_audit(action, permission, event="action_executed", result={"status": "success"})
         st.session_state.memory_notice = "已保存为长期记忆。"
         st.session_state.dismissed_memory_candidates.add(candidate.get("candidate_id"))
     else:
+        permission_gate.write_audit(action, permission, event="action_executed", result={"status": "failed", "errors": result["errors"]})
         st.session_state.memory_notice = "保存失败：" + "；".join(result["errors"])
 
 
 def dismiss_memory_candidate(candidate_id):
     st.session_state.dismissed_memory_candidates.add(candidate_id)
+
+
+def soft_delete_memory_with_permission(memory_id):
+    action = permission_action_for_memory_id(memory_id, "soft_delete")
+    permission = check_permission(action, confirmed=True)
+    if permission["decision"] == permission_gate.DECISION_BLOCK:
+        st.session_state.memory_notice = "Permission Gate 阻断软删除：" + permission["reason"]
+        return
+    ok = memory_manager.delete_memory(memory_id)
+    permission_gate.write_audit(action, permission, event="action_executed", result={"status": "success" if ok else "not_found"})
+    st.session_state.memory_notice = "已将该记忆标记为不再使用。" if ok else "未找到该记忆。"
+
+
+def hard_delete_memory_with_permission(memory_id):
+    action = permission_action_for_memory_id(memory_id, "hard_delete")
+    permission = check_permission(action, confirmed=True)
+    if permission["decision"] == permission_gate.DECISION_BLOCK:
+        st.session_state.memory_notice = "Permission Gate 阻断硬删除：" + permission["reason"]
+        return
+    ok = memory_manager.hard_delete_memory(memory_id)
+    permission_gate.write_audit(action, permission, event="action_executed", result={"status": "success" if ok else "not_found"})
+    st.session_state.memory_notice = "已永久删除该记忆。" if ok else "未找到该记忆。"
 
 
 def set_prompt_seed(prompt):
@@ -861,7 +1004,7 @@ def render_memory_confirmation():
 
 
 def render_settings_panel():
-    global uploaded_files, run_mode, router_mode_label, router_mode, max_autonomous_steps, planner_type_label, planner_type, evaluator_type_label, evaluator_type, memory_enabled, memory_write_mode_label, memory_write_mode, source_strategy_label, source_strategy, retrieval_strategy_label, retrieval_strategy, context_packing_label, context_packing_strategy, chunking_strategy_labels, chunking_strategy, top_k, web_max_results, plan_progress_enabled, streaming_enabled, trace_level, deepseek_model_label, deepseek_model
+    global uploaded_files, run_mode, router_mode_label, router_mode, max_autonomous_steps, planner_type_label, planner_type, evaluator_type_label, evaluator_type, memory_enabled, memory_write_mode_label, memory_write_mode, source_strategy_label, source_strategy, retrieval_strategy_label, retrieval_strategy, context_packing_label, context_packing_strategy, chunking_strategy_labels, chunking_strategy, top_k, web_max_results, plan_progress_enabled, streaming_enabled, trace_level, deepseek_model_label, deepseek_model, safety_mode_label, safety_mode, confirmation_policy_label, confirmation_policy, prompt_injection_guard, max_tool_calls_per_run, max_web_pages_per_run, show_permission_audit
     st.markdown("### 资料")
     uploaded_files = st.file_uploader(
         "上传文件或图片",
@@ -965,6 +1108,56 @@ def render_settings_panel():
         )
         evaluator_type = EVALUATOR_TYPE_LABELS[evaluator_type_label]
 
+    with st.expander("Safety / Permission（安全与权限）", expanded=False):
+        safety_mode_label = st.selectbox(
+            "Safety Mode（安全模式）",
+            list(SAFETY_MODE_LABELS.keys()),
+            index=0,
+            help="教学模式展示主流权限链路；严格模式会让更多中风险动作需要确认；宽松模式减少确认但仍阻断敏感信息。",
+        )
+        safety_mode = SAFETY_MODE_LABELS[safety_mode_label]
+        confirmation_policy_label = st.selectbox(
+            "Human Confirmation（用户确认）策略",
+            list(CONFIRMATION_POLICY_LABELS.keys()),
+            index=0,
+            help="控制中高风险动作是否需要用户确认。真实生产环境通常按风险等级和对象类型动态判断。",
+        )
+        confirmation_policy = CONFIRMATION_POLICY_LABELS[confirmation_policy_label]
+        prompt_injection_guard = st.toggle(
+            "启用 Prompt Injection（提示注入）防护",
+            value=True,
+            help="外部资料、网页内容和用户上传文件只能作为参考资料，不能提升为系统指令或工具调用指令。",
+        )
+        max_tool_calls_per_run = st.slider(
+            "单轮最大工具调用数",
+            3,
+            20,
+            10,
+            help="Runtime Guard：限制一次回答中的工具调用次数，防止循环失控和成本异常。",
+        )
+        max_web_pages_per_run = st.slider(
+            "单轮最大网页读取数",
+            1,
+            8,
+            min(web_max_results, 5),
+            help="Runtime Guard：限制联网读取网页数量。该值会约束 Permission Gate 对 web_collect 的放行。",
+        )
+        show_permission_audit = st.toggle(
+            "显示 Permission Audit（权限审计）",
+            value=True,
+            help="展示最近的权限判断、风险等级、是否放行、是否阻断。",
+        )
+        if show_permission_audit:
+            audit_rows = permission_gate.load_audit(limit=12)
+            if not audit_rows:
+                st.caption("暂无权限审计记录。")
+            else:
+                for row in reversed(audit_rows[-6:]):
+                    st.caption(
+                        f"{row.get('event', '')} · {row.get('tool', '')}/{row.get('operation', '')} · "
+                        f"{row.get('decision', '')} · {row.get('risk_level', '')}"
+                    )
+
     with st.expander("Memory（记忆）", expanded=False):
         memory_enabled = st.toggle(
             "启用 Memory（长期记忆）",
@@ -1007,7 +1200,7 @@ def render_settings_panel():
                     st.button(
                         "不再使用",
                         key=f"delete_memory_{item['id']}",
-                        on_click=memory_manager.delete_memory,
+                        on_click=soft_delete_memory_with_permission,
                         args=(item["id"],),
                         help="软删除：保留审计记录，默认不再进入回答上下文。",
                     )
@@ -1015,7 +1208,7 @@ def render_settings_panel():
                     st.button(
                         "永久删除",
                         key=f"hard_delete_memory_{item['id']}",
-                        on_click=memory_manager.hard_delete_memory,
+                        on_click=hard_delete_memory_with_permission,
                         args=(item["id"],),
                         help="硬删除：用于隐私/安全删除请求，会从 memory store 移除原文。",
                     )
@@ -1212,6 +1405,7 @@ st.markdown(
     f'<span class="config-pill">{retrieval_strategy_label}</span>'
     f'<span class="config-pill">{context_packing_label}</span>'
     f'<span class="config-pill">{deepseek_model_label}</span>'
+    f'<span class="config-pill">{safety_mode_label}</span>'
     '</div>',
     unsafe_allow_html=True,
 )
@@ -1321,6 +1515,8 @@ if prompt:
                         memory_context=memory_context,
                         metadata_scope={"session_id": st.session_state.rag_session_id},
                         progress_callback=handle_plan_progress,
+                        permission_context=current_permission_context({"trace_id": trace_id}),
+                        trace_id=trace_id,
                     )
                 else:
                     answer_stream_callback = handle_answer_stream if streaming_enabled else None
@@ -1341,6 +1537,8 @@ if prompt:
                         metadata_scope={"session_id": st.session_state.rag_session_id},
                         stream_callback=answer_stream_callback,
                         progress_callback=handle_plan_progress,
+                        permission_context=current_permission_context({"trace_id": trace_id}),
+                        trace_id=trace_id,
                     )
                     if run_mode == "自主任务":
                         handle_plan_progress({
@@ -1408,6 +1606,7 @@ if prompt:
                 "trace_level": trace_level,
                 "steps": result.get("steps", []),
                 "sources": result.get("sources", []),
+                "permission_trace": result.get("permission_trace", []),
                 "autonomous": autonomous_snapshot,
                 "memory_used": [item.get("id") for item in retrieved_memories],
                 "run_snapshot": {
@@ -1453,6 +1652,7 @@ if prompt:
                 "trace_level": trace_level,
                 "steps": [],
                 "sources": [],
+                "permission_trace": [],
                 "memory_used": [],
                 "run_snapshot": {
                     "trace_id": trace_id,

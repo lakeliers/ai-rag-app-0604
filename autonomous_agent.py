@@ -56,6 +56,7 @@ class AutonomousState:
     critic_results: list[dict[str, Any]] = field(default_factory=list)
     reflections: list[dict[str, Any]] = field(default_factory=list)
     trace: list[dict[str, Any]] = field(default_factory=list)
+    permission_trace: list[dict[str, Any]] = field(default_factory=list)
     step_count: int = 0
     consecutive_failures: int = 0
     done: bool = False
@@ -207,6 +208,8 @@ def execute_task_with_tool_agent(
     preferred_sources: list[str],
     memory_context: str = "",
     tool_agent_runner: Callable[..., dict[str, Any]] = agent_runtime.run_agent_pro,
+    permission_context: dict[str, Any] | None = None,
+    trace_id: str = "",
     progress_callback: agent_runtime.ProgressCallback | None = None,
 ) -> dict[str, Any]:
     prompt = build_task_prompt(task, state)
@@ -232,6 +235,8 @@ def execute_task_with_tool_agent(
         memory_context=memory_context,
         chroma_path=state.goal.constraints.get("chroma_path", agent_runtime.agent.CHROMA_PATH),
         metadata_scope=state.goal.constraints.get("metadata_scope", {}),
+        permission_context=permission_context,
+        trace_id=trace_id,
         progress_callback=progress_callback,
     )
     return {
@@ -239,6 +244,7 @@ def execute_task_with_tool_agent(
         "answer": result.get("answer", ""),
         "sources": result.get("sources", []),
         "steps": result.get("steps", []),
+        "permission_trace": result.get("permission_trace", []),
         "error": result.get("error", ""),
     }
 
@@ -407,6 +413,7 @@ def update_state_after_task(
     state.observations.append(observation)
     state.critic_results.append(critic_result)
     state.sources.extend(task_result.get("sources", []))
+    state.permission_trace.extend(task_result.get("permission_trace", []))
 
     if critic_result["passed"]:
         task.status = "completed"
@@ -591,6 +598,8 @@ def run_autonomous_agent(
     memory_context: str = "",
     chroma_path: str = agent_runtime.agent.CHROMA_PATH,
     metadata_scope: dict[str, Any] | None = None,
+    permission_context: dict[str, Any] | None = None,
+    trace_id: str = "",
     tool_agent_runner: Callable[..., dict[str, Any]] = agent_runtime.run_agent_pro,
     progress_callback: agent_runtime.ProgressCallback | None = None,
 ) -> dict[str, Any]:
@@ -702,6 +711,8 @@ def run_autonomous_agent(
             preferred_sources=preferred_sources,
             memory_context=memory_context,
             tool_agent_runner=tool_agent_runner,
+            permission_context=permission_context,
+            trace_id=trace_id,
             progress_callback=progress_callback,
         )
         observation = observe_task_result(task, task_result)
@@ -781,6 +792,7 @@ def run_autonomous_agent(
         "critic_results": state.critic_results,
         "reflections": state.reflections,
         "trace": state.trace,
+        "permission_trace": state.permission_trace,
         "stop_reason": state.stop_reason,
         "planner_mode": "autonomous_runtime",
     }

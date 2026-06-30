@@ -1395,9 +1395,9 @@ def build_history_text(max_turns=6):
     return "\n".join(lines)
 
 
-def build_answer_prompt(question, search_results):
+def build_answer_prompt(question, search_results, include_history=True):
     context = build_context(search_results)
-    history_text = build_history_text()
+    history_text = build_history_text() if include_history else "本轮为独立请求，不使用历史对话作为事实依据。"
 
     return f"""你是一个可以使用知识库和网页资料的 RAG Agent。
 
@@ -1429,14 +1429,14 @@ def build_answer_prompt(question, search_results):
 """
 
 
-def ask_deepseek(question, search_results):
+def ask_deepseek(question, search_results, include_history=True):
     client = get_deepseek_client()
     if client is None:
         print("没有找到 DEEPSEEK_API_KEY。")
         print("请在终端设置：export DEEPSEEK_API_KEY=\"sk-xxx\"")
         return None
 
-    prompt = build_answer_prompt(question, search_results)
+    prompt = build_answer_prompt(question, search_results, include_history=include_history)
 
     response = client.chat.completions.create(
         model=DEEPSEEK_MODEL,
@@ -1449,14 +1449,14 @@ def ask_deepseek(question, search_results):
     return response.choices[0].message.content
 
 
-def ask_deepseek_stream(question, search_results, on_delta=None):
+def ask_deepseek_stream(question, search_results, on_delta=None, include_history=True):
     client = get_deepseek_client()
     if client is None:
         print("没有找到 DEEPSEEK_API_KEY。")
         print("请在终端设置：export DEEPSEEK_API_KEY=\"sk-xxx\"")
         return None
 
-    prompt = build_answer_prompt(question, search_results)
+    prompt = build_answer_prompt(question, search_results, include_history=include_history)
     chunks = []
 
     stream = client.chat.completions.create(
