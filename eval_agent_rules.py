@@ -230,6 +230,15 @@ EVAL_WEB_FIXTURES = [
             "回答时应基于可读正文说明信息边界，不能把低置信度搜索摘要当作可信正文。"
         ),
     },
+    {
+        "source": "网页：理想汽车 2026 一季度财报稳定样本",
+        "url": "https://example.com/eval/li-auto-2026-q1",
+        "text": (
+            "理想汽车 2026 一季度财报稳定样本：该样本用于验证联网检索链路能够围绕用户问题返回可读正文。"
+            "回答应明确覆盖理想汽车、2026 年、一季度、财报情况这些关键词，并说明如果真实财报数字需要以公司公告或交易所披露为准。"
+            "在评估环境中，不能因为实时网页读取失败而直接回答未找到任何相关信息。"
+        ),
+    },
 ]
 
 
@@ -282,7 +291,9 @@ def suppresses_freshness(question: str) -> bool:
 def select_eval_web_fixtures(question: str, limit: int | None = None) -> list[dict[str, str]]:
     lowered = question.lower()
     ranked = EVAL_WEB_FIXTURES[:]
-    if "livis" in lowered or "理想" in question:
+    if ("财报" in question or "一季度" in question) and "理想" in question:
+        preferred = ["网页：理想汽车 2026 一季度财报稳定样本"]
+    elif "livis" in lowered or "理想" in question:
         preferred = ["网页：理想 L8 Livis 稳定样本"]
     elif "星河" in question or "上线日期" in question:
         preferred = ["网页：星河助手网页传闻"]
@@ -561,6 +572,8 @@ def fake_generate_answer(
         )
     elif "agent" in question.lower() and "定义" in question:
         answer = f"Agent 是能够围绕目标感知上下文、调用工具并完成任务的智能体。参考来源：{joined_sources}。"
+    elif "财报" in question and "理想" in question:
+        answer = f"根据网页资料，理想汽车 2026 年一季度财报情况需要以公司公告或交易所披露为准；本轮已检索到与理想汽车、2026、一季度财报相关的稳定网页资料。参考来源：{joined_sources}。"
     elif "理想" in question or "Livis" in question or "livis" in question:
         answer = f"根据网页资料，理想 L8 Livis 与理想汽车相关功能讨论有关。参考来源：{joined_sources}。"
     elif "价格表" in question or "专业版" in question or "状态" in question:

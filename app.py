@@ -700,9 +700,16 @@ def render_memory_confirmation():
     with st.expander("Memory（记忆）候选：确认后才会写入长期记忆", expanded=True):
         st.caption("这是半自动确认模式：Agent 只提出候选，不会把普通对话自动写入长期记忆。")
         for index, candidate in enumerate(visible_candidates):
+            decision = memory_manager.memory_write_decision(candidate)
             st.markdown(f"**{index + 1}. {memory_manager.TYPE_LABELS.get(candidate['type'], candidate['type'])}**")
             st.write(candidate["value"])
-            st.caption(f"key：{candidate['key']}｜confidence（置信度）：{candidate['confidence']:.2f}｜source（来源）：{candidate['source']}")
+            st.caption(
+                f"key：{candidate['key']}｜scope（范围）：{candidate.get('scope', 'global')}｜"
+                f"risk（风险）：{candidate.get('risk_level', 'low')}｜"
+                f"confidence（置信度）：{candidate['confidence']:.2f}｜source（来源）：{candidate['source']}"
+            )
+            if decision == memory_manager.WRITE_DECISION_BLOCK:
+                st.warning("该候选命中敏感/禁止记忆规则，只能忽略，不能保存。")
             left, right = st.columns([0.18, 0.82])
             with left:
                 st.button(
@@ -710,6 +717,7 @@ def render_memory_confirmation():
                     key=f"save_memory_candidate_{candidate['candidate_id']}",
                     on_click=confirm_memory_candidate,
                     args=(candidate,),
+                    disabled=decision == memory_manager.WRITE_DECISION_BLOCK,
                 )
             with right:
                 st.button(
@@ -844,22 +852,50 @@ def render_settings_panel():
             st.success("已初始化默认记忆。" if seeded else "已有记忆，未重复初始化。")
         stats = memory_manager.memory_stats()
         st.caption(
-            f"active（生效）：{stats['active']}｜archived（归档）：{stats['archived']}｜deleted（删除）：{stats['deleted']}"
+            f"active（生效）：{stats['active']}｜superseded（被替代）：{stats['superseded']}｜"
+            f"expired（过期）：{stats['expired']}｜deleted（删除）：{stats['deleted']}"
         )
+        if st.button("运行 Memory 维护", help="执行过期处理、重复合并和质量分刷新。"):
+            maintenance_result = memory_manager.run_maintenance()
+            st.success(
+                f"维护完成：过期 {maintenance_result['expired']} 条，合并 {maintenance_result['merged']} 条。"
+            )
         with st.expander("查看 / 删除 Memory（记忆）"):
             for item in memory_manager.load_memories():
                 if item.get("status") != memory_manager.MEMORY_STATUS_ACTIVE:
                     continue
                 st.markdown(f"**{memory_manager.TYPE_LABELS.get(item['type'], item['type'])}**")
                 st.write(item["value"])
-                st.caption(f"key：{item['key']}｜confidence（置信度）：{item['confidence']:.2f}｜use_count（使用次数）：{item.get('use_count', 0)}")
-                st.button(
-                    "删除这条记忆",
-                    key=f"delete_memory_{item['id']}",
-                    on_click=memory_manager.delete_memory,
-                    args=(item["id"],),
+                st.caption(
+                    f"key：{item['key']}｜scope：{item.get('scope', 'global')}｜risk：{item.get('risk_level', 'low')}｜"
+                    f"confidence（置信度）：{item['confidence']:.2f}｜quality（质量分）：{item.get('quality_score', 0):.2f}｜"
+                    f"use_count（使用次数）：{item.get('use_count', 0)}"
                 )
+                soft_col, hard_col = st.columns(2)
+                with soft_col:
+                    st.button(
+                        "不再使用",
+                        key=f"delete_memory_{item['id']}",
+                        on_click=memory_manager.delete_memory,
+                        args=(item["id"],),
+                        help="软删除：保留审计记录，默认不再进入回答上下文。",
+                    )
+                with hard_col:
+                    st.button(
+                        "永久删除",
+                        key=f"hard_delete_memory_{item['id']}",
+                        on_click=memory_manager.hard_delete_memory,
+                        args=(item["id"],),
+                        help="硬删除：用于隐私/安全删除请求，会从 memory store 移除原文。",
+                    )
                 st.divider()
+        with st.expander("Memory 审计日志（最近 20 条）"):
+            audit_rows = memory_manager.load_audit(limit=20)
+            if not audit_rows:
+                st.caption("暂无审计日志。")
+            for row in reversed(audit_rows):
+                st.caption(f"{row.get('event')}｜{row.get('memory_id', '')}｜{row.get('ts')}")
+                st.json(row.get("payload", {}), expanded=False)
 
     with st.expander("模型与可观测性", expanded=False):
         plan_progress_enabled = st.toggle(
