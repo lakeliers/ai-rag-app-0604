@@ -339,6 +339,120 @@ def set_badcase_target(run):
     st.session_state.show_badcase_form = True
 
 
+def render_sources_panel(sources, trace_level_value="简洁"):
+    if not sources:
+        st.caption("本轮没有引用资料。")
+        return
+
+    for index, source in enumerate(sources, start=1):
+        title = source["source"]
+        url = source.get("url", "")
+        source_type = source.get("source_type", "unknown")
+        label = source_label(source)
+        st.markdown(f"**{index}. {title}**")
+        st.markdown(f"`{label}`")
+        st.caption(f"类型：{source_type}｜chunk（资料片段）类型：{source.get('chunk_type', 'child')}")
+        location_parts = []
+        if source.get("section_title"):
+            location_parts.append(f"小节：{source['section_title']}")
+        if source.get("page"):
+            location_parts.append(f"页码：{source['page']}")
+        if source.get("sheet"):
+            location_parts.append(f"工作表：{source['sheet']}")
+        if source.get("row_start"):
+            location_parts.append(f"行：{source.get('row_start')}-{source.get('row_end')}")
+        if location_parts:
+            st.caption("｜".join(location_parts))
+        if url:
+            st.write(url)
+        st.write(str(source.get("document", ""))[:300])
+        if trace_level_value == "完整":
+            with st.expander("调试分数", expanded=False):
+                st.caption(
+                    "融合分："
+                    f"{source.get('final_score', 0):.4f}｜"
+                    f"原始分：{source.get('pre_rerank_score', source.get('final_score', 0)):.4f}｜"
+                    f"意图：{source.get('query_intent', 'general')}｜"
+                    f"新鲜度：{source.get('freshness_score', 0):.2f}｜"
+                    f"答案性：{source.get('answerability_score', 0):.2f}｜"
+                    f"Rerank（重排序）：{source.get('rerank_status', '未启用')}｜"
+                    f"Rerank（重排序）分：{source.get('rerank_score', '无')}｜"
+                    f"向量排名：{source.get('vector_rank', '未召回')}｜"
+                    f"关键词排名：{source.get('bm25_rank', '未召回')}｜"
+                    f"上下文顺序：{source.get('context_order', index)}"
+                )
+        st.divider()
+
+
+def render_trace_panel(run, trace_level_value="简洁"):
+    steps = run.get("steps", [])
+    if trace_level_value == "隐藏":
+        st.caption("Trace（执行轨迹）已隐藏。")
+        return
+    if not steps:
+        st.caption("本轮没有记录执行步骤。")
+        return
+
+    st.caption(
+        f"Planner（规划器）：{run.get('planner_label', run.get('planner_mode', ''))}｜"
+        f"Trace ID（运行追踪编号）：{run.get('trace_id', '')}"
+    )
+    for index, step in enumerate(steps, start=1):
+        status_map = {
+            "success": "成功",
+            "warning": "提示",
+            "failed": "失败",
+        }
+        status = status_map.get(step.get("status"), step.get("status", ""))
+        st.markdown(f"**{index}. {step.get('name', '')}**")
+        st.caption(
+            f"工具：{step.get('tool', '')}｜状态：{status}｜耗时：{step.get('elapsed_ms', 0)} ms"
+        )
+        if trace_level_value == "完整":
+            st.write(step.get("reason", ""))
+            st.write(step.get("summary", ""))
+        else:
+            st.write(step.get("summary", ""))
+        if step.get("error"):
+            st.error(step["error"])
+        st.divider()
+
+
+def render_autonomous_panel(run):
+    autonomous = run.get("autonomous", {})
+    if not autonomous:
+        st.caption("本轮未进入 Autonomous Agent（自主智能体）任务模式。")
+        return
+    if autonomous.get("goal"):
+        st.markdown("**目标**")
+        st.write(autonomous["goal"])
+        st.caption(f"停止原因：{autonomous.get('stop_reason', '')}")
+
+    tasks = autonomous.get("tasks", [])
+    if tasks:
+        st.markdown("**任务队列**")
+        for task in tasks:
+            st.write(f"{task.get('id')}｜{task.get('title')}｜{task.get('status')}")
+            st.caption(f"依赖：{', '.join(task.get('depends_on', [])) or '无'}｜预期产物：{task.get('expected_output', '')}")
+
+    critic_results = autonomous.get("critic_results", [])
+    if critic_results:
+        st.markdown("**Critic（批判器）结果**")
+        for critic in critic_results:
+            status = "通过" if critic.get("passed") else "未通过"
+            st.write(f"{critic.get('task_id')}｜{status}｜分数：{critic.get('score')}")
+            if critic.get("issues"):
+                st.caption("问题：" + "；".join(critic["issues"]))
+
+    reflections = autonomous.get("reflections", [])
+    if reflections:
+        st.markdown("**Reflect（反思）补救建议**")
+        for reflection in reflections:
+            st.write(f"{reflection.get('task_id')} → {reflection.get('repair_task_id')}")
+            if reflection.get("issues"):
+                st.caption("问题：" + "；".join(reflection["issues"]))
+
+
 def render_assistant_message(content, run=None, key_suffix=""):
     left, right = st.columns([0.94, 0.06], vertical_alignment="top")
     with left:
@@ -354,6 +468,32 @@ def render_assistant_message(content, run=None, key_suffix=""):
                 on_click=set_badcase_target,
                 args=(run,),
             )
+    if run:
+        tab_names = ["执行过程", "来源", "反馈"]
+        if run.get("memory_used") or st.session_state.get("pending_memory_candidates"):
+            tab_names.append("Memory")
+        if run.get("autonomous"):
+            tab_names.append("自主任务")
+        tabs = st.tabs(tab_names)
+        for tab_name, tab in zip(tab_names, tabs):
+            with tab:
+                if tab_name == "执行过程":
+                    render_trace_panel(run, run.get("trace_level", trace_level))
+                elif tab_name == "来源":
+                    render_sources_panel(run.get("sources", []), run.get("trace_level", trace_level))
+                elif tab_name == "反馈":
+                    st.caption("如果这轮回答有问题，点击回答右侧的 ! 反馈 badcase（不良案例）。")
+                    if run.get("trace_id"):
+                        st.code(run["trace_id"], language="text")
+                elif tab_name == "Memory":
+                    used = run.get("memory_used", [])
+                    if used:
+                        st.caption("本轮使用的 Memory ID（记忆编号）：")
+                        st.write("、".join(used))
+                    else:
+                        st.caption("本轮没有使用长期记忆。")
+                elif tab_name == "自主任务":
+                    render_autonomous_panel(run)
 
 
 PLAN_STATUS_LABELS = {
@@ -472,14 +612,15 @@ def render_badcase_form():
     if not run or not st.session_state.get("show_badcase_form"):
         return
 
-    with st.expander("反馈 badcase（不良案例）：补充 Regression Case（回归用例）信息", expanded=True):
+    with st.expander("反馈 Bad Case（不良案例）", expanded=True):
         st.markdown("**当前问题现场**")
         if run.get("trace_id"):
             st.code(run["trace_id"], language="text")
         st.write("User Prompt（用户问题）：", run["user_input"])
-        st.write("Agent Answer（智能体回答）：", run["actual_answer"])
-        st.caption("工具调用：" + (", ".join(run["tools_called"]) or "无"))
-        st.caption("资料来源：" + (", ".join(run["sources_used"]) or "无"))
+        with st.expander("查看 Agent Answer（智能体回答）", expanded=False):
+            st.write(run["actual_answer"])
+            st.caption("工具调用：" + (", ".join(run["tools_called"]) or "无"))
+            st.caption("资料来源：" + (", ".join(run["sources_used"]) or "无"))
 
         default_category = "chitchat"
         if "upload_status" in run["tools_called"]:
@@ -490,124 +631,114 @@ def render_badcase_form():
             default_category = "autonomous"
 
         with st.form("badcase_form"):
-            save_target = st.radio(
-                "保存位置",
-                badcase_manager.SAVE_TARGETS,
-                index=0,
-                help="eval 是评估集合；GitHub Issue 是 GitHub 上的问题单，用于开发者确认 badcase（不良案例）。",
-            )
-
-            st.markdown("**Case（用例）基础信息**")
+            st.markdown("**快速反馈**")
             category = st.selectbox(
-                "category（问题类型）",
+                "问题类型",
                 badcase_manager.CATEGORIES,
                 index=badcase_manager.CATEGORIES.index(default_category),
                 format_func=lambda value: CATEGORY_LABELS.get(value, value),
-                help="category 表示这个 badcase 属于哪类能力问题。",
-            )
-            case_id = st.text_input(
-                "case_id（用例编号）",
-                value=badcase_manager.generate_case_id(run["user_input"], category),
-                help="case_id 是 regression set 里的唯一用例编号。",
-            )
-            suite = st.multiselect(
-                "suite（评估集合）",
-                badcase_manager.SUITES,
-                default=["regression"],
-                help="suite 表示这个 case 加入哪个测试集合：smoke 冒烟、regression 回归、benchmark 基准。",
-            )
-            severity = st.radio(
-                "severity（严重级别）",
-                badcase_manager.SEVERITIES,
-                index=2,
-                horizontal=True,
-                format_func=lambda value: SEVERITY_LABELS.get(value, value),
-                help="severity 用于标记问题影响程度。",
             )
             problem_description = st.text_area(
                 "问题说明",
                 value="",
                 placeholder="说明这轮回答哪里错了，例如：能力介绍问题不应该联网检索，也不应该引用无关网页。",
             )
+            save_target = st.radio(
+                "保存位置",
+                badcase_manager.SAVE_TARGETS,
+                index=0,
+                horizontal=True,
+                help="eval 是评估集合；GitHub Issue 是 GitHub 上的问题单，用于开发者确认 badcase（不良案例）。",
+            )
+            severity = st.radio(
+                "严重级别",
+                badcase_manager.SEVERITIES,
+                index=2,
+                horizontal=True,
+                format_func=lambda value: SEVERITY_LABELS.get(value, value),
+            )
 
-            st.markdown("**行为约束**")
+            case_id = badcase_manager.generate_case_id(run["user_input"], category)
+            suite = ["regression"]
             selected_mode_default = (
                 "autonomous"
                 if run["config"].get("run_mode") == "自主任务"
                 else "normal"
             )
-            selected_mode = st.radio(
-                "selected_mode（运行模式）",
-                badcase_manager.SELECTED_MODES,
-                index=badcase_manager.SELECTED_MODES.index(selected_mode_default),
-                horizontal=True,
-                format_func=lambda value: MODE_LABELS.get(value, value),
-                help="selected_mode 表示测试时应该用普通问答还是自主任务模式。",
-            )
-            expected_mode = st.selectbox(
-                "expected_mode（期望运行时）",
-                [""] + badcase_manager.EXPECTED_MODES,
-                index=0,
-                format_func=lambda value: MODE_LABELS.get(value, "不限制"),
-                help="expected_mode 用来约束 Agent 应该进入哪种运行时。",
-            )
-            expected_tools = st.multiselect(
-                "expected_tools（期望调用工具）",
-                badcase_manager.TOOLS,
-                format_func=lambda value: TOOL_LABELS.get(value, value),
-                help="expected_tools 表示这类问题必须调用的工具。",
-            )
-            forbidden_tools = st.multiselect(
-                "forbidden_tools（禁止调用工具）",
-                badcase_manager.TOOLS,
-                format_func=lambda value: TOOL_LABELS.get(value, value),
-                help="forbidden_tools 表示这类问题不应该调用的工具。",
-            )
-            expected_sources = st.multiselect(
-                "expected_sources（期望资料来源）",
-                badcase_manager.SOURCES,
-                format_func=lambda value: SOURCE_LABELS.get(value, value),
-                help="expected_sources 表示回答应该使用哪些资料来源。",
-            )
-            forbidden_sources = st.multiselect(
-                "forbidden_sources（禁止资料来源）",
-                badcase_manager.SOURCES,
-                format_func=lambda value: SOURCE_LABELS.get(value, value),
-                help="forbidden_sources 表示回答不应该使用哪些资料来源。",
-            )
+            selected_mode = selected_mode_default
+            expected_mode = ""
+            expected_tools = []
+            forbidden_tools = []
+            expected_sources = []
+            forbidden_sources = []
+            required_phrases_text = ""
+            expected_answer_phrases_text = ""
+            forbidden_answer_phrases_text = ""
+            min_answer_chars = 20
+            success_criteria_text = ""
+            note = ""
 
-            st.markdown("**答案约束**")
-            required_phrases_text = st.text_input(
-                "required_phrases（必须出现词，逗号分隔）",
-                help="required_phrases 是答案里必须包含的关键词，例如：上传，联网，RAG。",
-            )
-            expected_answer_phrases_text = st.text_input(
-                "expected_answer_phrases（期望回答词，逗号分隔）",
-                help="expected_answer_phrases 用于更明确地要求答案必须包含某些表述。",
-            )
-            forbidden_answer_phrases_text = st.text_input(
-                "forbidden_answer_phrases（禁止回答词，逗号分隔）",
-                help="forbidden_answer_phrases 是答案里不能出现的词，例如：搜狐，极简生活，根据现有资料。",
-            )
-            min_answer_chars = st.number_input(
-                "min_answer_chars（最少回答字数）",
-                min_value=0,
-                max_value=1000,
-                value=20,
-                step=1,
-                help="min_answer_chars 用于避免空回答或过短回答通过测试。",
-            )
-            success_criteria_text = st.text_area(
-                "success_criteria（成功标准，每行一条）",
-                value="",
-                placeholder="例如：不得引用历史上传资料\n必须直接介绍 Agent 能力",
-                help="success_criteria 是人工可读的成功标准，后续可转成规则或 LLM-as-Judge rubric。",
-            )
-            note = st.text_area(
-                "note（备注，不参与规则评估）",
-                value="",
-                help="note 只给开发者看，不参与自动化 eval。",
-            )
+            with st.expander("高级评测字段", expanded=False):
+                case_id = st.text_input(
+                    "case_id（用例编号）",
+                    value=case_id,
+                    help="case_id 是 regression set 里的唯一用例编号。",
+                )
+                suite = st.multiselect(
+                    "suite（评估集合）",
+                    badcase_manager.SUITES,
+                    default=suite,
+                    help="suite 表示这个 case 加入哪个测试集合：smoke 冒烟、regression 回归、benchmark 基准。",
+                )
+                selected_mode = st.radio(
+                    "selected_mode（运行模式）",
+                    badcase_manager.SELECTED_MODES,
+                    index=badcase_manager.SELECTED_MODES.index(selected_mode_default),
+                    horizontal=True,
+                    format_func=lambda value: MODE_LABELS.get(value, value),
+                )
+                expected_mode = st.selectbox(
+                    "expected_mode（期望运行时）",
+                    [""] + badcase_manager.EXPECTED_MODES,
+                    index=0,
+                    format_func=lambda value: MODE_LABELS.get(value, "不限制"),
+                )
+                expected_tools = st.multiselect(
+                    "expected_tools（期望调用工具）",
+                    badcase_manager.TOOLS,
+                    format_func=lambda value: TOOL_LABELS.get(value, value),
+                )
+                forbidden_tools = st.multiselect(
+                    "forbidden_tools（禁止调用工具）",
+                    badcase_manager.TOOLS,
+                    format_func=lambda value: TOOL_LABELS.get(value, value),
+                )
+                expected_sources = st.multiselect(
+                    "expected_sources（期望资料来源）",
+                    badcase_manager.SOURCES,
+                    format_func=lambda value: SOURCE_LABELS.get(value, value),
+                )
+                forbidden_sources = st.multiselect(
+                    "forbidden_sources（禁止资料来源）",
+                    badcase_manager.SOURCES,
+                    format_func=lambda value: SOURCE_LABELS.get(value, value),
+                )
+                required_phrases_text = st.text_input("required_phrases（必须出现词，逗号分隔）")
+                expected_answer_phrases_text = st.text_input("expected_answer_phrases（期望回答词，逗号分隔）")
+                forbidden_answer_phrases_text = st.text_input("forbidden_answer_phrases（禁止回答词，逗号分隔）")
+                min_answer_chars = st.number_input(
+                    "min_answer_chars（最少回答字数）",
+                    min_value=0,
+                    max_value=1000,
+                    value=20,
+                    step=1,
+                )
+                success_criteria_text = st.text_area(
+                    "success_criteria（成功标准，每行一条）",
+                    value="",
+                    placeholder="例如：不得引用历史上传资料\n必须直接介绍 Agent 能力",
+                )
+                note = st.text_area("note（备注，不参与规则评估）", value="")
 
             submitted = st.form_submit_button("校验并提交")
 
@@ -685,7 +816,7 @@ def dismiss_memory_candidate(candidate_id):
 
 
 def set_prompt_seed(prompt):
-    st.session_state.prompt_seed = prompt
+    st.session_state.queued_prompt = prompt
 
 
 def render_memory_confirmation():
@@ -971,11 +1102,19 @@ if "memory_notice" not in st.session_state:
 if "prompt_seed" not in st.session_state:
     st.session_state.prompt_seed = ""
 
+if "queued_prompt" not in st.session_state:
+    st.session_state.queued_prompt = ""
+
 
 st.markdown("""
 <style>
-[data-testid="stSidebar"] {display: none;}
-.block-container {padding-top: 1.4rem; max-width: 100%;}
+.block-container {padding-top: 1.4rem; max-width: 1180px;}
+[data-testid="stSidebar"] {
+    border-right: 1px solid #e2e6ee;
+}
+[data-testid="stSidebar"] .block-container {
+    padding-top: 1.2rem;
+}
 .main-header-card {
     border: 1px solid #e2e6ee;
     border-radius: 8px;
@@ -1050,377 +1189,287 @@ st.markdown("""
     color: #6b7280;
     font-size: 0.9rem;
 }
+@media (max-width: 768px) {
+    .block-container {padding-left: 1rem; padding-right: 1rem;}
+    .main-header-card h1 {font-size: 1.35rem;}
+    .config-pill {font-size: 0.78rem;}
+}
 </style>
 """, unsafe_allow_html=True)
 
-settings_col, workspace_col = st.columns([0.28, 0.72], gap="large")
-
-with settings_col:
-    st.markdown('<div class="settings-panel">', unsafe_allow_html=True)
+with st.sidebar:
     render_settings_panel()
-    st.markdown('</div>', unsafe_allow_html=True)
 
-    st.markdown('<div class="observe-panel">', unsafe_allow_html=True)
-    st.subheader("观察面板")
-    st.caption("运行过程、引用来源、badcase 与 Memory 候选会在工作区内跟随回答展示；这里保留当前配置快照。")
-    st.write("运行模式：", run_mode)
-    st.write("路由：", router_mode_label)
-    st.write("资料来源：", source_strategy_label)
-    st.write("检索：", retrieval_strategy_label)
-    st.write("上下文打包：", context_packing_label)
-    st.write("切分：", "、".join(chunking_strategy_labels))
-    st.write("模型：", deepseek_model_label)
-    st.write("Trace：", trace_level)
-    st.markdown('</div>', unsafe_allow_html=True)
+st.markdown(
+    '<div class="main-header-card"><h1>RAG Agent Pro（检索增强智能体教学版）</h1>'
+    '<p>提问、观察执行过程、检查证据来源、反馈 badcase。资料与教学配置在左侧栏。</p></div>',
+    unsafe_allow_html=True,
+)
+st.markdown(
+    '<div class="config-summary"><div class="config-summary-title">本轮配置</div>'
+    f'<span class="config-pill">{run_mode}</span>'
+    f'<span class="config-pill">{source_strategy_label}</span>'
+    f'<span class="config-pill">{retrieval_strategy_label}</span>'
+    f'<span class="config-pill">{context_packing_label}</span>'
+    f'<span class="config-pill">{deepseek_model_label}</span>'
+    '</div>',
+    unsafe_allow_html=True,
+)
 
-with workspace_col:
+if not st.session_state.messages:
     st.markdown(
-        '<div class="main-header-card"><h1>RAG Agent Pro（检索增强智能体教学版）</h1>'
-        '<p>提问、观察执行过程、检查证据来源、反馈 badcase。</p></div>',
+        '<div class="empty-state"><strong>可以直接开始提问</strong>'
+        '<div class="compact-help">上传资料后会优先检索上传内容；没有上传资料时，会按当前资料来源策略联网或使用本地基础资料。</div></div>',
         unsafe_allow_html=True,
     )
-    st.markdown(
-        '<div class="config-summary"><div class="config-summary-title">本轮配置</div>'
-        f'<span class="config-pill">{run_mode}</span>'
-        f'<span class="config-pill">{source_strategy_label}</span>'
-        f'<span class="config-pill">{retrieval_strategy_label}</span>'
-        f'<span class="config-pill">{context_packing_label}</span>'
-        f'<span class="config-pill">{deepseek_model_label}</span>'
-        '</div>',
-        unsafe_allow_html=True,
-    )
+    prompt_cols = st.columns(3)
+    examples = [
+        "你能做些什么？",
+        "RAG 是什么？用产品经理能听懂的话解释",
+        "最近 AI Agent 有什么新趋势？",
+    ]
+    for col, example in zip(prompt_cols, examples):
+        with col:
+            st.button(
+                example,
+                key=f"prompt_example_{example}",
+                on_click=set_prompt_seed,
+                args=(example,),
+                use_container_width=True,
+            )
 
-    if not st.session_state.messages:
-        st.markdown(
-            '<div class="empty-state"><strong>可以直接开始提问</strong>'
-            '<div class="compact-help">上传资料后会优先检索上传内容；没有上传资料时，会按当前资料来源策略联网或使用本地基础资料。</div></div>',
-            unsafe_allow_html=True,
-        )
-        prompt_cols = st.columns(3)
-        examples = [
-            "你能做些什么？",
-            "RAG 是什么？用产品经理能听懂的话解释",
-            "最近 AI Agent 有什么新趋势？",
-        ]
-        for col, example in zip(prompt_cols, examples):
-            with col:
-                st.button(
-                    example,
-                    key=f"prompt_example_{example}",
-                    on_click=set_prompt_seed,
-                    args=(example,),
-                    use_container_width=True,
-                )
+for index, message in enumerate(st.session_state.messages):
+    with st.chat_message(message["role"]):
+        if message["role"] == "assistant":
+            render_assistant_message(
+                message["content"],
+                message.get("badcase_run"),
+                key_suffix=f"history_{index}",
+            )
+        else:
+            st.write(message["content"])
 
 
-    for index, message in enumerate(st.session_state.messages):
-        with st.chat_message(message["role"]):
-            if message["role"] == "assistant":
-                render_assistant_message(
-                    message["content"],
-                    message.get("badcase_run"),
-                    key_suffix=f"history_{index}",
-                )
-            else:
-                st.write(message["content"])
+prompt = st.session_state.queued_prompt.strip()
+st.session_state.queued_prompt = ""
+chat_prompt = st.chat_input("输入问题，Agent（智能体）会自动检索上传资料和网络资料")
+if chat_prompt:
+    prompt = chat_prompt.strip()
 
+if prompt:
+    if not deepseek_key:
+        st.error("请先配置 DEEPSEEK_API_KEY。")
+        st.stop()
 
-    prompt = None
-    with st.form("workspace_prompt_form", clear_on_submit=True):
-        prompt_text = st.text_area(
-            "输入问题",
-            placeholder="输入问题，Agent（智能体）会自动检索上传资料和网络资料",
-            value=st.session_state.prompt_seed,
-            height=82,
-        )
-        submitted_prompt = st.form_submit_button("发送", use_container_width=True)
-        if submitted_prompt:
-            prompt = prompt_text.strip()
-            st.session_state.prompt_seed = ""
+    trace_id = generate_trace_id()
+    st.session_state.messages.append({"role": "user", "content": prompt})
 
-    if prompt:
-        if not deepseek_key:
-            st.error("请先配置 DEEPSEEK_API_KEY。")
-            st.stop()
+    with st.chat_message("user"):
+        st.write(prompt)
 
-        trace_id = generate_trace_id()
-        st.session_state.messages.append({"role": "user", "content": prompt})
+    with st.chat_message("assistant"):
+        try:
+            plan_placeholder = st.empty()
+            live_plan_steps = base_plan_steps(run_mode)
+            if plan_progress_enabled:
+                render_plan_progress(plan_placeholder, live_plan_steps)
 
-        with st.chat_message("user"):
-            st.write(prompt)
+            def handle_plan_progress(event):
+                if not plan_progress_enabled:
+                    return
+                merge_plan_event(live_plan_steps, event)
+                render_plan_progress(plan_placeholder, live_plan_steps)
 
-        with st.chat_message("assistant"):
-            try:
-                plan_placeholder = st.empty()
-                live_plan_steps = base_plan_steps(run_mode)
-                if plan_progress_enabled:
-                    render_plan_progress(plan_placeholder, live_plan_steps)
+            stream_placeholder = st.empty()
+            streamed_answer = {"text": ""}
 
-                def handle_plan_progress(event):
-                    if not plan_progress_enabled:
-                        return
-                    merge_plan_event(live_plan_steps, event)
-                    render_plan_progress(plan_placeholder, live_plan_steps)
+            def handle_answer_stream(delta, full_text):
+                streamed_answer["text"] = full_text
+                stream_placeholder.markdown(full_text + "▌")
 
-                stream_placeholder = st.empty()
-                streamed_answer = {"text": ""}
+            with st.spinner("执行 Agent（智能体）计划中..."):
+                uploaded_sources = ingest_uploaded_files(uploaded_files, prompt, chunking_strategy)
+                memory_context = ""
+                retrieved_memories = []
+                if memory_enabled:
+                    retrieved_memories = memory_manager.retrieve_memories(prompt)
+                    memory_context = memory_manager.build_memory_context(retrieved_memories)
 
-                def handle_answer_stream(delta, full_text):
-                    streamed_answer["text"] = full_text
-                    stream_placeholder.markdown(full_text + "▌")
+                use_autonomous_mode = False
+                autonomous_route_reason = ""
+                if run_mode == "自主任务":
+                    use_autonomous_mode, autonomous_route_reason = call_with_supported_kwargs(
+                        autonomous_agent.should_use_autonomous_mode,
+                        prompt,
+                        router_mode=router_mode,
+                    )
 
-                with st.spinner("执行 Agent（智能体）计划中..."):
-                    uploaded_sources = ingest_uploaded_files(uploaded_files, prompt, chunking_strategy)
-                    memory_context = ""
-                    retrieved_memories = []
-                    if memory_enabled:
-                        retrieved_memories = memory_manager.retrieve_memories(prompt)
-                        memory_context = memory_manager.build_memory_context(retrieved_memories)
-
-                    use_autonomous_mode = False
-                    autonomous_route_reason = ""
+                if run_mode == "自主任务" and use_autonomous_mode:
+                    result = call_with_supported_kwargs(
+                        autonomous_agent.run_autonomous_agent,
+                        prompt,
+                        top_k=top_k,
+                        web_max_results=web_max_results,
+                        max_steps=max_autonomous_steps,
+                        preferred_sources=uploaded_sources,
+                        router_mode=router_mode,
+                        source_strategy=source_strategy,
+                        retrieval_strategy=retrieval_strategy,
+                        context_packing_strategy=context_packing_strategy,
+                        planner_type=planner_type,
+                        evaluator_type=evaluator_type,
+                        memory_context=memory_context,
+                        metadata_scope={"session_id": st.session_state.rag_session_id},
+                        progress_callback=handle_plan_progress,
+                    )
+                else:
+                    answer_stream_callback = handle_answer_stream if streaming_enabled else None
+                    result = call_with_supported_kwargs(
+                        agent_runtime.run_agent_pro,
+                        prompt,
+                        use_web=True,
+                        top_k=top_k,
+                        web_max_results=web_max_results,
+                        preferred_sources=uploaded_sources,
+                        router_mode=router_mode,
+                        source_strategy=source_strategy,
+                        retrieval_strategy=retrieval_strategy,
+                        context_packing_strategy=context_packing_strategy,
+                        planner_type=planner_type,
+                        evaluator_type=evaluator_type,
+                        memory_context=memory_context,
+                        metadata_scope={"session_id": st.session_state.rag_session_id},
+                        stream_callback=answer_stream_callback,
+                        progress_callback=handle_plan_progress,
+                    )
                     if run_mode == "自主任务":
-                        use_autonomous_mode, autonomous_route_reason = call_with_supported_kwargs(
-                            autonomous_agent.should_use_autonomous_mode,
-                            prompt,
-                            router_mode=router_mode,
-                        )
-
-                    if run_mode == "自主任务" and use_autonomous_mode:
-                        result = call_with_supported_kwargs(
-                            autonomous_agent.run_autonomous_agent,
-                            prompt,
-                            top_k=top_k,
-                            web_max_results=web_max_results,
-                            max_steps=max_autonomous_steps,
-                            preferred_sources=uploaded_sources,
-                            router_mode=router_mode,
-                            source_strategy=source_strategy,
-                            retrieval_strategy=retrieval_strategy,
-                            context_packing_strategy=context_packing_strategy,
-                            planner_type=planner_type,
-                            evaluator_type=evaluator_type,
-                            memory_context=memory_context,
-                            metadata_scope={"session_id": st.session_state.rag_session_id},
-                            progress_callback=handle_plan_progress,
-                        )
-                    else:
-                        answer_stream_callback = handle_answer_stream if streaming_enabled else None
-                        result = call_with_supported_kwargs(
-                            agent_runtime.run_agent_pro,
-                            prompt,
-                            use_web=True,
-                            top_k=top_k,
-                            web_max_results=web_max_results,
-                            preferred_sources=uploaded_sources,
-                            router_mode=router_mode,
-                            source_strategy=source_strategy,
-                            retrieval_strategy=retrieval_strategy,
-                            context_packing_strategy=context_packing_strategy,
-                            planner_type=planner_type,
-                            evaluator_type=evaluator_type,
-                            memory_context=memory_context,
-                            metadata_scope={"session_id": st.session_state.rag_session_id},
-                            stream_callback=answer_stream_callback,
-                            progress_callback=handle_plan_progress,
-                        )
-                        if run_mode == "自主任务":
-                            handle_plan_progress({
-                                "id": "goal_manager",
+                        handle_plan_progress({
+                            "id": "goal_manager",
+                            "name": "自主模式入口判断",
+                            "tool": "goal_router",
+                            "status": "completed",
+                            "summary": f"已回退普通问答：{autonomous_route_reason}",
+                        })
+                        result["planner_mode"] = "autonomous_fallback"
+                        result["steps"] = [
+                            {
                                 "name": "自主模式入口判断",
                                 "tool": "goal_router",
-                                "status": "completed",
+                                "reason": "Goal Manager（目标管理器）先判断输入是否值得进入任务级 Autonomous Runtime（自主任务运行时）。",
+                                "status": "success",
                                 "summary": f"已回退普通问答：{autonomous_route_reason}",
-                            })
-                            result["planner_mode"] = "autonomous_fallback"
-                            result["steps"] = [
-                                {
-                                    "name": "自主模式入口判断",
-                                    "tool": "goal_router",
-                                    "reason": "Goal Manager（目标管理器）先判断输入是否值得进入任务级 Autonomous Runtime（自主任务运行时）。",
-                                    "status": "success",
-                                    "summary": f"已回退普通问答：{autonomous_route_reason}",
-                                    "elapsed_ms": 0,
-                                    "error": "",
-                                },
-                                *result.get("steps", []),
-                            ]
+                                "elapsed_ms": 0,
+                                "error": "",
+                            },
+                            *result.get("steps", []),
+                        ]
 
-                if streamed_answer["text"]:
-                    stream_placeholder.empty()
-                badcase_run = {
+            if streamed_answer["text"]:
+                stream_placeholder.empty()
+            planner_label = (
+                "Autonomous Runtime（自主任务运行时）"
+                if result.get("planner_mode") == "autonomous_runtime"
+                else "LLM Tool Calling（大模型工具调用）"
+                if result.get("planner_mode") == "llm_tool_calling"
+                else "自主模式回退普通问答"
+                if result.get("planner_mode") == "autonomous_fallback"
+                else "行业主流 Runtime（运行时）雏形"
+                if result.get("planner_mode") == "pro_runtime"
+                else "规则兜底"
+            )
+            autonomous_snapshot = {}
+            if result.get("planner_mode") == "autonomous_runtime":
+                goal = result.get("goal")
+                autonomous_snapshot = {
+                    "goal": getattr(goal, "objective", "") if goal else "",
+                    "stop_reason": result.get("stop_reason", ""),
+                    "tasks": [
+                        {
+                            "id": getattr(task, "id", ""),
+                            "title": getattr(task, "title", ""),
+                            "status": getattr(task, "status", ""),
+                            "depends_on": getattr(task, "depends_on", []),
+                            "expected_output": getattr(task, "expected_output", ""),
+                        }
+                        for task in result.get("tasks", [])
+                    ],
+                    "critic_results": result.get("critic_results", []),
+                    "reflections": result.get("reflections", []),
+                }
+            badcase_run = {
+                "trace_id": trace_id,
+                "user_input": prompt,
+                "actual_answer": result["answer"],
+                "config": build_current_config(),
+                "tools_called": extract_tools_from_steps(result.get("steps", [])),
+                "sources_used": extract_source_types(result.get("sources", [])),
+                "planner_mode": result.get("planner_mode", ""),
+                "planner_label": planner_label,
+                "trace_level": trace_level,
+                "steps": result.get("steps", []),
+                "sources": result.get("sources", []),
+                "autonomous": autonomous_snapshot,
+                "memory_used": [item.get("id") for item in retrieved_memories],
+                "run_snapshot": {
                     "trace_id": trace_id,
-                    "user_input": prompt,
-                    "actual_answer": result["answer"],
-                    "config": build_current_config(),
+                    "planner_mode": result.get("planner_mode", ""),
                     "tools_called": extract_tools_from_steps(result.get("steps", [])),
                     "sources_used": extract_source_types(result.get("sources", [])),
-                    "planner_mode": result.get("planner_mode", ""),
                     "memory_used": [item.get("id") for item in retrieved_memories],
-                    "run_snapshot": {
-                        "trace_id": trace_id,
-                        "planner_mode": result.get("planner_mode", ""),
-                        "tools_called": extract_tools_from_steps(result.get("steps", [])),
-                        "sources_used": extract_source_types(result.get("sources", [])),
-                        "memory_used": [item.get("id") for item in retrieved_memories],
-                        "steps": compact_steps_for_log(result.get("steps", [])),
-                        "sources": compact_sources_for_log(result.get("sources", [])),
-                        "answer_preview": str(result.get("answer", ""))[:1200],
-                    },
-                }
-                render_assistant_message(
-                    result["answer"],
-                    badcase_run,
-                    key_suffix=f"live_{len(st.session_state.messages)}",
-                )
-                st.session_state.messages.append({
-                    "role": "assistant",
-                    "content": result["answer"],
-                    "badcase_run": badcase_run,
-                })
-                st.session_state.last_sources = result["sources"]
+                    "steps": compact_steps_for_log(result.get("steps", [])),
+                    "sources": compact_sources_for_log(result.get("sources", [])),
+                    "answer_preview": str(result.get("answer", ""))[:1200],
+                },
+            }
+            render_assistant_message(
+                result["answer"],
+                badcase_run,
+                key_suffix=f"live_{len(st.session_state.messages)}",
+            )
+            st.session_state.messages.append({
+                "role": "assistant",
+                "content": result["answer"],
+                "badcase_run": badcase_run,
+            })
+            st.session_state.last_sources = result["sources"]
 
-                if memory_enabled and memory_write_mode == "confirm":
-                    candidates = memory_manager.suggest_memory_candidates(prompt)
-                    for candidate in candidates:
-                        candidate["candidate_id"] = memory_manager.candidate_id(candidate)
-                    st.session_state.pending_memory_candidates = candidates
-                    render_memory_confirmation()
+            if memory_enabled and memory_write_mode == "confirm":
+                candidates = memory_manager.suggest_memory_candidates(prompt)
+                for candidate in candidates:
+                    candidate["candidate_id"] = memory_manager.candidate_id(candidate)
+                st.session_state.pending_memory_candidates = candidates
 
-                if trace_level != "隐藏":
-                    with st.expander("查看 Agent（智能体）执行步骤"):
-                        planner_label = (
-                            "Autonomous Runtime（自主任务运行时）"
-                            if result.get("planner_mode") == "autonomous_runtime"
-                            else
-                            "LLM Tool Calling（大模型工具调用）"
-                            if result.get("planner_mode") == "llm_tool_calling"
-                            else "自主模式回退普通问答"
-                            if result.get("planner_mode") == "autonomous_fallback"
-                            else "行业主流 Runtime（运行时）雏形"
-                            if result.get("planner_mode") == "pro_runtime"
-                            else "规则兜底"
-                        )
-                        st.caption(
-                            f"Planner（规划器）来源：{planner_label}｜Router（路由器）：{router_mode_label}｜"
-                            f"Source（资料来源）：{source_strategy_label}｜Retrieval（检索）：{retrieval_strategy_label}｜"
-                            f"Packing（上下文打包）：{context_packing_label}｜"
-                            f"Chunking（切分）：{'、'.join(chunking_strategy_labels)}｜"
-                            f"Model（模型）：{deepseek_model_label}｜Evaluator（评估器）：{evaluator_type_label}"
-                        )
-                        for index, step in enumerate(result.get("steps", []), start=1):
-                            status_map = {
-                                "success": "成功",
-                                "warning": "提示",
-                                "failed": "失败",
-                            }
-                            status = status_map.get(step["status"], step["status"])
-                            st.markdown(f"**{index}. {step['name']}**")
-                            st.caption(
-                                f"工具：{step['tool']} | 状态：{status} | 耗时：{step['elapsed_ms']} ms"
-                            )
-                            if trace_level == "完整":
-                                st.write(step["reason"])
-                                st.write(step["summary"])
-                            else:
-                                st.write(step["summary"])
-                            if step.get("error"):
-                                st.error(step["error"])
-                            st.divider()
-
-                if result.get("planner_mode") == "autonomous_runtime":
-                    with st.expander("查看 Autonomous Agent（自主智能体）任务状态"):
-                        goal = result.get("goal")
-                        if goal:
-                            st.markdown("**目标**")
-                            st.write(goal.objective)
-                            st.caption(f"停止原因：{result.get('stop_reason', '')}")
-
-                        st.markdown("**任务队列**")
-                        for task in result.get("tasks", []):
-                            st.write(f"{task.id}｜{task.title}｜{task.status}")
-                            st.caption(f"依赖：{', '.join(task.depends_on) or '无'}｜预期产物：{task.expected_output}")
-
-                        if result.get("critic_results"):
-                            st.markdown("**Critic（批判器）结果**")
-                            for critic in result["critic_results"]:
-                                status = "通过" if critic["passed"] else "未通过"
-                                st.write(f"{critic['task_id']}｜{status}｜分数：{critic['score']}")
-                                if critic["issues"]:
-                                    st.caption("问题：" + "；".join(critic["issues"]))
-
-                        if result.get("reflections"):
-                            st.markdown("**Reflect（反思）补救建议**")
-                            for reflection in result["reflections"]:
-                                st.write(f"{reflection['task_id']} → {reflection['repair_task_id']}")
-                                st.caption("问题：" + "；".join(reflection["issues"]))
-
-                if result["sources"]:
-                    with st.expander("查看参考来源"):
-                        for index, source in enumerate(result["sources"], start=1):
-                            title = source["source"]
-                            url = source.get("url", "")
-                            source_type = source.get("source_type", "unknown")
-                            label = source_label(source)
-                            st.markdown(f"**{index}. {title}**")
-                            st.markdown(f"`{label}`")
-                            st.caption(f"类型：{source_type} | chunk（资料片段）类型：{source.get('chunk_type', 'child')}")
-                            location_parts = []
-                            if source.get("section_title"):
-                                location_parts.append(f"小节：{source['section_title']}")
-                            if source.get("page"):
-                                location_parts.append(f"页码：{source['page']}")
-                            if source.get("sheet"):
-                                location_parts.append(f"工作表：{source['sheet']}")
-                            if source.get("row_start"):
-                                location_parts.append(f"行：{source.get('row_start')}-{source.get('row_end')}")
-                            if location_parts:
-                                st.caption(" | ".join(location_parts))
-                            st.caption(
-                                "融合分："
-                                f"{source.get('final_score', 0):.4f} | "
-                                f"原始分：{source.get('pre_rerank_score', source.get('final_score', 0)):.4f} | "
-                                f"意图：{source.get('query_intent', 'general')} | "
-                                f"新鲜度：{source.get('freshness_score', 0):.2f} | "
-                                f"答案性：{source.get('answerability_score', 0):.2f} | "
-                                f"Rerank（重排序）：{source.get('rerank_status', '未启用')} | "
-                                f"Rerank（重排序）分：{source.get('rerank_score', '无')} | "
-                                f"向量排名：{source.get('vector_rank', '未召回')} | "
-                                f"关键词排名：{source.get('bm25_rank', '未召回')} | "
-                                f"上下文顺序：{source.get('context_order', index)}"
-                            )
-                            if url:
-                                st.write(url)
-                            st.write(source["document"][:300])
-                            st.divider()
-
-            except Exception as e:
-                error_answer = f"调用失败：{e}"
-                error_run = {
+        except Exception as e:
+            error_answer = f"调用失败：{e}"
+            error_run = {
+                "trace_id": trace_id,
+                "user_input": prompt,
+                "actual_answer": error_answer,
+                "config": build_current_config(),
+                "tools_called": [],
+                "sources_used": [],
+                "planner_mode": "error",
+                "planner_label": "错误",
+                "trace_level": trace_level,
+                "steps": [],
+                "sources": [],
+                "memory_used": [],
+                "run_snapshot": {
                     "trace_id": trace_id,
-                    "user_input": prompt,
-                    "actual_answer": error_answer,
-                    "config": build_current_config(),
-                    "tools_called": [],
-                    "sources_used": [],
                     "planner_mode": "error",
-                    "memory_used": [],
-                    "run_snapshot": {
-                        "trace_id": trace_id,
-                        "planner_mode": "error",
-                        "error": str(e)[:1200],
-                        "answer_preview": error_answer,
-                    },
-                }
-                st.error(error_answer)
-                render_assistant_message(error_answer, error_run, key_suffix=f"error_{len(st.session_state.messages)}")
-                st.session_state.messages.append({
-                    "role": "assistant",
-                    "content": error_answer,
-                    "badcase_run": error_run,
-                })
+                    "error": str(e)[:1200],
+                    "answer_preview": error_answer,
+                },
+            }
+            st.error(error_answer)
+            render_assistant_message(error_answer, error_run, key_suffix=f"error_{len(st.session_state.messages)}")
+            st.session_state.messages.append({
+                "role": "assistant",
+                "content": error_answer,
+                "badcase_run": error_run,
+            })
 
-    render_badcase_form()
-    if st.session_state.memory_notice:
-        st.info(st.session_state.memory_notice)
-    render_memory_confirmation()
+render_badcase_form()
+if st.session_state.memory_notice:
+    st.info(st.session_state.memory_notice)
+render_memory_confirmation()
