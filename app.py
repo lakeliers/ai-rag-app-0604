@@ -99,17 +99,24 @@ def file_key(uploaded_file, chunking_strategy):
     return f"{uploaded_file.name}:{len(file_bytes)}:{content_hash}:{format_chunking_strategy(chunking_strategy)}"
 
 
-def ingest_uploaded_files(uploaded_files, question, chunking_strategy):
+def ingest_uploaded_files_for_state(uploaded_files, chunking_strategy, *, state_key_prefix="", session_id=None):
     if not uploaded_files:
         return []
 
     ingested_sources = []
-    metadata_scope = {"session_id": st.session_state.rag_session_id}
+    session_id = session_id or st.session_state.rag_session_id
+    metadata_scope = {"session_id": session_id}
+    ingested_key = f"{state_key_prefix}ingested_uploads"
+    upload_status_key = f"{state_key_prefix}upload_status"
+    if ingested_key not in st.session_state:
+        st.session_state[ingested_key] = {}
+    if upload_status_key not in st.session_state:
+        st.session_state[upload_status_key] = []
 
     for uploaded_file in uploaded_files:
         key = file_key(uploaded_file, chunking_strategy)
-        if key in st.session_state.ingested_uploads:
-            ingested_sources.append(st.session_state.ingested_uploads[key])
+        if key in st.session_state[ingested_key]:
+            ingested_sources.append(st.session_state[ingested_key][key])
             continue
 
         if is_image(uploaded_file):
@@ -144,11 +151,20 @@ def ingest_uploaded_files(uploaded_files, question, chunking_strategy):
                 metadata_scope=metadata_scope,
             )
 
-        st.session_state.ingested_uploads[key] = source
-        st.session_state.upload_status.append(f"{source}：{chunk_count} 块｜切分：{format_chunking_labels(chunking_strategy)}")
+        st.session_state[ingested_key][key] = source
+        st.session_state[upload_status_key].append(f"{source}：{chunk_count} 块｜切分：{format_chunking_labels(chunking_strategy)}")
         ingested_sources.append(source)
 
     return ingested_sources
+
+
+def ingest_uploaded_files(uploaded_files, question, chunking_strategy):
+    return ingest_uploaded_files_for_state(
+        uploaded_files,
+        chunking_strategy,
+        state_key_prefix="",
+        session_id=st.session_state.rag_session_id,
+    )
 
 
 def source_label(source):
@@ -539,6 +555,7 @@ def render_autonomous_panel(run):
 
 
 def render_assistant_message(content, run=None, key_suffix=""):
+    trace_level_fallback = globals().get("trace_level", "简洁")
     left, right = st.columns([0.94, 0.06], vertical_alignment="top")
     with left:
         st.write(content)
@@ -554,33 +571,34 @@ def render_assistant_message(content, run=None, key_suffix=""):
                 args=(run,),
             )
     if run:
-        tab_names = ["执行过程", "来源", "Safety", "反馈"]
-        if run.get("memory_used") or st.session_state.get("pending_memory_candidates"):
-            tab_names.append("Memory")
-        if run.get("autonomous"):
-            tab_names.append("自主任务")
-        tabs = st.tabs(tab_names)
-        for tab_name, tab in zip(tab_names, tabs):
-            with tab:
-                if tab_name == "执行过程":
-                    render_trace_panel(run, run.get("trace_level", trace_level))
-                elif tab_name == "来源":
-                    render_sources_panel(run.get("sources", []), run.get("trace_level", trace_level))
-                elif tab_name == "Safety":
-                    render_permission_trace(run.get("permission_trace", []))
-                elif tab_name == "反馈":
-                    st.caption("如果这轮回答有问题，点击回答右侧的 ! 反馈 badcase（不良案例）。")
-                    if run.get("trace_id"):
-                        st.code(run["trace_id"], language="text")
-                elif tab_name == "Memory":
-                    used = run.get("memory_used", [])
-                    if used:
-                        st.caption("本轮使用的 Memory ID（记忆编号）：")
-                        st.write("、".join(used))
-                    else:
-                        st.caption("本轮没有使用长期记忆。")
-                elif tab_name == "自主任务":
-                    render_autonomous_panel(run)
+        with st.expander("查看执行细节 / 来源 / Safety / 反馈", expanded=False):
+            tab_names = ["执行过程", "来源", "Safety", "反馈"]
+            if run.get("memory_used") or st.session_state.get("pending_memory_candidates"):
+                tab_names.append("Memory")
+            if run.get("autonomous"):
+                tab_names.append("自主任务")
+            tabs = st.tabs(tab_names)
+            for tab_name, tab in zip(tab_names, tabs):
+                with tab:
+                    if tab_name == "执行过程":
+                        render_trace_panel(run, run.get("trace_level", trace_level_fallback))
+                    elif tab_name == "来源":
+                        render_sources_panel(run.get("sources", []), run.get("trace_level", trace_level_fallback))
+                    elif tab_name == "Safety":
+                        render_permission_trace(run.get("permission_trace", []))
+                    elif tab_name == "反馈":
+                        st.caption("如果这轮回答有问题，点击回答右侧的 ! 反馈 badcase（不良案例）。")
+                        if run.get("trace_id"):
+                            st.code(run["trace_id"], language="text")
+                    elif tab_name == "Memory":
+                        used = run.get("memory_used", [])
+                        if used:
+                            st.caption("本轮使用的 Memory ID（记忆编号）：")
+                            st.write("、".join(used))
+                        else:
+                            st.caption("本轮没有使用长期记忆。")
+                    elif tab_name == "自主任务":
+                        render_autonomous_panel(run)
 
 
 PLAN_STATUS_LABELS = {
@@ -1262,6 +1280,558 @@ def render_settings_panel():
                 st.write(item)
 
 
+def compare_state_key(panel_id, name):
+    return f"compare_{panel_id}_{name}"
+
+
+def ensure_compare_state(panel_id):
+    defaults = {
+        "messages": [],
+        "rag_session_id": f"compare_{panel_id}_{uuid4().hex[:12]}",
+        "last_sources": [],
+        "ingested_uploads": {},
+        "upload_status": [],
+        "last_agent_run": None,
+        "pending_memory_candidates": [],
+        "dismissed_memory_candidates": set(),
+        "memory_notice": "",
+    }
+    for name, value in defaults.items():
+        key = compare_state_key(panel_id, name)
+        if key not in st.session_state:
+            st.session_state[key] = value
+
+
+def permission_context_from_config(config, trace_id):
+    return {
+        "safety_mode": config["safety_mode"],
+        "confirmation_policy": config["confirmation_policy"],
+        "prompt_injection_guard": config["prompt_injection_guard"],
+        "max_tool_calls": config["max_tool_calls_per_run"],
+        "max_web_pages": config["max_web_pages_per_run"],
+        "tool_calls_used": 0,
+        "confirmed_actions": [],
+        "trace_id": trace_id,
+    }
+
+
+def render_compare_settings(panel_id, title):
+    st.markdown(f"### {title}")
+    uploaded = st.file_uploader(
+        "上传文件或图片",
+        type=[
+            "txt",
+            "md",
+            "log",
+            "pdf",
+            "docx",
+            "csv",
+            "xlsx",
+            "json",
+            "png",
+            "jpg",
+            "jpeg",
+            "webp",
+        ],
+        accept_multiple_files=True,
+        key=f"compare_upload_{panel_id}",
+    )
+    run_mode_value = st.radio(
+        "运行模式",
+        ["普通问答", "自主任务"],
+        horizontal=True,
+        key=f"compare_run_mode_{panel_id}",
+    )
+    source_strategy_label_value = st.radio(
+        "资料来源策略",
+        list(SOURCE_STRATEGY_LABELS.keys()),
+        horizontal=True,
+        key=f"compare_source_strategy_{panel_id}",
+    )
+
+    with st.expander("检索 / 切分", expanded=False):
+        retrieval_strategy_label_value = st.selectbox(
+            "检索策略",
+            list(RETRIEVAL_STRATEGY_LABELS.keys()),
+            index=2,
+            key=f"compare_retrieval_{panel_id}",
+        )
+        context_packing_label_value = st.selectbox(
+            "Context Packing（上下文打包）策略",
+            list(CONTEXT_PACKING_LABELS.keys()),
+            index=3,
+            key=f"compare_context_packing_{panel_id}",
+        )
+        chunking_strategy_labels_value = st.multiselect(
+            "Chunking（切分）策略",
+            list(CHUNKING_STRATEGY_LABELS.keys()),
+            default=["Parent-child（父子关系）", "表格专用"],
+            key=f"compare_chunking_{panel_id}",
+        )
+        if not chunking_strategy_labels_value:
+            chunking_strategy_labels_value = ["Parent-child（父子关系）"]
+            st.warning("至少选择一种切分策略；已按 Parent-child 处理。")
+        top_k_value = st.slider("资料条数", 1, 5, 3, key=f"compare_top_k_{panel_id}")
+        web_max_results_value = st.slider("网页结果数", 1, 5, 2, key=f"compare_web_max_{panel_id}")
+
+    with st.expander("Agent / 模型", expanded=False):
+        router_mode_label_value = st.radio(
+            "路由模式",
+            ["规则路由", "规则-LLM-规则路由"],
+            key=f"compare_router_{panel_id}",
+        )
+        max_autonomous_steps_value = st.slider(
+            "自主任务最大步数",
+            1,
+            5,
+            3,
+            key=f"compare_auto_steps_{panel_id}",
+        )
+        planner_type_label_value = st.selectbox(
+            "Planner（规划器）类型",
+            list(PLANNER_TYPE_LABELS.keys()),
+            index=2,
+            key=f"compare_planner_{panel_id}",
+        )
+        evaluator_type_label_value = st.selectbox(
+            "Evaluator / Critic（评估器 / 批判器）",
+            list(EVALUATOR_TYPE_LABELS.keys()),
+            index=1,
+            key=f"compare_evaluator_{panel_id}",
+        )
+        deepseek_model_label_value = st.selectbox(
+            "DeepSeek Model（模型）",
+            list(DEEPSEEK_MODEL_LABELS.keys()),
+            index=0,
+            key=f"compare_model_{panel_id}",
+        )
+
+    with st.expander("Memory / Safety / Trace", expanded=False):
+        memory_enabled_value = st.toggle(
+            "启用 Memory（长期记忆）",
+            value=True,
+            key=f"compare_memory_enabled_{panel_id}",
+        )
+        memory_write_mode_label_value = st.selectbox(
+            "Memory 写入模式",
+            list(MEMORY_WRITE_MODE_LABELS.keys()),
+            index=1,
+            key=f"compare_memory_write_{panel_id}",
+        )
+        safety_mode_label_value = st.selectbox(
+            "Safety Mode（安全模式）",
+            list(SAFETY_MODE_LABELS.keys()),
+            index=0,
+            key=f"compare_safety_{panel_id}",
+        )
+        confirmation_policy_label_value = st.selectbox(
+            "Human Confirmation（用户确认）策略",
+            list(CONFIRMATION_POLICY_LABELS.keys()),
+            index=0,
+            key=f"compare_confirmation_{panel_id}",
+        )
+        prompt_injection_guard_value = st.toggle(
+            "启用 Prompt Injection（提示注入）防护",
+            value=True,
+            key=f"compare_prompt_guard_{panel_id}",
+        )
+        streaming_enabled_value = st.toggle(
+            "启用 Streaming（流式输出）",
+            value=True,
+            key=f"compare_streaming_{panel_id}",
+        )
+        plan_progress_enabled_value = st.toggle(
+            "显示 Plan（计划）执行进度",
+            value=True,
+            key=f"compare_plan_progress_{panel_id}",
+        )
+        trace_level_value = st.radio(
+            "Trace（执行轨迹）展示级别",
+            ["简洁", "完整", "隐藏"],
+            key=f"compare_trace_{panel_id}",
+        )
+        max_tool_calls_per_run_value = st.slider(
+            "单轮最大工具调用数",
+            3,
+            20,
+            10,
+            key=f"compare_max_tool_calls_{panel_id}",
+        )
+        max_web_pages_per_run_value = st.slider(
+            "单轮最大网页读取数",
+            1,
+            8,
+            min(web_max_results_value, 5),
+            key=f"compare_max_web_pages_{panel_id}",
+        )
+
+    upload_status = st.session_state.get(compare_state_key(panel_id, "upload_status"), [])
+    if upload_status:
+        with st.expander("已入库资料", expanded=False):
+            for item in upload_status[-6:]:
+                st.write(item)
+
+    return {
+        "uploaded_files": uploaded,
+        "run_mode": run_mode_value,
+        "source_strategy_label": source_strategy_label_value,
+        "source_strategy": SOURCE_STRATEGY_LABELS[source_strategy_label_value],
+        "retrieval_strategy_label": retrieval_strategy_label_value,
+        "retrieval_strategy": RETRIEVAL_STRATEGY_LABELS[retrieval_strategy_label_value],
+        "context_packing_label": context_packing_label_value,
+        "context_packing_strategy": CONTEXT_PACKING_LABELS[context_packing_label_value],
+        "chunking_strategy_labels": chunking_strategy_labels_value,
+        "chunking_strategy": [CHUNKING_STRATEGY_LABELS[label] for label in chunking_strategy_labels_value],
+        "top_k": top_k_value,
+        "web_max_results": web_max_results_value,
+        "router_mode_label": router_mode_label_value,
+        "router_mode": "hybrid" if router_mode_label_value == "规则-LLM-规则路由" else "rules",
+        "max_autonomous_steps": max_autonomous_steps_value,
+        "planner_type_label": planner_type_label_value,
+        "planner_type": PLANNER_TYPE_LABELS[planner_type_label_value],
+        "evaluator_type_label": evaluator_type_label_value,
+        "evaluator_type": EVALUATOR_TYPE_LABELS[evaluator_type_label_value],
+        "deepseek_model_label": deepseek_model_label_value,
+        "deepseek_model": DEEPSEEK_MODEL_LABELS[deepseek_model_label_value],
+        "memory_enabled": memory_enabled_value,
+        "memory_write_mode_label": memory_write_mode_label_value,
+        "memory_write_mode": MEMORY_WRITE_MODE_LABELS[memory_write_mode_label_value],
+        "safety_mode_label": safety_mode_label_value,
+        "safety_mode": SAFETY_MODE_LABELS[safety_mode_label_value],
+        "confirmation_policy_label": confirmation_policy_label_value,
+        "confirmation_policy": CONFIRMATION_POLICY_LABELS[confirmation_policy_label_value],
+        "prompt_injection_guard": prompt_injection_guard_value,
+        "streaming_enabled": streaming_enabled_value,
+        "plan_progress_enabled": plan_progress_enabled_value,
+        "trace_level": trace_level_value,
+        "max_tool_calls_per_run": max_tool_calls_per_run_value,
+        "max_web_pages_per_run": max_web_pages_per_run_value,
+    }
+
+
+def build_compare_config_snapshot(config):
+    return {
+        "run_mode": config["run_mode"],
+        "router_mode": config["router_mode"],
+        "source_strategy": config["source_strategy"],
+        "retrieval_strategy": config["retrieval_strategy"],
+        "context_packing_strategy": config["context_packing_strategy"],
+        "chunking_strategy": config["chunking_strategy"],
+        "chunking_strategy_labels": config["chunking_strategy_labels"],
+        "deepseek_model": config["deepseek_model"],
+        "deepseek_model_label": config["deepseek_model_label"],
+        "planner_type": config["planner_type"],
+        "evaluator_type": config["evaluator_type"],
+        "memory_enabled": config["memory_enabled"],
+        "memory_write_mode": config["memory_write_mode"],
+        "streaming_enabled": config["streaming_enabled"],
+        "plan_progress_enabled": config["plan_progress_enabled"],
+        "reranker_enabled": agent.ENABLE_RERANKER,
+        "top_k": config["top_k"],
+        "web_max_results": config["web_max_results"],
+        "max_autonomous_steps": config["max_autonomous_steps"],
+        "safety_mode": config["safety_mode"],
+        "confirmation_policy": config["confirmation_policy"],
+        "prompt_injection_guard": config["prompt_injection_guard"],
+        "max_tool_calls_per_run": config["max_tool_calls_per_run"],
+        "max_web_pages_per_run": config["max_web_pages_per_run"],
+    }
+
+
+def run_compare_agent_turn(panel_id, prompt, config):
+    messages_key = compare_state_key(panel_id, "messages")
+    session_id = st.session_state[compare_state_key(panel_id, "rag_session_id")]
+    trace_id = generate_trace_id()
+    st.session_state[messages_key].append({"role": "user", "content": prompt})
+
+    agent.DEEPSEEK_MODEL = config["deepseek_model"]
+    agent_runtime.PLANNER_MODEL = config["deepseek_model"]
+
+    plan_placeholder = st.empty()
+    live_plan_steps = base_plan_steps(config["run_mode"])
+    if config["plan_progress_enabled"]:
+        render_plan_progress(plan_placeholder, live_plan_steps)
+
+    def handle_plan_progress(event):
+        if not config["plan_progress_enabled"]:
+            return
+        merge_plan_event(live_plan_steps, event)
+        render_plan_progress(plan_placeholder, live_plan_steps)
+
+    stream_placeholder = st.empty()
+    streamed_answer = {"text": ""}
+
+    def handle_answer_stream(delta, full_text):
+        streamed_answer["text"] = full_text
+        stream_placeholder.markdown(full_text + "▌")
+
+    uploaded_sources = ingest_uploaded_files_for_state(
+        config["uploaded_files"],
+        config["chunking_strategy"],
+        state_key_prefix=f"compare_{panel_id}_",
+        session_id=session_id,
+    )
+    memory_context = ""
+    retrieved_memories = []
+    if config["memory_enabled"]:
+        retrieved_memories = memory_manager.retrieve_memories(prompt)
+        memory_context = memory_manager.build_memory_context(retrieved_memories)
+
+    use_autonomous_mode = False
+    autonomous_route_reason = ""
+    if config["run_mode"] == "自主任务":
+        use_autonomous_mode, autonomous_route_reason = call_with_supported_kwargs(
+            autonomous_agent.should_use_autonomous_mode,
+            prompt,
+            router_mode=config["router_mode"],
+        )
+
+    if config["run_mode"] == "自主任务" and use_autonomous_mode:
+        result = call_with_supported_kwargs(
+            autonomous_agent.run_autonomous_agent,
+            prompt,
+            top_k=config["top_k"],
+            web_max_results=config["web_max_results"],
+            max_steps=config["max_autonomous_steps"],
+            preferred_sources=uploaded_sources,
+            router_mode=config["router_mode"],
+            source_strategy=config["source_strategy"],
+            retrieval_strategy=config["retrieval_strategy"],
+            context_packing_strategy=config["context_packing_strategy"],
+            planner_type=config["planner_type"],
+            evaluator_type=config["evaluator_type"],
+            memory_context=memory_context,
+            metadata_scope={"session_id": session_id},
+            progress_callback=handle_plan_progress,
+            permission_context=permission_context_from_config(config, trace_id),
+            trace_id=trace_id,
+        )
+    else:
+        result = call_with_supported_kwargs(
+            agent_runtime.run_agent_pro,
+            prompt,
+            use_web=True,
+            top_k=config["top_k"],
+            web_max_results=config["web_max_results"],
+            preferred_sources=uploaded_sources,
+            router_mode=config["router_mode"],
+            source_strategy=config["source_strategy"],
+            retrieval_strategy=config["retrieval_strategy"],
+            context_packing_strategy=config["context_packing_strategy"],
+            planner_type=config["planner_type"],
+            evaluator_type=config["evaluator_type"],
+            memory_context=memory_context,
+            metadata_scope={"session_id": session_id},
+            stream_callback=handle_answer_stream if config["streaming_enabled"] else None,
+            progress_callback=handle_plan_progress,
+            permission_context=permission_context_from_config(config, trace_id),
+            trace_id=trace_id,
+        )
+        if config["run_mode"] == "自主任务":
+            handle_plan_progress({
+                "id": "goal_manager",
+                "name": "自主模式入口判断",
+                "tool": "goal_router",
+                "status": "completed",
+                "summary": f"已回退普通问答：{autonomous_route_reason}",
+            })
+            result["planner_mode"] = "autonomous_fallback"
+            result["steps"] = [
+                {
+                    "name": "自主模式入口判断",
+                    "tool": "goal_router",
+                    "reason": "Goal Manager 先判断输入是否值得进入任务级 Autonomous Runtime。",
+                    "status": "success",
+                    "summary": f"已回退普通问答：{autonomous_route_reason}",
+                    "elapsed_ms": 0,
+                    "error": "",
+                },
+                *result.get("steps", []),
+            ]
+
+    if streamed_answer["text"]:
+        stream_placeholder.empty()
+
+    planner_label = (
+        "Autonomous Runtime（自主任务运行时）"
+        if result.get("planner_mode") == "autonomous_runtime"
+        else "LLM Tool Calling（大模型工具调用）"
+        if result.get("planner_mode") == "llm_tool_calling"
+        else "自主模式回退普通问答"
+        if result.get("planner_mode") == "autonomous_fallback"
+        else "行业主流 Runtime（运行时）雏形"
+        if result.get("planner_mode") == "pro_runtime"
+        else "规则兜底"
+    )
+    autonomous_snapshot = {}
+    if result.get("planner_mode") == "autonomous_runtime":
+        goal = result.get("goal")
+        autonomous_snapshot = {
+            "goal": getattr(goal, "objective", "") if goal else "",
+            "stop_reason": result.get("stop_reason", ""),
+            "tasks": [
+                {
+                    "id": getattr(task, "id", ""),
+                    "title": getattr(task, "title", ""),
+                    "status": getattr(task, "status", ""),
+                    "depends_on": getattr(task, "depends_on", []),
+                    "expected_output": getattr(task, "expected_output", ""),
+                }
+                for task in result.get("tasks", [])
+            ],
+            "critic_results": result.get("critic_results", []),
+            "reflections": result.get("reflections", []),
+        }
+    badcase_run = {
+        "trace_id": trace_id,
+        "user_input": prompt,
+        "actual_answer": result["answer"],
+        "config": build_compare_config_snapshot(config),
+        "tools_called": extract_tools_from_steps(result.get("steps", [])),
+        "sources_used": extract_source_types(result.get("sources", [])),
+        "planner_mode": result.get("planner_mode", ""),
+        "planner_label": planner_label,
+        "trace_level": config["trace_level"],
+        "steps": result.get("steps", []),
+        "sources": result.get("sources", []),
+        "permission_trace": result.get("permission_trace", []),
+        "autonomous": autonomous_snapshot,
+        "memory_used": [item.get("id") for item in retrieved_memories],
+        "run_snapshot": {
+            "trace_id": trace_id,
+            "planner_mode": result.get("planner_mode", ""),
+            "tools_called": extract_tools_from_steps(result.get("steps", [])),
+            "sources_used": extract_source_types(result.get("sources", [])),
+            "memory_used": [item.get("id") for item in retrieved_memories],
+            "steps": compact_steps_for_log(result.get("steps", [])),
+            "sources": compact_sources_for_log(result.get("sources", [])),
+            "answer_preview": str(result.get("answer", ""))[:1200],
+        },
+    }
+    st.session_state[compare_state_key(panel_id, "last_sources")] = result["sources"]
+    st.session_state[compare_state_key(panel_id, "last_agent_run")] = badcase_run
+    st.session_state[messages_key].append({
+        "role": "assistant",
+        "content": result["answer"],
+        "badcase_run": badcase_run,
+    })
+    if config["memory_enabled"] and config["memory_write_mode"] == "confirm":
+        candidates = memory_manager.suggest_memory_candidates(prompt)
+        for candidate in candidates:
+            candidate["candidate_id"] = memory_manager.candidate_id(candidate)
+        st.session_state[compare_state_key(panel_id, "pending_memory_candidates")] = candidates
+
+
+def render_compare_agent_panel(panel_id, title):
+    ensure_compare_state(panel_id)
+    config = render_compare_settings(panel_id, title)
+    st.markdown(
+        '<div class="config-summary"><div class="config-summary-title">当前配置</div>'
+        f'<span class="config-pill">{config["run_mode"]}</span>'
+        f'<span class="config-pill">{config["source_strategy_label"]}</span>'
+        f'<span class="config-pill">{config["retrieval_strategy_label"]}</span>'
+        f'<span class="config-pill">{config["context_packing_label"]}</span>'
+        f'<span class="config-pill">{config["deepseek_model_label"]}</span>'
+        f'<span class="config-pill">{config["safety_mode_label"]}</span>'
+        '</div>',
+        unsafe_allow_html=True,
+    )
+
+    with st.form(f"compare_prompt_form_{panel_id}", clear_on_submit=True):
+        prompt = st.text_area(
+            "输入问题",
+            placeholder="输入问题，Agent 会按本侧配置检索上传资料和网络资料",
+            key=f"compare_prompt_{panel_id}",
+            height=96,
+        )
+        submitted = st.form_submit_button("发送", use_container_width=True)
+
+    if submitted:
+        prompt = prompt.strip()
+        if not prompt:
+            st.warning("请输入问题。")
+        elif not deepseek_key:
+            st.error("请先配置 DEEPSEEK_API_KEY。")
+        else:
+            with st.spinner(f"{title} 执行中..."):
+                try:
+                    run_compare_agent_turn(panel_id, prompt, config)
+                except Exception as error:
+                    trace_id = generate_trace_id()
+                    error_answer = f"调用失败：{error}"
+                    error_run = {
+                        "trace_id": trace_id,
+                        "user_input": prompt,
+                        "actual_answer": error_answer,
+                        "config": build_compare_config_snapshot(config),
+                        "tools_called": [],
+                        "sources_used": [],
+                        "planner_mode": "error",
+                        "planner_label": "错误",
+                        "trace_level": config["trace_level"],
+                        "steps": [],
+                        "sources": [],
+                        "permission_trace": [],
+                        "memory_used": [],
+                        "run_snapshot": {
+                            "trace_id": trace_id,
+                            "planner_mode": "error",
+                            "error": str(error)[:1200],
+                            "answer_preview": error_answer,
+                        },
+                    }
+                    st.session_state[compare_state_key(panel_id, "messages")].append({
+                        "role": "assistant",
+                        "content": error_answer,
+                        "badcase_run": error_run,
+                    })
+
+    messages = st.session_state[compare_state_key(panel_id, "messages")]
+    if not messages:
+        st.markdown(
+            '<div class="empty-state"><strong>可以直接开始对照测试</strong>'
+            '<div class="compact-help">左右两侧配置互相独立；适合用同一个问题比较不同策略。</div></div>',
+            unsafe_allow_html=True,
+        )
+        return
+    for index, message in enumerate(messages):
+        with st.chat_message(message["role"]):
+            if message["role"] == "assistant":
+                render_assistant_message(
+                    message["content"],
+                    message.get("badcase_run"),
+                    key_suffix=f"compare_{panel_id}_{index}",
+                )
+            else:
+                st.write(message["content"])
+
+    pending_candidates = st.session_state.get(compare_state_key(panel_id, "pending_memory_candidates"), [])
+    if pending_candidates:
+        with st.expander("Memory（记忆）候选", expanded=False):
+            st.caption("双 Agent 对照模式暂只展示候选，不在这里写入长期记忆。需要写入时请回到单 Agent 模式确认。")
+            for candidate in pending_candidates:
+                st.write(candidate.get("value", ""))
+                st.caption(f"key：{candidate.get('key', '')}｜confidence：{candidate.get('confidence', 0):.2f}")
+
+
+def render_dual_agent_compare_mode():
+    st.markdown(
+        '<div class="main-header-card"><h1>双 Agent 对照模式</h1>'
+        '<p>左右两侧是两个独立 Agent 实例。分别配置、上传、提问，用来观察不同策略带来的回答差异。</p></div>',
+        unsafe_allow_html=True,
+    )
+    st.markdown(
+        '<div class="workspace-note"><p>状态隔离：两侧各自拥有独立 session_id、上传入库记录、对话历史、执行 trace 和 badcase 现场。</p></div>',
+        unsafe_allow_html=True,
+    )
+    left, right = st.columns(2, gap="large")
+    with left:
+        render_compare_agent_panel("left", "Agent A")
+    with right:
+        render_compare_agent_panel("right", "Agent B")
+    render_badcase_form()
+
+
 if "messages" not in st.session_state:
     st.session_state.messages = []
 
@@ -1389,6 +1959,18 @@ st.markdown("""
 }
 </style>
 """, unsafe_allow_html=True)
+
+with st.sidebar:
+    page_mode = st.radio(
+        "页面模式",
+        ["单 Agent", "双 Agent 对照"],
+        horizontal=True,
+        help="双 Agent 对照模式会把当前 Agent 工作台复制成左右两个独立实例。",
+    )
+
+if page_mode == "双 Agent 对照":
+    render_dual_agent_compare_mode()
+    st.stop()
 
 with st.sidebar:
     render_settings_panel()
