@@ -77,6 +77,25 @@ DEFAULT_SEED_MEMORIES = [
     },
 ]
 
+NO_MEMORY_PATTERNS = [
+    r"^(你好|您好|嗨|hello|hi)(呀|啊|哈|，|,|。|！|!|\s)*$",
+    r"^(早上好|中午好|晚上好|晚安)$",
+    r"^(谢谢|感谢|好的|ok|嗯|嗯嗯|了解|明白|收到)$",
+    r"^(我是|我叫).{1,12}$",
+]
+
+MEMORY_ROUTE_PATTERNS = [
+    r"(记得|还记得|你知道).{0,12}(我|我的|咱们|我们)",
+    r"(上次|之前|前面|刚才|继续|接着).{0,16}(学习|讲|说|做|优化|项目|任务)",
+    r"(我的).{0,8}(偏好|习惯|要求|角色|目标|学习进度|背景)",
+    r"(按|根据).{0,8}(我的|我之前|咱们之前|我们之前).{0,12}(要求|偏好|习惯|进度|约定)",
+    r"(我希望|我需要|下次|以后|默认).{0,20}(记住|按照|保持|继续)",
+]
+
+TASK_MEMORY_HINTS = ["学习进度", "继续", "接着", "上次", "之前", "任务", "项目", "优化", "实操"]
+PREFERENCE_MEMORY_HINTS = ["偏好", "要求", "习惯", "默认", "风格", "方式", "我希望", "我需要"]
+PROFILE_MEMORY_HINTS = ["我的角色", "我是", "我叫", "背景", "目标", "身份"]
+
 
 def now_ts() -> int:
     return int(time.time())
@@ -438,14 +457,84 @@ def keyword_score(query: str, item: dict) -> int:
     return sum(1 for term in query_terms if term and term in text.lower())
 
 
-def retrieve_memories(query: str, limit: int = 8) -> list[dict]:
+def normalize_query_text(text: str) -> str:
+    return re.sub(r"\s+", "", text.strip().lower())
+
+
+def matches_route_pattern(text: str, patterns: list[str]) -> bool:
+    normalized = normalize_query_text(text)
+    return any(re.search(pattern, normalized) for pattern in patterns)
+
+
+def route_memory(query: str, conversation_context: str = "") -> dict:
+    stripped = query.strip()
+    if not stripped:
+        return {
+            "need_memory": False,
+            "memory_types": [],
+            "query": "",
+            "reason": "空输入不检索 Memory。",
+            "confidence": 1.0,
+            "source": "rule",
+        }
+
+    if matches_route_pattern(stripped, NO_MEMORY_PATTERNS):
+        return {
+            "need_memory": False,
+            "memory_types": [],
+            "query": stripped,
+            "reason": "寒暄、确认或简单自我介绍优先使用本轮会话，不需要检索长期记忆。",
+            "confidence": 0.92,
+            "source": "rule",
+        }
+
+    if matches_route_pattern(stripped, MEMORY_ROUTE_PATTERNS):
+        memory_types: list[str] = []
+        if any(hint in stripped for hint in TASK_MEMORY_HINTS):
+            memory_types.append("task_progress")
+        if any(hint in stripped for hint in PREFERENCE_MEMORY_HINTS):
+            memory_types.append("user_preference")
+        if any(hint in stripped for hint in PROFILE_MEMORY_HINTS):
+            memory_types.append("user_profile")
+        if not memory_types:
+            memory_types = ["user_profile", "user_preference", "task_progress"]
+        return {
+            "need_memory": True,
+            "memory_types": memory_types,
+            "query": stripped,
+            "reason": "用户显式引用历史、偏好、身份或长期任务，需要检索 Memory。",
+            "confidence": 0.86,
+            "source": "rule",
+        }
+
+    # 有本轮短期上下文时，普通闲聊和事实问答优先依赖当前 session；
+    # 长期记忆只在有明确连续性/个性化信号时介入。
+    return {
+        "need_memory": False,
+        "memory_types": [],
+        "query": stripped,
+        "reason": "未发现明确长期记忆触发信号，不检索 Memory。",
+        "confidence": 0.74,
+        "source": "rule",
+    }
+
+
+def retrieve_memories(
+    query: str,
+    limit: int = 8,
+    memory_types: list[str] | None = None,
+    include_core: bool = True,
+) -> list[dict]:
     active = [
         item for item in load_memories()
         if item.get("status", MEMORY_STATUS_ACTIVE) == MEMORY_STATUS_ACTIVE
         and item.get("risk_level") != "blocked"
     ]
+    if memory_types:
+        allowed_types = set(memory_types)
+        active = [item for item in active if item.get("type") in allowed_types]
     must_read_types = {"user_profile", "user_preference", "task_progress"}
-    must_read = [item for item in active if item.get("type") in must_read_types]
+    must_read = [item for item in active if include_core and item.get("type") in must_read_types]
     optional = [item for item in active if item.get("type") not in must_read_types]
     optional.sort(
         key=lambda item: (

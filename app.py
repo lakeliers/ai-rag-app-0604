@@ -1,6 +1,7 @@
 import os
 import inspect
 import hashlib
+import json
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from uuid import uuid4
@@ -228,6 +229,12 @@ MEMORY_WRITE_MODE_LABELS = {
     "关闭写入": "off",
     "手动 + 半自动确认": "confirm",
 }
+MEMORY_ROUTE_STRATEGY_LABELS = {
+    "自动判断（推荐）": "auto",
+    "规则 + LLM 判断": "hybrid",
+    "总是读取（教学对比）": "always",
+    "关闭读取": "off",
+}
 
 CATEGORY_LABELS = {
     "chitchat": "chitchat（闲聊）",
@@ -325,6 +332,112 @@ def build_conversation_context(messages, max_turns=4, max_chars=1600):
         "用于回答“刚才/前面/我的名字”等连续对话问题；它不是长期记忆，也不是权威资料。\n"
         + text
     )
+
+
+def route_memory_with_llm(prompt, conversation_context, rule_route):
+    if rule_route.get("confidence", 0) >= 0.85:
+        return rule_route
+    client = agent.get_deepseek_client()
+    if client is None:
+        fallback = dict(rule_route)
+        fallback["reason"] = fallback.get("reason", "") + " LLM Memory Router 未启用：缺少 DEEPSEEK_API_KEY，已使用规则结果。"
+        fallback["source"] = "rule_fallback"
+        return fallback
+    payload = {
+        "question": prompt,
+        "conversation_context": conversation_context[-1200:],
+        "rule_route": rule_route,
+        "allowed_memory_types": memory_manager.MEMORY_TYPES,
+        "output_schema": {
+            "need_memory": "boolean",
+            "memory_types": "list of allowed memory types",
+            "query": "string",
+            "reason": "short Chinese reason",
+            "confidence": "0-1 number",
+        },
+    }
+    try:
+        response = client.chat.completions.create(
+            model=deepseek_model,
+            messages=[
+                {
+                    "role": "system",
+                    "content": (
+                        "你是 Memory Router（记忆路由器）。判断本轮是否需要检索长期记忆。"
+                        "寒暄、简单确认、当前会话里能回答的问题，不要检索长期记忆。"
+                        "只有用户明确引用历史偏好、身份、长期任务、学习进度时才检索。只输出 JSON。"
+                    ),
+                },
+                {"role": "user", "content": json.dumps(payload, ensure_ascii=False)},
+            ],
+            temperature=0,
+            max_tokens=300,
+        )
+        parsed = agent_runtime.extract_json_object(response.choices[0].message.content or "{}")
+        memory_types = [
+            item for item in parsed.get("memory_types", [])
+            if item in memory_manager.MEMORY_TYPES
+        ]
+        confidence = float(parsed.get("confidence", rule_route.get("confidence", 0.6)))
+        return {
+            "need_memory": bool(parsed.get("need_memory", rule_route.get("need_memory", False))),
+            "memory_types": memory_types,
+            "query": str(parsed.get("query") or prompt),
+            "reason": f"LLM Memory Router：{parsed.get('reason', '')}",
+            "confidence": max(0.0, min(1.0, confidence)),
+            "source": "llm",
+        }
+    except Exception as exc:
+        fallback = dict(rule_route)
+        fallback["reason"] = fallback.get("reason", "") + f" LLM Memory Router 异常，已使用规则结果：{exc}"
+        fallback["source"] = "rule_fallback"
+        return fallback
+
+
+def load_routed_memory(prompt, enabled=True, conversation_context="", route_strategy="auto"):
+    if not enabled:
+        return "", [], {
+            "need_memory": False,
+            "memory_types": [],
+            "query": prompt,
+            "reason": "Memory 开关未启用。",
+            "confidence": 1.0,
+            "source": "config",
+        }
+    if route_strategy == "off":
+        return "", [], {
+            "need_memory": False,
+            "memory_types": [],
+            "query": prompt,
+            "reason": "Memory Route 策略设置为关闭读取。",
+            "confidence": 1.0,
+            "source": "config",
+            "route_strategy": route_strategy,
+        }
+    if route_strategy == "always":
+        memories = memory_manager.retrieve_memories(prompt, include_core=True)
+        route = {
+            "need_memory": True,
+            "memory_types": ["user_profile", "user_preference", "task_progress", "episodic_event", "semantic_rule"],
+            "query": prompt,
+            "reason": "Memory Route 策略设置为总是读取，用于教学对比。",
+            "confidence": 1.0,
+            "source": "config",
+            "route_strategy": route_strategy,
+        }
+        return memory_manager.build_memory_context(memories), memories, route
+    route = memory_manager.route_memory(prompt, conversation_context=conversation_context)
+    if route_strategy == "hybrid":
+        route = route_memory_with_llm(prompt, conversation_context, route)
+    route["route_strategy"] = route_strategy
+    if not route.get("need_memory"):
+        return "", [], route
+    memories = memory_manager.retrieve_memories(
+        route.get("query") or prompt,
+        memory_types=route.get("memory_types") or None,
+        include_core=True,
+    )
+    return memory_manager.build_memory_context(memories), memories, route
 
 
 def generate_trace_id():
@@ -455,6 +568,8 @@ def build_current_config():
         "planner_type": planner_type,
         "evaluator_type": evaluator_type,
         "memory_enabled": memory_enabled,
+        "memory_route_strategy_label": memory_route_strategy_label,
+        "memory_route_strategy": memory_route_strategy,
         "memory_write_mode": memory_write_mode,
         "streaming_enabled": streaming_enabled,
         "plan_progress_enabled": plan_progress_enabled,
@@ -1151,7 +1266,7 @@ def render_memory_confirmation():
 
 
 def render_settings_panel():
-    global uploaded_files, run_mode, router_mode_label, router_mode, max_autonomous_steps, planner_type_label, planner_type, evaluator_type_label, evaluator_type, memory_enabled, memory_write_mode_label, memory_write_mode, source_strategy_label, source_strategy, retrieval_strategy_label, retrieval_strategy, context_packing_label, context_packing_strategy, chunking_strategy_labels, chunking_strategy, top_k, web_max_results, plan_progress_enabled, streaming_enabled, trace_level, deepseek_model_label, deepseek_model, safety_mode_label, safety_mode, confirmation_policy_label, confirmation_policy, prompt_injection_guard, max_tool_calls_per_run, max_web_pages_per_run, show_permission_audit
+    global uploaded_files, run_mode, router_mode_label, router_mode, max_autonomous_steps, planner_type_label, planner_type, evaluator_type_label, evaluator_type, memory_enabled, memory_route_strategy_label, memory_route_strategy, memory_write_mode_label, memory_write_mode, source_strategy_label, source_strategy, retrieval_strategy_label, retrieval_strategy, context_packing_label, context_packing_strategy, chunking_strategy_labels, chunking_strategy, top_k, web_max_results, plan_progress_enabled, streaming_enabled, trace_level, deepseek_model_label, deepseek_model, safety_mode_label, safety_mode, confirmation_policy_label, confirmation_policy, prompt_injection_guard, max_tool_calls_per_run, max_web_pages_per_run, show_permission_audit
     st.markdown("### 资料")
     uploaded_files = st.file_uploader(
         "上传文件或图片",
@@ -1311,6 +1426,13 @@ def render_settings_panel():
             value=True,
             help="Memory 会记住用户画像、学习偏好和任务进度；它不同于 RAG 资料库。",
         )
+        memory_route_strategy_label = st.selectbox(
+            "Memory Route（记忆路由）策略",
+            list(MEMORY_ROUTE_STRATEGY_LABELS.keys()),
+            index=0,
+            help="控制每轮是否检索长期记忆。自动判断是生产主流做法；总是读取只适合教学对比。",
+        )
+        memory_route_strategy = MEMORY_ROUTE_STRATEGY_LABELS[memory_route_strategy_label]
         memory_write_mode_label = st.selectbox(
             "Memory 写入模式",
             list(MEMORY_WRITE_MODE_LABELS.keys()),
@@ -1569,6 +1691,12 @@ def render_compare_settings(panel_id, title):
             value=True,
             key=f"compare_memory_enabled_{panel_id}",
         )
+        memory_route_strategy_label_value = st.selectbox(
+            "Memory Route（记忆路由）策略",
+            list(MEMORY_ROUTE_STRATEGY_LABELS.keys()),
+            index=0,
+            key=f"compare_memory_route_{panel_id}",
+        )
         memory_write_mode_label_value = st.selectbox(
             "Memory 写入模式",
             list(MEMORY_WRITE_MODE_LABELS.keys()),
@@ -1651,6 +1779,8 @@ def render_compare_settings(panel_id, title):
         "deepseek_model_label": deepseek_model_label_value,
         "deepseek_model": DEEPSEEK_MODEL_LABELS[deepseek_model_label_value],
         "memory_enabled": memory_enabled_value,
+        "memory_route_strategy_label": memory_route_strategy_label_value,
+        "memory_route_strategy": MEMORY_ROUTE_STRATEGY_LABELS[memory_route_strategy_label_value],
         "memory_write_mode_label": memory_write_mode_label_value,
         "memory_write_mode": MEMORY_WRITE_MODE_LABELS[memory_write_mode_label_value],
         "safety_mode_label": safety_mode_label_value,
@@ -1683,6 +1813,7 @@ def build_compare_config_snapshot(config):
         "planner_type": config["planner_type"],
         "evaluator_type": config["evaluator_type"],
         "memory_enabled": config["memory_enabled"],
+        "memory_route_strategy": config["memory_route_strategy"],
         "memory_write_mode": config["memory_write_mode"],
         "streaming_enabled": config["streaming_enabled"],
         "plan_progress_enabled": config["plan_progress_enabled"],
@@ -1780,9 +1911,13 @@ def run_compare_agent_turn(panel_id, prompt, config):
     )
     memory_context = ""
     retrieved_memories = []
-    if config["memory_enabled"]:
-        retrieved_memories = memory_manager.retrieve_memories(prompt)
-        memory_context = memory_manager.build_memory_context(retrieved_memories)
+    memory_route = {}
+    memory_context, retrieved_memories, memory_route = load_routed_memory(
+        prompt,
+        enabled=config["memory_enabled"],
+        conversation_context=conversation_context,
+        route_strategy=config["memory_route_strategy"],
+    )
 
     use_autonomous_mode = False
     autonomous_route_reason = ""
@@ -1909,12 +2044,14 @@ def run_compare_agent_turn(panel_id, prompt, config):
         "permission_trace": result.get("permission_trace", []),
         "autonomous": autonomous_snapshot,
         "memory_used": [item.get("id") for item in retrieved_memories],
+        "memory_route": memory_route,
         "run_snapshot": {
             "trace_id": trace_id,
             "planner_mode": result.get("planner_mode", ""),
             "tools_called": extract_tools_from_steps(result.get("steps", [])),
             "sources_used": extract_source_types(result.get("sources", [])),
             "memory_used": [item.get("id") for item in retrieved_memories],
+            "memory_route": memory_route,
             "steps": compact_steps_for_log(result.get("steps", [])),
             "sources": compact_sources_for_log(result.get("sources", [])),
             "answer_preview": str(result.get("answer", ""))[:1200],
@@ -1948,9 +2085,13 @@ def execute_compare_agent_backend(
     started_at = time.perf_counter()
     memory_context = ""
     retrieved_memories = []
-    if config["memory_enabled"]:
-        retrieved_memories = memory_manager.retrieve_memories(prompt)
-        memory_context = memory_manager.build_memory_context(retrieved_memories)
+    memory_route = {}
+    memory_context, retrieved_memories, memory_route = load_routed_memory(
+        prompt,
+        enabled=config["memory_enabled"],
+        conversation_context=conversation_context,
+        route_strategy=config["memory_route_strategy"],
+    )
 
     use_autonomous_mode = False
     autonomous_route_reason = ""
@@ -2065,12 +2206,14 @@ def execute_compare_agent_backend(
         "permission_trace": result.get("permission_trace", []),
         "autonomous": autonomous_snapshot,
         "memory_used": [item.get("id") for item in retrieved_memories],
+        "memory_route": memory_route,
         "run_snapshot": {
             "trace_id": trace_id,
             "planner_mode": result.get("planner_mode", ""),
             "tools_called": extract_tools_from_steps(result.get("steps", [])),
             "sources_used": extract_source_types(result.get("sources", [])),
             "memory_used": [item.get("id") for item in retrieved_memories],
+            "memory_route": memory_route,
             "steps": compact_steps_for_log(result.get("steps", [])),
             "sources": compact_sources_for_log(result.get("sources", [])),
             "answer_preview": str(result.get("answer", ""))[:1200],
@@ -2563,9 +2706,13 @@ if prompt:
                 uploaded_sources = ingest_uploaded_files(uploaded_files, prompt, chunking_strategy)
                 memory_context = ""
                 retrieved_memories = []
-                if memory_enabled:
-                    retrieved_memories = memory_manager.retrieve_memories(prompt)
-                    memory_context = memory_manager.build_memory_context(retrieved_memories)
+                memory_route = {}
+                memory_context, retrieved_memories, memory_route = load_routed_memory(
+                    prompt,
+                    enabled=memory_enabled,
+                    conversation_context=conversation_context,
+                    route_strategy=memory_route_strategy,
+                )
 
                 use_autonomous_mode = False
                 autonomous_route_reason = ""
@@ -2692,6 +2839,7 @@ if prompt:
                 "permission_trace": result.get("permission_trace", []),
                 "autonomous": autonomous_snapshot,
                 "memory_used": [item.get("id") for item in retrieved_memories],
+                "memory_route": memory_route,
                 "run_snapshot": {
                     "trace_id": trace_id,
                     "planner_mode": result.get("planner_mode", ""),
@@ -2699,6 +2847,7 @@ if prompt:
                     "tools_called": extract_tools_from_steps(result.get("steps", [])),
                     "sources_used": extract_source_types(result.get("sources", [])),
                     "memory_used": [item.get("id") for item in retrieved_memories],
+                    "memory_route": memory_route,
                     "steps": compact_steps_for_log(result.get("steps", [])),
                     "sources": compact_sources_for_log(result.get("sources", [])),
                     "answer_preview": str(result.get("answer", ""))[:1200],
