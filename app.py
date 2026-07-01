@@ -1,6 +1,7 @@
 import os
 import inspect
 import hashlib
+import time
 from uuid import uuid4
 
 import streamlit as st
@@ -108,20 +109,26 @@ def ingest_uploaded_files_for_state(uploaded_files, chunking_strategy, *, state_
     metadata_scope = {"session_id": session_id}
     ingested_key = f"{state_key_prefix}ingested_uploads"
     upload_status_key = f"{state_key_prefix}upload_status"
+    upload_processing_key = f"{state_key_prefix}upload_processing_status"
     if ingested_key not in st.session_state:
         st.session_state[ingested_key] = {}
     if upload_status_key not in st.session_state:
         st.session_state[upload_status_key] = []
+    if upload_processing_key not in st.session_state:
+        st.session_state[upload_processing_key] = {}
 
     for uploaded_file in uploaded_files:
         key = file_key(uploaded_file, chunking_strategy)
         if key in st.session_state[ingested_key]:
             ingested_sources.append(st.session_state[ingested_key][key])
+            st.session_state[upload_processing_key][uploaded_file.name] = "已入库，可提问"
             continue
 
+        st.session_state[upload_processing_key][uploaded_file.name] = "入库中"
         if is_image(uploaded_file):
             if not dashscope_key:
                 st.warning(f"{uploaded_file.name} 是图片，需要配置 DASHSCOPE_API_KEY 才能解析。")
+                st.session_state[upload_processing_key][uploaded_file.name] = "入库失败：缺少图片解析 Key"
                 continue
 
             summary = agent.describe_image_bytes(
@@ -153,6 +160,7 @@ def ingest_uploaded_files_for_state(uploaded_files, chunking_strategy, *, state_
 
         st.session_state[ingested_key][key] = source
         st.session_state[upload_status_key].append(f"{source}：{chunk_count} 块｜切分：{format_chunking_labels(chunking_strategy)}")
+        st.session_state[upload_processing_key][uploaded_file.name] = f"已入库，可提问｜{chunk_count} 块"
         ingested_sources.append(source)
 
     return ingested_sources
@@ -327,6 +335,55 @@ def compact_sources_for_log(sources, limit=10):
     return compacted
 
 
+def source_type_label(source_type):
+    labels = {
+        "upload": "上传资料",
+        "web": "网页资料",
+        "local": "本地基础资料",
+        "image": "图片资料",
+    }
+    return labels.get(source_type or "", source_type or "无")
+
+
+def summarize_source_types(sources):
+    counts = {}
+    for source in sources or []:
+        source_type = source.get("source_type", "unknown")
+        counts[source_type] = counts.get(source_type, 0) + 1
+    if not counts:
+        return "未引用资料"
+    return "、".join(f"{source_type_label(source_type)} {count} 条" for source_type, count in counts.items())
+
+
+def config_snapshot_pills(config):
+    if not config:
+        return []
+    chunks = config.get("chunking_strategy_labels") or config.get("chunking_strategy") or []
+    if isinstance(chunks, str):
+        chunks = [chunks]
+    return [
+        str(config.get("run_mode", "")),
+        f"资料：{config.get('source_strategy_label', config.get('source_strategy', ''))}",
+        f"检索：{config.get('retrieval_strategy_label', config.get('retrieval_strategy', ''))}",
+        f"上下文：{config.get('context_packing_label', config.get('context_packing_strategy', ''))}",
+        f"切分：{' + '.join(str(item) for item in chunks) if chunks else '默认'}",
+        f"模型：{config.get('deepseek_model_label', config.get('deepseek_model', ''))}",
+        f"Reranker：{'开' if config.get('reranker_enabled') else '关'}",
+    ]
+
+
+def render_config_snapshot(config, title="本轮配置快照"):
+    pills = [item for item in config_snapshot_pills(config) if item and not item.endswith("：")]
+    if not pills:
+        return
+    html = (
+        f'<div class="run-config-snapshot"><span class="snapshot-title">{title}</span>'
+        + "".join(f'<span class="config-pill">{pill}</span>' for pill in pills)
+        + "</div>"
+    )
+    st.markdown(html, unsafe_allow_html=True)
+
+
 def build_current_config():
     return {
         "run_mode": run_mode,
@@ -440,9 +497,15 @@ def set_badcase_target(run):
     st.session_state.show_badcase_form = True
 
 
-def render_sources_panel(sources, trace_level_value="简洁"):
+def render_sources_panel(sources, trace_level_value="简洁", run=None):
     if not sources:
-        st.caption("本轮没有引用资料。")
+        tools = set((run or {}).get("tools_called", []))
+        if "direct_answer" in tools:
+            st.caption("本轮没有引用资料：问题被识别为闲聊、能力介绍或可直接回答的问题，因此未检索上传资料或网页资料。")
+        elif "upload_status" in tools:
+            st.caption("本轮没有引用资料：这是上传状态检查，只读取当前侧的上传入库状态。")
+        else:
+            st.caption("本轮没有引用资料：可能是资料不足、检索未命中，或当前策略不允许使用对应资料来源。")
         return
 
     for index, source in enumerate(sources, start=1):
@@ -561,10 +624,12 @@ def render_assistant_message(content, run=None, key_suffix=""):
         st.write(content)
         if run and run.get("trace_id"):
             st.caption(f"Trace ID（运行追踪编号）：{run['trace_id']}")
+        if run:
+            render_config_snapshot(run.get("config", {}))
     if run:
         with right:
             st.button(
-                "!",
+                "反馈",
                 key=f"badcase_button_{key_suffix}",
                 help="反馈 badcase（不良案例）",
                 on_click=set_badcase_target,
@@ -583,11 +648,11 @@ def render_assistant_message(content, run=None, key_suffix=""):
                     if tab_name == "执行过程":
                         render_trace_panel(run, run.get("trace_level", trace_level_fallback))
                     elif tab_name == "来源":
-                        render_sources_panel(run.get("sources", []), run.get("trace_level", trace_level_fallback))
+                        render_sources_panel(run.get("sources", []), run.get("trace_level", trace_level_fallback), run)
                     elif tab_name == "Safety":
                         render_permission_trace(run.get("permission_trace", []))
                     elif tab_name == "反馈":
-                        st.caption("如果这轮回答有问题，点击回答右侧的 ! 反馈 badcase（不良案例）。")
+                        st.caption("如果这轮回答有问题，点击回答右侧的“反馈”按钮记录 badcase（不良案例）。")
                         if run.get("trace_id"):
                             st.code(run["trace_id"], language="text")
                     elif tab_name == "Memory":
@@ -636,8 +701,8 @@ def base_plan_steps(run_mode_value):
         {"id": "intent_classifier", "name": "意图分类", "tool": "Intent Classifier", "status": "pending", "summary": "判断问题类型。"},
         {"id": "planner", "name": "高层规划", "tool": "Planner", "status": "pending", "summary": "决定走普通回答、上传资料、联网或混合 RAG。"},
         {"id": "orchestrator", "name": "任务编排", "tool": "Orchestrator", "status": "pending", "summary": "把计划展开成可执行节点。"},
-        {"id": "web_collect", "name": "联网收集资料", "tool": "Web Collect", "status": "pending", "summary": "需要联网时读取网页正文。"},
-        {"id": "rag_search", "name": "RAG 检索", "tool": "RAG Search", "status": "pending", "summary": "检索上传资料、网页资料和本地知识。"},
+        {"id": "web_collect", "name": "按需联网收集", "tool": "Web Collect", "status": "pending", "summary": "只有需要网页补充时才读取网页正文。"},
+        {"id": "rag_search", "name": "检索可用资料", "tool": "RAG Search", "status": "pending", "summary": "检索本轮可用的上传资料、网页资料和本地知识。"},
         {"id": "aggregator", "name": "结果聚合", "tool": "Aggregator", "status": "pending", "summary": "去重、排序并整理候选资料。"},
         {"id": "evaluator", "name": "资料评估", "tool": "Evaluator", "status": "pending", "summary": "判断资料是否足够支撑回答。"},
         {"id": "generate_answer", "name": "生成最终回答", "tool": "Final Answer", "status": "pending", "summary": "调用大模型生成回答。"},
@@ -758,9 +823,10 @@ def render_badcase_form():
             severity = st.radio(
                 "严重级别",
                 badcase_manager.SEVERITIES,
-                index=2,
+                index=1,
                 horizontal=True,
                 format_func=lambda value: SEVERITY_LABELS.get(value, value),
+                help="low=轻微体验问题，medium=影响判断但不阻断，high=明显错误，blocker=核心链路不可用。",
             )
 
             case_id = badcase_manager.generate_case_id(run["user_input"], category)
@@ -1295,6 +1361,7 @@ def ensure_compare_state(panel_id):
         "pending_memory_candidates": [],
         "dismissed_memory_candidates": set(),
         "memory_notice": "",
+        "upload_processing_status": {},
     }
     for name, value in defaults.items():
         key = compare_state_key(panel_id, name)
@@ -1315,8 +1382,34 @@ def permission_context_from_config(config, trace_id):
     }
 
 
+def render_compare_upload_state(panel_id, selected_files):
+    upload_status = st.session_state.get(compare_state_key(panel_id, "upload_status"), [])
+    processing = st.session_state.get(compare_state_key(panel_id, "upload_processing_status"), {})
+    selected_names = [item.name for item in selected_files or []]
+    if selected_names and not processing:
+        st.info(f"已选择 {len(selected_names)} 个文件；发送问题后会解析并入库。")
+        return
+    if processing:
+        with st.expander("上传处理状态", expanded=False):
+            for name in selected_names or list(processing.keys()):
+                st.write(f"{name}：{processing.get(name, '已选择，待入库')}")
+        return
+    if upload_status:
+        st.caption(f"已入库 {len(upload_status)} 个资料来源，可直接提问。")
+    else:
+        st.caption("当前侧暂无上传资料。")
+
+
+def compare_panel_status_text(panel_id):
+    upload_status = st.session_state.get(compare_state_key(panel_id, "upload_status"), [])
+    session_id = st.session_state.get(compare_state_key(panel_id, "rag_session_id"), "")
+    upload_text = f"已入库 {len(upload_status)} 个资料来源" if upload_status else "无上传资料"
+    return f"{upload_text}｜独立会话 {session_id[-6:]}"
+
+
 def render_compare_settings(panel_id, title):
     st.markdown(f"### {title}")
+    st.caption(compare_panel_status_text(panel_id))
     uploaded = st.file_uploader(
         "上传文件或图片",
         type=[
@@ -1336,6 +1429,7 @@ def render_compare_settings(panel_id, title):
         accept_multiple_files=True,
         key=f"compare_upload_{panel_id}",
     )
+    render_compare_upload_state(panel_id, uploaded)
     run_mode_value = st.radio(
         "运行模式",
         ["普通问答", "自主任务"],
@@ -1512,9 +1606,12 @@ def render_compare_settings(panel_id, title):
 def build_compare_config_snapshot(config):
     return {
         "run_mode": config["run_mode"],
+        "source_strategy_label": config["source_strategy_label"],
         "router_mode": config["router_mode"],
         "source_strategy": config["source_strategy"],
+        "retrieval_strategy_label": config["retrieval_strategy_label"],
         "retrieval_strategy": config["retrieval_strategy"],
+        "context_packing_label": config["context_packing_label"],
         "context_packing_strategy": config["context_packing_strategy"],
         "chunking_strategy": config["chunking_strategy"],
         "chunking_strategy_labels": config["chunking_strategy_labels"],
@@ -1538,10 +1635,53 @@ def build_compare_config_snapshot(config):
     }
 
 
+def latest_compare_run(panel_id):
+    messages = st.session_state.get(compare_state_key(panel_id, "messages"), [])
+    for message in reversed(messages):
+        if message.get("role") == "assistant" and message.get("badcase_run"):
+            return message["badcase_run"]
+    return None
+
+
+def render_compare_diff_summary():
+    left_run = latest_compare_run("left")
+    right_run = latest_compare_run("right")
+    if not left_run or not right_run:
+        return
+
+    same_question = left_run.get("user_input") == right_run.get("user_input")
+    left_tools = left_run.get("tools_called", [])
+    right_tools = right_run.get("tools_called", [])
+    left_sources = summarize_source_types(left_run.get("sources", []))
+    right_sources = summarize_source_types(right_run.get("sources", []))
+    left_config = left_run.get("config", {})
+    right_config = right_run.get("config", {})
+
+    with st.expander("A/B 差异摘要", expanded=True):
+        if same_question:
+            st.caption(f"对照问题：{left_run.get('user_input', '')}")
+        else:
+            st.caption("左右两侧最近一轮问题不同，以下只做运行差异对比。")
+        rows = [
+            ("资料来源", left_sources, right_sources),
+            ("调用工具", "、".join(left_tools) or "无", "、".join(right_tools) or "无"),
+            ("资料策略", left_config.get("source_strategy", ""), right_config.get("source_strategy", "")),
+            ("检索策略", left_config.get("retrieval_strategy", ""), right_config.get("retrieval_strategy", "")),
+            ("模型", left_config.get("deepseek_model_label", ""), right_config.get("deepseek_model_label", "")),
+            ("耗时", f"{left_run.get('elapsed_ms', 0)} ms", f"{right_run.get('elapsed_ms', 0)} ms"),
+            ("回答长度", f"{len(str(left_run.get('actual_answer', '')))} 字", f"{len(str(right_run.get('actual_answer', '')))} 字"),
+        ]
+        st.table([
+            {"对比项": label, "Agent A": left_value, "Agent B": right_value}
+            for label, left_value, right_value in rows
+        ])
+
+
 def run_compare_agent_turn(panel_id, prompt, config):
     messages_key = compare_state_key(panel_id, "messages")
     session_id = st.session_state[compare_state_key(panel_id, "rag_session_id")]
     trace_id = generate_trace_id()
+    started_at = time.perf_counter()
     st.session_state[messages_key].append({"role": "user", "content": prompt})
 
     agent.DEEPSEEK_MODEL = config["deepseek_model"]
@@ -1686,6 +1826,7 @@ def run_compare_agent_turn(panel_id, prompt, config):
         "trace_id": trace_id,
         "user_input": prompt,
         "actual_answer": result["answer"],
+        "elapsed_ms": int((time.perf_counter() - started_at) * 1000),
         "config": build_compare_config_snapshot(config),
         "tools_called": extract_tools_from_steps(result.get("steps", [])),
         "sources_used": extract_source_types(result.get("sources", [])),
@@ -1722,9 +1863,7 @@ def run_compare_agent_turn(panel_id, prompt, config):
         st.session_state[compare_state_key(panel_id, "pending_memory_candidates")] = candidates
 
 
-def render_compare_agent_panel(panel_id, title):
-    ensure_compare_state(panel_id)
-    config = render_compare_settings(panel_id, title)
+def render_compare_agent_workspace(panel_id, title, config):
     st.markdown(
         '<div class="config-summary"><div class="config-summary-title">当前配置</div>'
         f'<span class="config-pill">{config["run_mode"]}</span>'
@@ -1739,12 +1878,12 @@ def render_compare_agent_panel(panel_id, title):
 
     with st.form(f"compare_prompt_form_{panel_id}", clear_on_submit=True):
         prompt = st.text_area(
-            "输入问题",
-            placeholder="输入问题，Agent 会按本侧配置检索上传资料和网络资料",
+            f"{title} 输入问题",
+            placeholder=f"输入问题，{title} 会按本侧配置检索上传资料和网络资料",
             key=f"compare_prompt_{panel_id}",
             height=96,
         )
-        submitted = st.form_submit_button("发送", use_container_width=True)
+        submitted = st.form_submit_button(f"发送给 {title}", use_container_width=True)
 
     if submitted:
         prompt = prompt.strip()
@@ -1814,7 +1953,15 @@ def render_compare_agent_panel(panel_id, title):
                 st.caption(f"key：{candidate.get('key', '')}｜confidence：{candidate.get('confidence', 0):.2f}")
 
 
+def render_compare_agent_panel(panel_id, title):
+    ensure_compare_state(panel_id)
+    config = render_compare_settings(panel_id, title)
+    render_compare_agent_workspace(panel_id, title, config)
+
+
 def render_dual_agent_compare_mode():
+    ensure_compare_state("left")
+    ensure_compare_state("right")
     st.markdown(
         '<div class="main-header-card"><h1>双 Agent 对照模式</h1>'
         '<p>左右两侧是两个独立 Agent 实例。分别配置、上传、提问，用来观察不同策略带来的回答差异。</p></div>',
@@ -1824,11 +1971,46 @@ def render_dual_agent_compare_mode():
         '<div class="workspace-note"><p>状态隔离：两侧各自拥有独立 session_id、上传入库记录、对话历史、执行 trace 和 badcase 现场。</p></div>',
         unsafe_allow_html=True,
     )
+    settings_left, settings_right = st.columns(2, gap="large")
+    with settings_left:
+        left_config = render_compare_settings("left", "Agent A")
+    with settings_right:
+        right_config = render_compare_settings("right", "Agent B")
+
+    with st.form("compare_shared_prompt_form", clear_on_submit=True):
+        shared_prompt = st.text_area(
+            "同一问题同时发送给 A/B",
+            placeholder="输入一个问题，同时让 Agent A 和 Agent B 按各自配置回答，便于直接对比差异。",
+            key="compare_shared_prompt",
+            height=88,
+        )
+        shared_submitted = st.form_submit_button("同时发送给 Agent A 和 Agent B", use_container_width=True)
+
+    if shared_submitted:
+        shared_prompt = shared_prompt.strip()
+        if not shared_prompt:
+            st.warning("请输入要同时发送的问题。")
+        elif not deepseek_key:
+            st.error("请先配置 DEEPSEEK_API_KEY。")
+        else:
+            with st.spinner("Agent A 执行中..."):
+                try:
+                    run_compare_agent_turn("left", shared_prompt, left_config)
+                except Exception as error:
+                    st.error(f"Agent A 调用失败：{error}")
+            with st.spinner("Agent B 执行中..."):
+                try:
+                    run_compare_agent_turn("right", shared_prompt, right_config)
+                except Exception as error:
+                    st.error(f"Agent B 调用失败：{error}")
+
+    render_compare_diff_summary()
+
     left, right = st.columns(2, gap="large")
     with left:
-        render_compare_agent_panel("left", "Agent A")
+        render_compare_agent_workspace("left", "Agent A", left_config)
     with right:
-        render_compare_agent_panel("right", "Agent B")
+        render_compare_agent_workspace("right", "Agent B", right_config)
     render_badcase_form()
 
 
@@ -1923,6 +2105,20 @@ st.markdown("""
     margin-bottom: 0.9rem;
     box-shadow: 0 10px 28px rgba(23, 31, 56, 0.06);
 }
+.run-config-snapshot {
+    border: 1px solid #e2e6ee;
+    border-radius: 8px;
+    background: #fbfcfe;
+    padding: 0.55rem 0.65rem;
+    margin: 0.55rem 0 0.25rem 0;
+}
+.snapshot-title {
+    display: inline-block;
+    font-weight: 700;
+    font-size: 0.82rem;
+    margin-right: 0.35rem;
+    color: #374151;
+}
 .config-summary-title {
     font-weight: 700;
     margin-bottom: 0.45rem;
@@ -1956,6 +2152,7 @@ st.markdown("""
     .block-container {padding-left: 1rem; padding-right: 1rem;}
     .main-header-card h1 {font-size: 1.35rem;}
     .config-pill {font-size: 0.78rem;}
+    .run-config-snapshot {padding: 0.5rem;}
 }
 </style>
 """, unsafe_allow_html=True)
