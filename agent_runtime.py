@@ -48,6 +48,12 @@ CAPABILITY_PATTERNS = [
     r"(你|你们|助手|agent|这个agent|这个助手).{0,8}(是谁|自我介绍|介绍一下)",
     r"(介绍一下|自我介绍).{0,8}(你|你自己|这个agent|这个助手|agent|助手)",
 ]
+CONTEXT_REFERENCE_PATTERNS = [
+    r"(我|我的|本人).{0,8}(名字|姓名|称呼).{0,8}(是什么|叫什?么|是啥|吗|\?)",
+    r"(你知道|还记得|记得).{0,8}(我|我的).{0,8}(名字|姓名|称呼)",
+    r"(刚才|前面|之前|上面).{0,12}(我).{0,8}(叫什?么|说.*名字|说.*称呼|说.*是谁)",
+    r"(我刚才|我前面|我之前).{0,12}(说).{0,8}(我叫|我是|名字)",
+]
 CONCRETE_TASK_WORDS = [
     "调研",
     "研究",
@@ -145,6 +151,9 @@ def asks_for_capability_intro(question: str) -> bool:
 def is_lightweight_direct_intent(question: str) -> tuple[bool, str, str]:
     if asks_for_capability_intro(question):
         return True, "capability_intro", "用户在询问 Agent 能力边界，应该直接说明可用能力。"
+
+    if matches_any_pattern(question, CONTEXT_REFERENCE_PATTERNS):
+        return True, "chitchat", "用户在引用本轮短期对话上下文，应该直接读取会话历史回答。"
 
     if len(question.strip()) <= 30 and matches_any_pattern(question, GREETING_PATTERNS):
         return True, "chitchat", "用户输入更像寒暄、自我介绍或普通对话。"

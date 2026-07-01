@@ -2596,6 +2596,7 @@ if prompt:
                         progress_callback=handle_plan_progress,
                         permission_context=current_permission_context({"trace_id": trace_id}),
                         trace_id=trace_id,
+                        model_name=deepseek_model,
                     )
                 else:
                     answer_stream_callback = handle_answer_stream if streaming_enabled else None
@@ -2619,6 +2620,7 @@ if prompt:
                         progress_callback=handle_plan_progress,
                         permission_context=current_permission_context({"trace_id": trace_id}),
                         trace_id=trace_id,
+                        model_name=deepseek_model,
                     )
                     if run_mode == "自主任务":
                         handle_plan_progress({
