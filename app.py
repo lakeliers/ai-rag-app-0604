@@ -303,6 +303,29 @@ def extract_source_types(sources):
     return source_types
 
 
+def build_conversation_context(messages, max_turns=4, max_chars=1600):
+    recent = []
+    for message in messages[-max_turns * 2:]:
+        role = message.get("role", "")
+        content = str(message.get("content", "")).strip()
+        if not content:
+            continue
+        if role == "user":
+            recent.append(f"用户：{content[:300]}")
+        elif role == "assistant":
+            recent.append(f"助手：{content[:300]}")
+    if not recent:
+        return ""
+    text = "\n".join(recent)
+    if len(text) > max_chars:
+        text = text[-max_chars:]
+    return (
+        "【本轮会话上下文】以下内容只代表当前浏览器会话中的短期对话历史，"
+        "用于回答“刚才/前面/我的名字”等连续对话问题；它不是长期记忆，也不是权威资料。\n"
+        + text
+    )
+
+
 def generate_trace_id():
     return f"trace_{uuid4().hex[:12]}"
 
@@ -1426,7 +1449,7 @@ def render_compare_upload_state(panel_id, selected_files):
     processing = st.session_state.get(compare_state_key(panel_id, "upload_processing_status"), {})
     selected_names = [item.name for item in selected_files or []]
     if selected_names and not processing:
-        st.info(f"已选择 {len(selected_names)} 个文件；发送问题后会解析并入库。")
+        st.info(f"已选择 {len(selected_names)} 个文件；下一次发送问题时会先解析并入库。")
         return
     if processing:
         with st.expander("上传处理状态", expanded=False):
@@ -1693,6 +1716,10 @@ def render_compare_diff_summary():
     right_tools = right_run.get("tools_called", [])
     left_sources = summarize_source_types(left_run.get("sources", []))
     right_sources = summarize_source_types(right_run.get("sources", []))
+    left_source_titles = {source.get("source", "") for source in left_run.get("sources", []) if source.get("source")}
+    right_source_titles = {source.get("source", "") for source in right_run.get("sources", []) if source.get("source")}
+    left_unique_sources = "、".join(sorted(left_source_titles - right_source_titles)[:3]) or "无"
+    right_unique_sources = "、".join(sorted(right_source_titles - left_source_titles)[:3]) or "无"
     left_config = left_run.get("config", {})
     right_config = right_run.get("config", {})
 
@@ -1703,9 +1730,11 @@ def render_compare_diff_summary():
             st.caption("左右两侧最近一轮问题不同，以下只做运行差异对比。")
         rows = [
             ("资料来源", left_sources, right_sources),
+            ("独有来源", left_unique_sources, right_unique_sources),
             ("调用工具", "、".join(left_tools) or "无", "、".join(right_tools) or "无"),
             ("资料策略", left_config.get("source_strategy", ""), right_config.get("source_strategy", "")),
             ("检索策略", left_config.get("retrieval_strategy", ""), right_config.get("retrieval_strategy", "")),
+            ("上下文策略", left_config.get("context_packing_strategy", ""), right_config.get("context_packing_strategy", "")),
             ("模型", left_config.get("deepseek_model_label", ""), right_config.get("deepseek_model_label", "")),
             ("耗时", f"{left_run.get('elapsed_ms', 0)} ms", f"{right_run.get('elapsed_ms', 0)} ms"),
             ("回答长度", f"{len(str(left_run.get('actual_answer', '')))} 字", f"{len(str(right_run.get('actual_answer', '')))} 字"),
@@ -1721,6 +1750,7 @@ def run_compare_agent_turn(panel_id, prompt, config):
     session_id = st.session_state[compare_state_key(panel_id, "rag_session_id")]
     trace_id = generate_trace_id()
     started_at = time.perf_counter()
+    conversation_context = build_conversation_context(st.session_state[messages_key])
     st.session_state[messages_key].append({"role": "user", "content": prompt})
 
     agent.DEEPSEEK_MODEL = config["deepseek_model"]
@@ -1780,6 +1810,7 @@ def run_compare_agent_turn(panel_id, prompt, config):
             planner_type=config["planner_type"],
             evaluator_type=config["evaluator_type"],
             memory_context=memory_context,
+            conversation_context=conversation_context,
             metadata_scope={"session_id": session_id},
             progress_callback=handle_plan_progress,
             permission_context=permission_context_from_config(config, trace_id),
@@ -1800,6 +1831,7 @@ def run_compare_agent_turn(panel_id, prompt, config):
             planner_type=config["planner_type"],
             evaluator_type=config["evaluator_type"],
             memory_context=memory_context,
+            conversation_context=conversation_context,
             metadata_scope={"session_id": session_id},
             stream_callback=handle_answer_stream if config["streaming_enabled"] else None,
             progress_callback=handle_plan_progress,
@@ -1915,6 +1947,14 @@ def render_compare_agent_workspace(panel_id, title, config):
         '</div>',
         unsafe_allow_html=True,
     )
+    action_left, action_right = st.columns([0.62, 0.38])
+    with action_right:
+        if st.button(f"清空 {title} 对话", key=f"clear_compare_{panel_id}", use_container_width=True):
+            st.session_state[compare_state_key(panel_id, "messages")] = []
+            st.session_state[compare_state_key(panel_id, "last_sources")] = []
+            st.session_state[compare_state_key(panel_id, "last_agent_run")] = None
+            st.session_state[compare_state_key(panel_id, "pending_memory_candidates")] = []
+            st.rerun()
 
     with st.form(f"compare_prompt_form_{panel_id}", clear_on_submit=True):
         prompt = st.text_area(
@@ -1922,8 +1962,13 @@ def render_compare_agent_workspace(panel_id, title, config):
             placeholder=f"输入问题，{title} 会按本侧配置检索上传资料和网络资料",
             key=f"compare_prompt_{panel_id}",
             height=96,
+            disabled=not deepseek_key,
         )
-        submitted = st.form_submit_button(f"发送给 {title}", use_container_width=True)
+        submitted = st.form_submit_button(
+            f"发送给 {title}",
+            use_container_width=True,
+            disabled=not deepseek_key,
+        )
 
     if submitted:
         prompt = prompt.strip()
@@ -2012,20 +2057,31 @@ def render_dual_agent_compare_mode():
         '<div class="workspace-note"><p>状态隔离：两侧各自拥有独立 session_id、上传入库记录、对话历史、执行 trace 和 badcase 现场。</p></div>',
         unsafe_allow_html=True,
     )
+    if not deepseek_key:
+        st.warning("DeepSeek API Key 未配置，双 Agent 暂不能发送问题。请先在 Streamlit Secrets 中配置 DEEPSEEK_API_KEY。")
+    else:
+        st.caption("运行检查：DeepSeek 已配置，可以开始对照测试。")
     settings_left, settings_right = st.columns(2, gap="large")
     with settings_left:
-        left_config = render_compare_settings("left", "Agent A")
+        with st.expander("Agent A 配置", expanded=False):
+            left_config = render_compare_settings("left", "Agent A")
     with settings_right:
-        right_config = render_compare_settings("right", "Agent B")
+        with st.expander("Agent B 配置", expanded=False):
+            right_config = render_compare_settings("right", "Agent B")
 
     with st.form("compare_shared_prompt_form", clear_on_submit=True):
         shared_prompt = st.text_area(
-            "同一问题同时发送给 A/B",
-            placeholder="输入一个问题，同时让 Agent A 和 Agent B 按各自配置回答，便于直接对比差异。",
+            "同一问题依次发送给 A/B",
+            placeholder="输入一个问题，依次让 Agent A 和 Agent B 按各自配置回答，便于直接对比差异。",
             key="compare_shared_prompt",
             height=88,
+            disabled=not deepseek_key,
         )
-        shared_submitted = st.form_submit_button("同时发送给 Agent A 和 Agent B", use_container_width=True)
+        shared_submitted = st.form_submit_button(
+            "依次发送给 Agent A 和 Agent B",
+            use_container_width=True,
+            disabled=not deepseek_key,
+        )
 
     if shared_submitted:
         shared_prompt = shared_prompt.strip()
@@ -2045,13 +2101,12 @@ def render_dual_agent_compare_mode():
                 except Exception as error:
                     st.error(f"Agent B 调用失败：{error}")
 
-    render_compare_diff_summary()
-
     left, right = st.columns(2, gap="large")
     with left:
         render_compare_agent_workspace("left", "Agent A", left_config)
     with right:
         render_compare_agent_workspace("right", "Agent B", right_config)
+    render_compare_diff_summary()
     render_badcase_form()
 
 
@@ -2198,13 +2253,12 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-with st.sidebar:
-    page_mode = st.radio(
-        "页面模式",
-        ["单 Agent", "双 Agent 对照"],
-        horizontal=True,
-        help="双 Agent 对照模式会把当前 Agent 工作台复制成左右两个独立实例。",
-    )
+page_mode = st.radio(
+    "页面模式",
+    ["单 Agent", "双 Agent 对照"],
+    horizontal=True,
+    help="双 Agent 对照模式会把当前 Agent 工作台复制成左右两个独立实例。",
+)
 
 if page_mode == "双 Agent 对照":
     render_dual_agent_compare_mode()
@@ -2277,6 +2331,7 @@ if prompt:
 
     trace_id = generate_trace_id()
     started_at = time.perf_counter()
+    conversation_context = build_conversation_context(st.session_state.messages)
     st.session_state.messages.append({"role": "user", "content": prompt})
 
     with st.chat_message("user"):
@@ -2334,6 +2389,7 @@ if prompt:
                         planner_type=planner_type,
                         evaluator_type=evaluator_type,
                         memory_context=memory_context,
+                        conversation_context=conversation_context,
                         metadata_scope={"session_id": st.session_state.rag_session_id},
                         progress_callback=handle_plan_progress,
                         permission_context=current_permission_context({"trace_id": trace_id}),
@@ -2355,6 +2411,7 @@ if prompt:
                         planner_type=planner_type,
                         evaluator_type=evaluator_type,
                         memory_context=memory_context,
+                        conversation_context=conversation_context,
                         metadata_scope={"session_id": st.session_state.rag_session_id},
                         stream_callback=answer_stream_callback,
                         progress_callback=handle_plan_progress,

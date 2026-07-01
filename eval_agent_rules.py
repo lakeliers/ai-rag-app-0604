@@ -320,8 +320,12 @@ def select_eval_web_fixtures(question: str, limit: int | None = None) -> list[di
     return ranked[:limit] if limit is not None else ranked
 
 
-def fake_direct_answer(question: str, memory_context: str = "") -> agent_runtime.ToolResult:
-    if "萧玄" in question:
+def fake_direct_answer(
+    question: str,
+    memory_context: str = "",
+    conversation_context: str = "",
+) -> agent_runtime.ToolResult:
+    if "萧玄" in question or "萧玄" in conversation_context:
         answer = "你好，萧玄，很高兴继续和你一起学习 AI Agent。"
     elif agent_runtime.asks_for_capability_intro(question):
         answer = "我可以帮你上传资料问答、联网收集公开信息，并学习 RAG、Tool Agent、Autonomous Agent 和 Agent Eval。"
@@ -560,6 +564,7 @@ def fake_generate_answer(
     question: str,
     search_results: list[dict[str, Any]],
     memory_context: str = "",
+    conversation_context: str = "",
 ) -> agent_runtime.ToolResult:
     joined_sources = "、".join(source.get("source", "未知来源") for source in search_results)
     if "空白政策" in question or "不存在" in question:

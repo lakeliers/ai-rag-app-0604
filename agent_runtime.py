@@ -1199,6 +1199,21 @@ def build_question_with_memory(question: str, memory_context: str = "") -> str:
 """
 
 
+def build_question_with_context(
+    question: str,
+    memory_context: str = "",
+    conversation_context: str = "",
+) -> str:
+    parts = []
+    if memory_context.strip():
+        parts.append(memory_context.strip())
+    if conversation_context.strip():
+        parts.append(conversation_context.strip())
+    if not parts:
+        return question
+    return "\n\n".join(parts) + f"\n\n【当前用户问题】\n{question}"
+
+
 def is_definition_fallback_question(question: str) -> bool:
     definition_words = ["是什么", "定义", "概念", "解释一下", "介绍一下", "什么意思", "区别"]
     blocked_words = ["价格", "多少钱", "上线", "日期", "根据这份", "根据我上传", "这份资料", "这个文件"]
@@ -1297,6 +1312,7 @@ def tool_generate_answer(
     question: str,
     search_results: list[dict[str, Any]],
     memory_context: str = "",
+    conversation_context: str = "",
     stream_callback: Callable[[str, str], None] | None = None,
 ) -> ToolResult:
     generation_error = ""
@@ -1314,14 +1330,14 @@ def tool_generate_answer(
     try:
         if stream_callback:
             answer = agent.ask_deepseek_stream(
-                build_question_with_memory(question, memory_context),
+                build_question_with_context(question, memory_context, conversation_context),
                 search_results,
                 on_delta=stream_callback,
                 include_history=False,
             )
         else:
             answer = agent.ask_deepseek(
-                build_question_with_memory(question, memory_context),
+                build_question_with_context(question, memory_context, conversation_context),
                 search_results,
                 include_history=False,
             )
@@ -1360,6 +1376,7 @@ def tool_generate_answer(
 def tool_direct_answer(
     question: str,
     memory_context: str = "",
+    conversation_context: str = "",
     stream_callback: Callable[[str, str], None] | None = None,
 ) -> ToolResult:
     if asks_for_capability_intro(question):
@@ -1391,9 +1408,13 @@ def tool_direct_answer(
 2. 不要声称自己检索了资料。
 3. 不要编造参考来源。
 4. 可以参考【长期记忆】，但如果长期记忆和当前用户输入冲突，以当前用户输入为准。
+5. 可以参考【本轮会话上下文】回答“刚才/我的名字/前面说过”等短期连续对话问题；如果上下文没有相关信息，再说不知道。
 
 【长期记忆】
 {memory_context or "无"}
+
+【本轮会话上下文】
+{conversation_context or "无"}
 
 用户输入：
 {question}
@@ -1957,6 +1978,8 @@ def run_tool(step: AgentStep, state: dict[str, Any]) -> ToolResult:
         args["search_results"] = state.get("search_results", [])
     if step.tool in {"generate_answer", "direct_answer"} and "memory_context" not in args:
         args["memory_context"] = state.get("memory_context", "")
+    if step.tool in {"generate_answer", "direct_answer"} and "conversation_context" not in args:
+        args["conversation_context"] = state.get("conversation_context", "")
     if step.tool in {"generate_answer", "direct_answer"} and state.get("stream_callback"):
         args.setdefault("stream_callback", state.get("stream_callback"))
     if step.tool in {"web_collect", "rag_search"}:
@@ -2007,6 +2030,7 @@ def run_agent(
     retrieval_strategy: str = agent.RETRIEVAL_VECTOR_BM25_RRF,
     context_packing_strategy: str = agent.CONTEXT_STRICT_BUDGET,
     memory_context: str = "",
+    conversation_context: str = "",
     chroma_path: str = agent.CHROMA_PATH,
     metadata_scope: dict[str, Any] | None = None,
     stream_callback: Callable[[str, str], None] | None = None,
@@ -2020,6 +2044,7 @@ def run_agent(
         "answer": "",
         "planner_mode": "llm_tool_calling" if ENABLE_LLM_PLANNER else "rule_based",
         "memory_context": memory_context,
+        "conversation_context": conversation_context,
         "chroma_path": chroma_path,
         "metadata_scope": metadata_scope or {},
         "stream_callback": stream_callback,
@@ -2168,6 +2193,7 @@ def run_agent_pro(
     planner_type: str = PLANNER_FALLBACK_MIXED,
     evaluator_type: str = EVALUATOR_RULES,
     memory_context: str = "",
+    conversation_context: str = "",
     chroma_path: str = agent.CHROMA_PATH,
     metadata_scope: dict[str, Any] | None = None,
     stream_callback: Callable[[str, str], None] | None = None,
@@ -2193,6 +2219,7 @@ def run_agent_pro(
             retrieval_strategy=retrieval_strategy,
             context_packing_strategy=context_packing_strategy,
             memory_context=memory_context,
+            conversation_context=conversation_context,
             chroma_path=chroma_path,
             metadata_scope=metadata_scope,
             stream_callback=stream_callback,
@@ -2350,6 +2377,7 @@ def run_agent_pro(
         "answer": "",
         "planner_mode": "pro_runtime",
         "memory_context": memory_context,
+        "conversation_context": conversation_context,
         "chroma_path": chroma_path,
         "metadata_scope": metadata_scope or {},
         "stream_callback": stream_callback,
