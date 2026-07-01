@@ -528,7 +528,12 @@ def intent_to_constraints(intent_name: str, preferred_sources: list[str], raw_co
     return constraints
 
 
-def classify_intent_by_llm(question: str, preferred_sources: list[str], rule_result: IntentResult) -> IntentResult:
+def classify_intent_by_llm(
+    question: str,
+    preferred_sources: list[str],
+    rule_result: IntentResult,
+    model_name: str = "",
+) -> IntentResult:
     client = agent.get_deepseek_client()
     if client is None:
         rule_result.reason += " LLM 路由未启用：缺少 DEEPSEEK_API_KEY，已回退规则结果。"
@@ -573,7 +578,7 @@ def classify_intent_by_llm(question: str, preferred_sources: list[str], rule_res
     }
 
     response = client.chat.completions.create(
-        model=PLANNER_MODEL,
+        model=model_name or PLANNER_MODEL,
         messages=[
             {
                 "role": "system",
@@ -659,6 +664,7 @@ def classify_intent(
     question: str,
     preferred_sources: list[str],
     router_mode: str = ROUTER_MODE_RULES,
+    model_name: str = "",
 ) -> IntentResult:
     if router_mode not in ROUTER_MODES:
         router_mode = ROUTER_MODE_RULES
@@ -669,7 +675,7 @@ def classify_intent(
         return rule_result
 
     try:
-        llm_result = classify_intent_by_llm(question, preferred_sources, rule_result)
+        llm_result = classify_intent_by_llm(question, preferred_sources, rule_result, model_name=model_name)
     except Exception as exc:
         rule_result.reason += f" LLM 路由异常，已回退规则结果：{exc}"
         rule_result.constraints["router_mode"] = ROUTER_MODE_HYBRID
@@ -1279,7 +1285,7 @@ def merge_definition_fallback_context(question: str, search_results: list[dict[s
     return merged
 
 
-def answer_definition_from_model(question: str) -> str:
+def answer_definition_from_model(question: str, model_name: str = "") -> str:
     client = agent.get_deepseek_client()
     if client is None:
         lowered = question.lower()
@@ -1299,7 +1305,7 @@ def answer_definition_from_model(question: str) -> str:
 3. 结构包含：结论、关键解释、参考来源。
 """
     response = client.chat.completions.create(
-        model=agent.DEEPSEEK_MODEL,
+        model=model_name or agent.DEEPSEEK_MODEL,
         messages=[{"role": "user", "content": prompt}],
         temperature=0.2,
         max_tokens=450,
@@ -1313,12 +1319,13 @@ def tool_generate_answer(
     search_results: list[dict[str, Any]],
     memory_context: str = "",
     conversation_context: str = "",
+    model_name: str = "",
     stream_callback: Callable[[str, str], None] | None = None,
 ) -> ToolResult:
     generation_error = ""
     if not search_results and is_definition_fallback_question(question):
         try:
-            answer = answer_definition_from_model(question)
+            answer = answer_definition_from_model(question, model_name=model_name)
             return ToolResult(
                 status="success",
                 summary="未检索到资料，已按定义类问题使用通用知识兜底回答。",
@@ -1334,12 +1341,14 @@ def tool_generate_answer(
                 search_results,
                 on_delta=stream_callback,
                 include_history=False,
+                model_name=model_name,
             )
         else:
             answer = agent.ask_deepseek(
                 build_question_with_context(question, memory_context, conversation_context),
                 search_results,
                 include_history=False,
+                model_name=model_name,
             )
     except Exception as error:
         answer = ""
@@ -1377,6 +1386,7 @@ def tool_direct_answer(
     question: str,
     memory_context: str = "",
     conversation_context: str = "",
+    model_name: str = "",
     stream_callback: Callable[[str, str], None] | None = None,
 ) -> ToolResult:
     if asks_for_capability_intro(question):
@@ -1424,7 +1434,7 @@ def tool_direct_answer(
     if stream_callback:
         chunks = []
         stream = client.chat.completions.create(
-            model=agent.DEEPSEEK_MODEL,
+            model=model_name or agent.DEEPSEEK_MODEL,
             messages=messages,
             temperature=0.3,
             max_tokens=300,
@@ -1443,7 +1453,7 @@ def tool_direct_answer(
         answer = "".join(chunks)
     else:
         response = client.chat.completions.create(
-            model=agent.DEEPSEEK_MODEL,
+            model=model_name or agent.DEEPSEEK_MODEL,
             messages=messages,
             temperature=0.3,
             max_tokens=300,
@@ -1679,6 +1689,7 @@ def build_llm_planned_steps(
     source_strategy: str = SOURCE_STRATEGY_AUTO,
     retrieval_strategy: str = agent.RETRIEVAL_VECTOR_BM25_RRF,
     context_packing_strategy: str = agent.CONTEXT_STRICT_BUDGET,
+    model_name: str = "",
 ) -> list[AgentStep]:
     preferred_sources = preferred_sources or []
     client = agent.get_deepseek_client()
@@ -1686,7 +1697,7 @@ def build_llm_planned_steps(
         return []
 
     response = client.chat.completions.create(
-        model=PLANNER_MODEL,
+        model=model_name or PLANNER_MODEL,
         messages=[
             {
                 "role": "user",
@@ -1856,6 +1867,7 @@ def plan_agent_steps(
     source_strategy: str = SOURCE_STRATEGY_AUTO,
     retrieval_strategy: str = agent.RETRIEVAL_VECTOR_BM25_RRF,
     context_packing_strategy: str = agent.CONTEXT_STRICT_BUDGET,
+    model_name: str = "",
 ) -> list[AgentStep]:
     plan_agent_steps.last_fallback_trace = None
     preferred_sources = preferred_sources or []
@@ -1880,6 +1892,7 @@ def plan_agent_steps(
                 source_strategy=source_strategy,
                 retrieval_strategy=retrieval_strategy,
                 context_packing_strategy=context_packing_strategy,
+                model_name=model_name,
             )
             if steps:
                 return steps
@@ -1980,6 +1993,8 @@ def run_tool(step: AgentStep, state: dict[str, Any]) -> ToolResult:
         args["memory_context"] = state.get("memory_context", "")
     if step.tool in {"generate_answer", "direct_answer"} and "conversation_context" not in args:
         args["conversation_context"] = state.get("conversation_context", "")
+    if step.tool in {"generate_answer", "direct_answer"} and "model_name" not in args:
+        args["model_name"] = state.get("model_name", "")
     if step.tool in {"generate_answer", "direct_answer"} and state.get("stream_callback"):
         args.setdefault("stream_callback", state.get("stream_callback"))
     if step.tool in {"web_collect", "rag_search"}:
@@ -2037,6 +2052,7 @@ def run_agent(
     progress_callback: ProgressCallback | None = None,
     permission_context: dict[str, Any] | None = None,
     trace_id: str = "",
+    model_name: str = "",
 ) -> dict[str, Any]:
     state: dict[str, Any] = {
         "question": question,
@@ -2053,6 +2069,7 @@ def run_agent(
         "permission_trace": [],
         "tool_calls_used": 0,
         "trace_id": trace_id,
+        "model_name": model_name,
     }
     trace: list[dict[str, Any]] = []
     emit_progress(state, {
@@ -2071,6 +2088,7 @@ def run_agent(
         source_strategy=source_strategy,
         retrieval_strategy=retrieval_strategy,
         context_packing_strategy=context_packing_strategy,
+        model_name=model_name,
     )
     fallback_trace = getattr(plan_agent_steps, "last_fallback_trace", None)
     if fallback_trace:
@@ -2200,6 +2218,7 @@ def run_agent_pro(
     progress_callback: ProgressCallback | None = None,
     permission_context: dict[str, Any] | None = None,
     trace_id: str = "",
+    model_name: str = "",
 ) -> dict[str, Any]:
     if source_strategy not in SOURCE_STRATEGIES:
         source_strategy = SOURCE_STRATEGY_AUTO
@@ -2226,6 +2245,7 @@ def run_agent_pro(
             progress_callback=progress_callback,
             permission_context=permission_context,
             trace_id=trace_id,
+            model_name=model_name,
         )
         result["teaching_config"] = {
             "retrieval_strategy": retrieval_strategy,
@@ -2270,7 +2290,12 @@ def run_agent_pro(
             "status": "running",
             "summary": "判断用户请求类型和资料需求。",
         })
-    intent = classify_intent(question, effective_preferred_sources, router_mode=router_mode)
+    intent = classify_intent(
+        question,
+        effective_preferred_sources,
+        router_mode=router_mode,
+        model_name=model_name,
+    )
     if progress_callback:
         progress_callback({
             "id": "intent_classifier",
@@ -2386,6 +2411,7 @@ def run_agent_pro(
         "permission_trace": [],
         "tool_calls_used": 0,
         "trace_id": trace_id,
+        "model_name": model_name,
     }
 
     tool_results, runtime_trace = run_task_graph(task_graph, state)

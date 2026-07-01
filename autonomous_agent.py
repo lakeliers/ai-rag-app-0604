@@ -210,6 +210,7 @@ def execute_task_with_tool_agent(
     tool_agent_runner: Callable[..., dict[str, Any]] = agent_runtime.run_agent_pro,
     permission_context: dict[str, Any] | None = None,
     trace_id: str = "",
+    model_name: str = "",
     progress_callback: agent_runtime.ProgressCallback | None = None,
 ) -> dict[str, Any]:
     prompt = build_task_prompt(task, state)
@@ -218,7 +219,7 @@ def execute_task_with_tool_agent(
     # synthesis stages consume the collected artifacts directly; otherwise every
     # autonomous step can repeat web search and exceed the user-facing timeout.
     if task.id != "collect_context" and task.replaces_task_id != "collect_context":
-        return execute_synthesis_task(task, state, prompt)
+        return execute_synthesis_task(task, state, prompt, model_name=model_name)
 
     result = tool_agent_runner(
         prompt,
@@ -237,6 +238,7 @@ def execute_task_with_tool_agent(
         metadata_scope=state.goal.constraints.get("metadata_scope", {}),
         permission_context=permission_context,
         trace_id=trace_id,
+        model_name=model_name,
         progress_callback=progress_callback,
     )
     return {
@@ -249,7 +251,7 @@ def execute_task_with_tool_agent(
     }
 
 
-def execute_synthesis_task(task: Task, state: AutonomousState, prompt: str) -> dict[str, Any]:
+def execute_synthesis_task(task: Task, state: AutonomousState, prompt: str, model_name: str = "") -> dict[str, Any]:
     source_evidence = build_source_evidence_for_synthesis(state.sources)
     synthesis_prompt = f"""{prompt}
 
@@ -269,7 +271,7 @@ def execute_synthesis_task(task: Task, state: AutonomousState, prompt: str) -> d
         }
 
     response = client.chat.completions.create(
-        model=agent_runtime.agent.DEEPSEEK_MODEL,
+        model=model_name or agent_runtime.agent.DEEPSEEK_MODEL,
         messages=[
             {
                 "role": "system",
@@ -600,6 +602,7 @@ def run_autonomous_agent(
     metadata_scope: dict[str, Any] | None = None,
     permission_context: dict[str, Any] | None = None,
     trace_id: str = "",
+    model_name: str = "",
     tool_agent_runner: Callable[..., dict[str, Any]] = agent_runtime.run_agent_pro,
     progress_callback: agent_runtime.ProgressCallback | None = None,
 ) -> dict[str, Any]:
@@ -713,6 +716,7 @@ def run_autonomous_agent(
             tool_agent_runner=tool_agent_runner,
             permission_context=permission_context,
             trace_id=trace_id,
+            model_name=model_name,
             progress_callback=progress_callback,
         )
         observation = observe_task_result(task, task_result)

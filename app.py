@@ -2,6 +2,7 @@ import os
 import inspect
 import hashlib
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from uuid import uuid4
 
 import streamlit as st
@@ -1753,9 +1754,6 @@ def run_compare_agent_turn(panel_id, prompt, config):
     conversation_context = build_conversation_context(st.session_state[messages_key])
     st.session_state[messages_key].append({"role": "user", "content": prompt})
 
-    agent.DEEPSEEK_MODEL = config["deepseek_model"]
-    agent_runtime.PLANNER_MODEL = config["deepseek_model"]
-
     plan_placeholder = st.empty()
     live_plan_steps = base_plan_steps(config["run_mode"])
     if config["plan_progress_enabled"]:
@@ -1815,6 +1813,7 @@ def run_compare_agent_turn(panel_id, prompt, config):
             progress_callback=handle_plan_progress,
             permission_context=permission_context_from_config(config, trace_id),
             trace_id=trace_id,
+            model_name=config["deepseek_model"],
         )
     else:
         result = call_with_supported_kwargs(
@@ -1837,6 +1836,7 @@ def run_compare_agent_turn(panel_id, prompt, config):
             progress_callback=handle_plan_progress,
             permission_context=permission_context_from_config(config, trace_id),
             trace_id=trace_id,
+            model_name=config["deepseek_model"],
         )
         if config["run_mode"] == "自主任务":
             handle_plan_progress({
@@ -1933,6 +1933,178 @@ def run_compare_agent_turn(panel_id, prompt, config):
         for candidate in candidates:
             candidate["candidate_id"] = memory_manager.candidate_id(candidate)
         st.session_state[compare_state_key(panel_id, "pending_memory_candidates")] = candidates
+
+
+def execute_compare_agent_backend(
+    panel_id,
+    prompt,
+    config,
+    *,
+    session_id,
+    uploaded_sources,
+    conversation_context,
+):
+    trace_id = generate_trace_id()
+    started_at = time.perf_counter()
+    memory_context = ""
+    retrieved_memories = []
+    if config["memory_enabled"]:
+        retrieved_memories = memory_manager.retrieve_memories(prompt)
+        memory_context = memory_manager.build_memory_context(retrieved_memories)
+
+    use_autonomous_mode = False
+    autonomous_route_reason = ""
+    if config["run_mode"] == "自主任务":
+        use_autonomous_mode, autonomous_route_reason = call_with_supported_kwargs(
+            autonomous_agent.should_use_autonomous_mode,
+            prompt,
+            router_mode=config["router_mode"],
+        )
+
+    if config["run_mode"] == "自主任务" and use_autonomous_mode:
+        result = call_with_supported_kwargs(
+            autonomous_agent.run_autonomous_agent,
+            prompt,
+            top_k=config["top_k"],
+            web_max_results=config["web_max_results"],
+            max_steps=config["max_autonomous_steps"],
+            preferred_sources=uploaded_sources,
+            router_mode=config["router_mode"],
+            source_strategy=config["source_strategy"],
+            retrieval_strategy=config["retrieval_strategy"],
+            context_packing_strategy=config["context_packing_strategy"],
+            planner_type=config["planner_type"],
+            evaluator_type=config["evaluator_type"],
+            memory_context=memory_context,
+            conversation_context=conversation_context,
+            metadata_scope={"session_id": session_id},
+            permission_context=permission_context_from_config(config, trace_id),
+            trace_id=trace_id,
+            model_name=config["deepseek_model"],
+        )
+    else:
+        result = call_with_supported_kwargs(
+            agent_runtime.run_agent_pro,
+            prompt,
+            use_web=True,
+            top_k=config["top_k"],
+            web_max_results=config["web_max_results"],
+            preferred_sources=uploaded_sources,
+            router_mode=config["router_mode"],
+            source_strategy=config["source_strategy"],
+            retrieval_strategy=config["retrieval_strategy"],
+            context_packing_strategy=config["context_packing_strategy"],
+            planner_type=config["planner_type"],
+            evaluator_type=config["evaluator_type"],
+            memory_context=memory_context,
+            conversation_context=conversation_context,
+            metadata_scope={"session_id": session_id},
+            permission_context=permission_context_from_config(config, trace_id),
+            trace_id=trace_id,
+            model_name=config["deepseek_model"],
+        )
+        if config["run_mode"] == "自主任务":
+            result["planner_mode"] = "autonomous_fallback"
+            result["steps"] = [
+                {
+                    "name": "自主模式入口判断",
+                    "tool": "goal_router",
+                    "reason": "Goal Manager 先判断输入是否值得进入任务级 Autonomous Runtime。",
+                    "status": "success",
+                    "summary": f"已回退普通问答：{autonomous_route_reason}",
+                    "elapsed_ms": 0,
+                    "error": "",
+                },
+                *result.get("steps", []),
+            ]
+
+    planner_label = (
+        "Autonomous Runtime（自主任务运行时）"
+        if result.get("planner_mode") == "autonomous_runtime"
+        else "LLM Tool Calling（大模型工具调用）"
+        if result.get("planner_mode") == "llm_tool_calling"
+        else "自主模式回退普通问答"
+        if result.get("planner_mode") == "autonomous_fallback"
+        else "行业主流 Runtime（运行时）雏形"
+        if result.get("planner_mode") == "pro_runtime"
+        else "规则兜底"
+    )
+    autonomous_snapshot = {}
+    if result.get("planner_mode") == "autonomous_runtime":
+        goal = result.get("goal")
+        autonomous_snapshot = {
+            "goal": getattr(goal, "objective", "") if goal else "",
+            "stop_reason": result.get("stop_reason", ""),
+            "tasks": [
+                {
+                    "id": getattr(task, "id", ""),
+                    "title": getattr(task, "title", ""),
+                    "status": getattr(task, "status", ""),
+                    "depends_on": getattr(task, "depends_on", []),
+                    "expected_output": getattr(task, "expected_output", ""),
+                }
+                for task in result.get("tasks", [])
+            ],
+            "critic_results": result.get("critic_results", []),
+            "reflections": result.get("reflections", []),
+        }
+
+    badcase_run = {
+        "trace_id": trace_id,
+        "user_input": prompt,
+        "actual_answer": result["answer"],
+        "elapsed_ms": int((time.perf_counter() - started_at) * 1000),
+        "config": build_compare_config_snapshot(config),
+        "tools_called": extract_tools_from_steps(result.get("steps", [])),
+        "sources_used": extract_source_types(result.get("sources", [])),
+        "planner_mode": result.get("planner_mode", ""),
+        "planner_label": planner_label,
+        "trace_level": config["trace_level"],
+        "steps": result.get("steps", []),
+        "sources": result.get("sources", []),
+        "permission_trace": result.get("permission_trace", []),
+        "autonomous": autonomous_snapshot,
+        "memory_used": [item.get("id") for item in retrieved_memories],
+        "run_snapshot": {
+            "trace_id": trace_id,
+            "planner_mode": result.get("planner_mode", ""),
+            "tools_called": extract_tools_from_steps(result.get("steps", [])),
+            "sources_used": extract_source_types(result.get("sources", [])),
+            "memory_used": [item.get("id") for item in retrieved_memories],
+            "steps": compact_steps_for_log(result.get("steps", [])),
+            "sources": compact_sources_for_log(result.get("sources", [])),
+            "answer_preview": str(result.get("answer", ""))[:1200],
+        },
+    }
+
+    pending_memory_candidates = []
+    if config["memory_enabled"] and config["memory_write_mode"] == "confirm":
+        pending_memory_candidates = memory_manager.suggest_memory_candidates(prompt)
+        for candidate in pending_memory_candidates:
+            candidate["candidate_id"] = memory_manager.candidate_id(candidate)
+
+    return {
+        "panel_id": panel_id,
+        "answer": result["answer"],
+        "sources": result.get("sources", []),
+        "badcase_run": badcase_run,
+        "pending_memory_candidates": pending_memory_candidates,
+    }
+
+
+def apply_compare_agent_backend_result(panel_id, backend_result):
+    messages_key = compare_state_key(panel_id, "messages")
+    badcase_run = backend_result["badcase_run"]
+    persist_trace_for_run(badcase_run, panel_id=panel_id)
+    st.session_state[compare_state_key(panel_id, "last_sources")] = backend_result["sources"]
+    st.session_state[compare_state_key(panel_id, "last_agent_run")] = badcase_run
+    st.session_state[messages_key].append({
+        "role": "assistant",
+        "content": backend_result["answer"],
+        "badcase_run": badcase_run,
+    })
+    if backend_result["pending_memory_candidates"]:
+        st.session_state[compare_state_key(panel_id, "pending_memory_candidates")] = backend_result["pending_memory_candidates"]
 
 
 def render_compare_agent_workspace(panel_id, title, config):
@@ -2071,14 +2243,14 @@ def render_dual_agent_compare_mode():
 
     with st.form("compare_shared_prompt_form", clear_on_submit=True):
         shared_prompt = st.text_area(
-            "同一问题依次发送给 A/B",
-            placeholder="输入一个问题，依次让 Agent A 和 Agent B 按各自配置回答，便于直接对比差异。",
+            "同一问题并行发送给 A/B",
+            placeholder="输入一个问题，让 Agent A 和 Agent B 按各自配置同时回答，便于直接对比差异。",
             key="compare_shared_prompt",
             height=88,
             disabled=not deepseek_key,
         )
         shared_submitted = st.form_submit_button(
-            "依次发送给 Agent A 和 Agent B",
+            "并行发送给 Agent A 和 Agent B",
             use_container_width=True,
             disabled=not deepseek_key,
         )
@@ -2090,16 +2262,46 @@ def render_dual_agent_compare_mode():
         elif not deepseek_key:
             st.error("请先配置 DEEPSEEK_API_KEY。")
         else:
-            with st.spinner("Agent A 执行中..."):
-                try:
-                    run_compare_agent_turn("left", shared_prompt, left_config)
-                except Exception as error:
-                    st.error(f"Agent A 调用失败：{error}")
-            with st.spinner("Agent B 执行中..."):
-                try:
-                    run_compare_agent_turn("right", shared_prompt, right_config)
-                except Exception as error:
-                    st.error(f"Agent B 调用失败：{error}")
+            jobs = {}
+            for panel_id, config in [("left", left_config), ("right", right_config)]:
+                messages_key = compare_state_key(panel_id, "messages")
+                session_id = st.session_state[compare_state_key(panel_id, "rag_session_id")]
+                conversation_context = build_conversation_context(st.session_state[messages_key])
+                st.session_state[messages_key].append({"role": "user", "content": shared_prompt})
+                uploaded_sources = ingest_uploaded_files_for_state(
+                    config["uploaded_files"],
+                    config["chunking_strategy"],
+                    state_key_prefix=f"compare_{panel_id}_",
+                    session_id=session_id,
+                )
+                jobs[panel_id] = {
+                    "config": config,
+                    "session_id": session_id,
+                    "conversation_context": conversation_context,
+                    "uploaded_sources": uploaded_sources,
+                }
+
+            with st.spinner("Agent A / B 正在并行执行..."):
+                with ThreadPoolExecutor(max_workers=2) as executor:
+                    future_to_panel = {
+                        executor.submit(
+                            execute_compare_agent_backend,
+                            panel_id,
+                            shared_prompt,
+                            job["config"],
+                            session_id=job["session_id"],
+                            uploaded_sources=job["uploaded_sources"],
+                            conversation_context=job["conversation_context"],
+                        ): panel_id
+                        for panel_id, job in jobs.items()
+                    }
+                    for future in as_completed(future_to_panel):
+                        panel_id = future_to_panel[future]
+                        title = "Agent A" if panel_id == "left" else "Agent B"
+                        try:
+                            apply_compare_agent_backend_result(panel_id, future.result())
+                        except Exception as error:
+                            st.error(f"{title} 调用失败：{error}")
 
     left, right = st.columns(2, gap="large")
     with left:

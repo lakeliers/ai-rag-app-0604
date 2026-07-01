@@ -1429,7 +1429,7 @@ def build_answer_prompt(question, search_results, include_history=True):
 """
 
 
-def ask_deepseek(question, search_results, include_history=True):
+def ask_deepseek(question, search_results, include_history=True, model_name=""):
     client = get_deepseek_client()
     if client is None:
         print("没有找到 DEEPSEEK_API_KEY。")
@@ -1439,7 +1439,7 @@ def ask_deepseek(question, search_results, include_history=True):
     prompt = build_answer_prompt(question, search_results, include_history=include_history)
 
     response = client.chat.completions.create(
-        model=DEEPSEEK_MODEL,
+        model=model_name or DEEPSEEK_MODEL,
         messages=[{"role": "user", "content": prompt}],
         temperature=0.3,
         max_tokens=ANSWER_MAX_TOKENS,
@@ -1449,7 +1449,7 @@ def ask_deepseek(question, search_results, include_history=True):
     return response.choices[0].message.content
 
 
-def ask_deepseek_stream(question, search_results, on_delta=None, include_history=True):
+def ask_deepseek_stream(question, search_results, on_delta=None, include_history=True, model_name=""):
     client = get_deepseek_client()
     if client is None:
         print("没有找到 DEEPSEEK_API_KEY。")
@@ -1460,7 +1460,7 @@ def ask_deepseek_stream(question, search_results, on_delta=None, include_history
     chunks = []
 
     stream = client.chat.completions.create(
-        model=DEEPSEEK_MODEL,
+        model=model_name or DEEPSEEK_MODEL,
         messages=[{"role": "user", "content": prompt}],
         temperature=0.3,
         max_tokens=ANSWER_MAX_TOKENS,

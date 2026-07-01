@@ -324,6 +324,7 @@ def fake_direct_answer(
     question: str,
     memory_context: str = "",
     conversation_context: str = "",
+    model_name: str = "",
 ) -> agent_runtime.ToolResult:
     if "萧玄" in question or "萧玄" in conversation_context:
         answer = "你好，萧玄，很高兴继续和你一起学习 AI Agent。"
@@ -565,6 +566,7 @@ def fake_generate_answer(
     search_results: list[dict[str, Any]],
     memory_context: str = "",
     conversation_context: str = "",
+    model_name: str = "",
 ) -> agent_runtime.ToolResult:
     joined_sources = "、".join(source.get("source", "未知来源") for source in search_results)
     if "空白政策" in question or "不存在" in question:
