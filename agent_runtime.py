@@ -6,6 +6,7 @@ from dataclasses import dataclass, field
 from typing import Any, Callable
 
 import rag_agent_core as agent
+import memory_manager
 import permission_gate
 
 
@@ -31,6 +32,10 @@ PLANNER_TYPES = {PLANNER_RULES, PLANNER_LLM_TOOL_CALLING, PLANNER_FALLBACK_MIXED
 EVALUATOR_OFF = "off"
 EVALUATOR_RULES = "rules"
 EVALUATOR_TYPES = {EVALUATOR_OFF, EVALUATOR_RULES}
+MEMORY_ROUTE_AUTO = "auto"
+MEMORY_ROUTE_HYBRID = "hybrid"
+MEMORY_ROUTE_ALWAYS = "always"
+MEMORY_ROUTE_OFF = "off"
 
 ProgressCallback = Callable[[dict[str, Any]], None]
 
@@ -200,6 +205,133 @@ def extract_json_object(text: str) -> dict[str, Any]:
         if start >= 0 and end > start:
             return json.loads(stripped[start:end + 1])
         raise
+
+
+def route_memory_with_llm(
+    question: str,
+    conversation_context: str,
+    rule_route: dict[str, Any],
+    model_name: str = "",
+) -> dict[str, Any]:
+    if rule_route.get("confidence", 0) >= 0.85:
+        return rule_route
+    client = agent.get_deepseek_client()
+    if client is None:
+        fallback = dict(rule_route)
+        fallback["reason"] = fallback.get("reason", "") + " LLM Memory Router 未启用：缺少 DEEPSEEK_API_KEY，已使用规则结果。"
+        fallback["source"] = "rule_fallback"
+        return fallback
+    payload = {
+        "question": question,
+        "conversation_context": conversation_context[-1200:],
+        "rule_route": rule_route,
+        "allowed_memory_types": memory_manager.MEMORY_TYPES,
+        "output_schema": {
+            "need_memory": "boolean",
+            "memory_types": "list of allowed memory types",
+            "query": "string",
+            "reason": "short Chinese reason",
+            "confidence": "0-1 number",
+        },
+    }
+    try:
+        response = client.chat.completions.create(
+            model=model_name or PLANNER_MODEL,
+            messages=[
+                {
+                    "role": "system",
+                    "content": (
+                        "你是 Memory Router（记忆路由器）。判断本轮是否需要检索长期记忆。"
+                        "寒暄、简单确认、当前会话里能回答的问题，不要检索长期记忆。"
+                        "只有用户明确引用历史偏好、身份、长期任务、学习进度时才检索。只输出 JSON。"
+                    ),
+                },
+                {"role": "user", "content": json.dumps(payload, ensure_ascii=False)},
+            ],
+            temperature=0,
+            max_tokens=300,
+        )
+        parsed = extract_json_object(response.choices[0].message.content or "{}")
+        memory_types = [
+            item for item in parsed.get("memory_types", [])
+            if item in memory_manager.MEMORY_TYPES
+        ]
+        try:
+            confidence = float(parsed.get("confidence", rule_route.get("confidence", 0.6)))
+        except (TypeError, ValueError):
+            confidence = float(rule_route.get("confidence", 0.6))
+        return {
+            "need_memory": bool(parsed.get("need_memory", rule_route.get("need_memory", False))),
+            "memory_types": memory_types,
+            "query": str(parsed.get("query") or question),
+            "reason": f"LLM Memory Router：{parsed.get('reason', '')}",
+            "confidence": max(0.0, min(1.0, confidence)),
+            "source": "llm",
+        }
+    except Exception as exc:
+        fallback = dict(rule_route)
+        fallback["reason"] = fallback.get("reason", "") + f" LLM Memory Router 异常，已使用规则结果：{exc}"
+        fallback["source"] = "rule_fallback"
+        return fallback
+
+
+def load_memory_after_intent(
+    question: str,
+    intent: IntentResult,
+    *,
+    enabled: bool,
+    route_strategy: str,
+    conversation_context: str = "",
+    model_name: str = "",
+) -> tuple[str, list[dict[str, Any]], dict[str, Any]]:
+    if not enabled:
+        return "", [], {
+            "need_memory": False,
+            "memory_types": [],
+            "query": question,
+            "reason": "Memory 开关未启用。",
+            "confidence": 1.0,
+            "source": "config",
+            "route_strategy": route_strategy,
+            "intent": intent.intent,
+        }
+    if route_strategy == MEMORY_ROUTE_OFF:
+        return "", [], {
+            "need_memory": False,
+            "memory_types": [],
+            "query": question,
+            "reason": "Memory Route 策略设置为关闭读取。",
+            "confidence": 1.0,
+            "source": "config",
+            "route_strategy": route_strategy,
+            "intent": intent.intent,
+        }
+    if route_strategy == MEMORY_ROUTE_ALWAYS:
+        memories = memory_manager.retrieve_memories(question, include_core=True)
+        return memory_manager.build_memory_context(memories), memories, {
+            "need_memory": True,
+            "memory_types": memory_manager.MEMORY_TYPES,
+            "query": question,
+            "reason": "Memory Route 策略设置为总是读取，用于教学对比。",
+            "confidence": 1.0,
+            "source": "config",
+            "route_strategy": route_strategy,
+            "intent": intent.intent,
+        }
+
+    route = memory_manager.route_memory(question, conversation_context=conversation_context)
+    if route_strategy == MEMORY_ROUTE_HYBRID:
+        route = route_memory_with_llm(question, conversation_context, route, model_name=model_name)
+    route["route_strategy"] = route_strategy
+    route["intent"] = intent.intent
+    if not route.get("need_memory"):
+        return "", [], route
+    memories = memory_manager.retrieve_memories(
+        route.get("query") or question,
+        memory_types=route.get("memory_types") or None,
+        include_core=True,
+    )
+    return memory_manager.build_memory_context(memories), memories, route
 
 
 def extract_effective_query(question: str) -> str:
@@ -2220,6 +2352,8 @@ def run_agent_pro(
     planner_type: str = PLANNER_FALLBACK_MIXED,
     evaluator_type: str = EVALUATOR_RULES,
     memory_context: str = "",
+    memory_enabled: bool = False,
+    memory_route_strategy: str = MEMORY_ROUTE_OFF,
     conversation_context: str = "",
     chroma_path: str = agent.CHROMA_PATH,
     metadata_scope: dict[str, Any] | None = None,
@@ -2236,13 +2370,125 @@ def run_agent_pro(
     if evaluator_type not in EVALUATOR_TYPES:
         evaluator_type = EVALUATOR_RULES
 
+    preferred_sources = preferred_sources or []
+    effective_preferred_sources = [] if source_strategy == SOURCE_STRATEGY_WEB_ONLY else preferred_sources
+    effective_use_web = use_web and source_strategy != SOURCE_STRATEGY_UPLOAD_ONLY
+
     if planner_type == PLANNER_LLM_TOOL_CALLING:
+        pre_trace: list[dict[str, Any]] = []
+        started_at = time.time()
+        if progress_callback:
+            progress_callback({
+                "id": "intent_classifier",
+                "name": "意图分类",
+                "tool": "intent_classifier",
+                "status": "running",
+                "summary": "判断用户请求类型和资料需求。",
+            })
+        intent = classify_intent(
+            question,
+            effective_preferred_sources,
+            router_mode=router_mode,
+            model_name=model_name,
+        )
+        elapsed_ms = int((time.time() - started_at) * 1000)
+        if progress_callback:
+            progress_callback({
+                "id": "intent_classifier",
+                "name": "意图分类",
+                "tool": "intent_classifier",
+                "status": "completed",
+                "summary": f"识别为 {intent.intent}，置信度 {intent.confidence:.2f}。",
+                "elapsed_ms": elapsed_ms,
+            })
+        pre_trace.append(make_stage_trace(
+            name="意图分类",
+            tool="intent_classifier",
+            reason="先判断用户请求类型，再决定是否需要长期记忆和工具规划。",
+            summary=f"识别为 {intent.intent}，置信度 {intent.confidence:.2f}。{intent.reason}",
+            elapsed_ms=elapsed_ms,
+        ))
+
+        started_at = time.time()
+        if progress_callback:
+            progress_callback({
+                "id": "memory_router",
+                "name": "Memory Route（记忆路由）",
+                "tool": "memory_router",
+                "status": "running",
+                "summary": "结合意图分类结果判断是否需要读取长期记忆。",
+            })
+        retrieved_memories: list[dict[str, Any]] = []
+        if memory_context.strip():
+            memory_route = {
+                "need_memory": True,
+                "memory_types": [],
+                "query": question,
+                "reason": "外部调用已传入 memory_context。",
+                "confidence": 1.0,
+                "source": "provided_context",
+                "route_strategy": memory_route_strategy,
+                "intent": intent.intent,
+            }
+        else:
+            memory_context, retrieved_memories, memory_route = load_memory_after_intent(
+                question,
+                intent,
+                enabled=memory_enabled,
+                route_strategy=memory_route_strategy,
+                conversation_context=conversation_context,
+                model_name=model_name,
+            )
+        elapsed_ms = int((time.time() - started_at) * 1000)
+        route_summary = (
+            f"需要读取 Memory：{memory_route.get('reason', '')}"
+            if memory_route.get("need_memory")
+            else f"不读取 Memory：{memory_route.get('reason', '')}"
+        )
+        if progress_callback:
+            progress_callback({
+                "id": "memory_router",
+                "name": "Memory Route（记忆路由）",
+                "tool": "memory_router",
+                "status": "completed",
+                "summary": route_summary,
+                "elapsed_ms": elapsed_ms,
+            })
+            progress_callback({
+                "id": "memory_retriever",
+                "name": "读取长期记忆",
+                "tool": "memory_retriever",
+                "status": "completed" if memory_context.strip() else "skipped",
+                "summary": (
+                    f"已读取 {len(retrieved_memories)} 条相关长期记忆。"
+                    if memory_context.strip()
+                    else "Memory Route 判断本轮无需读取长期记忆。"
+                ),
+            })
+        pre_trace.append(make_stage_trace(
+            name="Memory Route（记忆路由）",
+            tool="memory_router",
+            reason="Memory Route 消费意图分类和会话上下文，只在个性化、历史引用或长期任务延续时读取长期记忆。",
+            summary=route_summary,
+            elapsed_ms=elapsed_ms,
+        ))
+        pre_trace.append(make_stage_trace(
+            name="读取长期记忆",
+            tool="memory_retriever",
+            reason="只有 Memory Route 判断需要时，才从长期记忆库取回相关记忆并注入生成上下文。",
+            summary=(
+                f"已读取 {len(retrieved_memories)} 条相关长期记忆。"
+                if memory_context.strip()
+                else "本轮未读取长期记忆。"
+            ),
+            status="success" if memory_context.strip() else "skipped",
+        ))
         result = run_agent(
             question=question,
-            use_web=use_web,
+            use_web=effective_use_web,
             top_k=top_k,
             web_max_results=web_max_results,
-            preferred_sources=preferred_sources,
+            preferred_sources=effective_preferred_sources,
             source_strategy=source_strategy,
             retrieval_strategy=retrieval_strategy,
             context_packing_strategy=context_packing_strategy,
@@ -2256,6 +2502,9 @@ def run_agent_pro(
             trace_id=trace_id,
             model_name=model_name,
         )
+        result["steps"] = pre_trace + result.get("steps", [])
+        result["memory_route"] = memory_route
+        result["memory_used"] = [item.get("id") for item in retrieved_memories]
         result["teaching_config"] = {
             "retrieval_strategy": retrieval_strategy,
             "context_packing_strategy": context_packing_strategy,
@@ -2264,31 +2513,20 @@ def run_agent_pro(
         }
         return result
 
-    preferred_sources = preferred_sources or []
-    effective_preferred_sources = [] if source_strategy == SOURCE_STRATEGY_WEB_ONLY else preferred_sources
-    effective_use_web = use_web and source_strategy != SOURCE_STRATEGY_UPLOAD_ONLY
     trace: list[dict[str, Any]] = []
     tool_results: dict[str, ToolResult] = {}
     answer = ""
     search_results: list[dict[str, Any]] = []
-
-    if memory_context.strip():
-        if progress_callback:
-            progress_callback({
-                "id": "memory_retriever",
-                "name": "读取长期记忆",
-                "tool": "memory_retriever",
-                "status": "completed",
-                "summary": "已读取与当前问题相关的长期记忆。",
-            })
-        trace.append(
-            make_stage_trace(
-                name="读取长期记忆",
-                tool="memory_retriever",
-                reason="按用户画像、学习偏好和任务进度读取 Memory，并在生成阶段注入上下文。",
-                summary="Memory 已启用，本轮会把相关长期记忆注入最终回答。不要把 Memory 当作外部资料来源引用。",
-            )
-        )
+    retrieved_memories: list[dict[str, Any]] = []
+    memory_route: dict[str, Any] = {
+        "need_memory": bool(memory_context.strip()),
+        "memory_types": [],
+        "query": question,
+        "reason": "外部调用已传入 memory_context。" if memory_context.strip() else "尚未执行 Memory Route。",
+        "confidence": 1.0 if memory_context.strip() else 0.0,
+        "source": "provided_context" if memory_context.strip() else "not_started",
+        "route_strategy": memory_route_strategy,
+    }
 
     started_at = time.time()
     if progress_callback:
@@ -2321,6 +2559,76 @@ def run_agent_pro(
             reason="先判断用户请求类型，避免所有问题都进入同一条 RAG 链路。",
             summary=f"识别为 {intent.intent}，置信度 {intent.confidence:.2f}。{intent.reason}",
             elapsed_ms=int((time.time() - started_at) * 1000),
+        )
+    )
+
+    started_at = time.time()
+    if progress_callback:
+        progress_callback({
+            "id": "memory_router",
+            "name": "Memory Route（记忆路由）",
+            "tool": "memory_router",
+            "status": "running",
+            "summary": "结合意图分类结果判断是否需要读取长期记忆。",
+        })
+    if not memory_context.strip():
+        memory_context, retrieved_memories, memory_route = load_memory_after_intent(
+            question,
+            intent,
+            enabled=memory_enabled,
+            route_strategy=memory_route_strategy,
+            conversation_context=conversation_context,
+            model_name=model_name,
+        )
+    else:
+        memory_route["intent"] = intent.intent
+    route_elapsed_ms = int((time.time() - started_at) * 1000)
+    route_summary = (
+        f"需要读取 Memory：{memory_route.get('reason', '')}"
+        if memory_route.get("need_memory")
+        else f"不读取 Memory：{memory_route.get('reason', '')}"
+    )
+    trace.append(
+        make_stage_trace(
+            name="Memory Route（记忆路由）",
+            tool="memory_router",
+            reason="Memory Route 消费意图分类和会话上下文，只在个性化、历史引用或长期任务延续时读取长期记忆。",
+            summary=route_summary,
+            elapsed_ms=route_elapsed_ms,
+        )
+    )
+    if progress_callback:
+        progress_callback({
+            "id": "memory_router",
+            "name": "Memory Route（记忆路由）",
+            "tool": "memory_router",
+            "status": "completed",
+            "summary": route_summary,
+            "elapsed_ms": route_elapsed_ms,
+        })
+    if progress_callback:
+        progress_callback({
+            "id": "memory_retriever",
+            "name": "读取长期记忆",
+            "tool": "memory_retriever",
+            "status": "completed" if memory_context.strip() else "skipped",
+            "summary": (
+                f"已读取 {len(retrieved_memories)} 条相关长期记忆。"
+                if memory_context.strip()
+                else "Memory Route 判断本轮无需读取长期记忆。"
+            ),
+        })
+    trace.append(
+        make_stage_trace(
+            name="读取长期记忆",
+            tool="memory_retriever",
+            reason="只有 Memory Route 判断需要时，才从长期记忆库取回相关记忆并注入生成上下文。",
+            summary=(
+                f"已读取 {len(retrieved_memories)} 条相关长期记忆。"
+                if memory_context.strip()
+                else "本轮未读取长期记忆。"
+            ),
+            status="success" if memory_context.strip() else "skipped",
         )
     )
 
@@ -2435,6 +2743,8 @@ def run_agent_pro(
             "steps": trace,
             "planner_mode": "pro_runtime",
             "permission_trace": state.get("permission_trace", []),
+            "memory_route": memory_route,
+            "memory_used": [item.get("id") for item in retrieved_memories],
             "teaching_config": {
                 "retrieval_strategy": retrieval_strategy,
                 "context_packing_strategy": context_packing_strategy,
@@ -2625,6 +2935,8 @@ def run_agent_pro(
         "steps": trace,
         "planner_mode": "pro_runtime",
         "permission_trace": state.get("permission_trace", []),
+        "memory_route": memory_route,
+        "memory_used": [item.get("id") for item in retrieved_memories],
         "teaching_config": {
             "retrieval_strategy": retrieval_strategy,
             "context_packing_strategy": context_packing_strategy,

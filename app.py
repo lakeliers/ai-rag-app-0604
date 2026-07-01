@@ -875,8 +875,9 @@ def base_plan_steps(run_mode_value):
             {"id": "final_answer", "name": "生成最终回答", "tool": "Final Answer", "status": "pending", "summary": "输出给前端展示。"},
         ]
     return [
-        {"id": "memory_retriever", "name": "读取长期记忆", "tool": "Memory", "status": "pending", "summary": "如启用 Memory，会先读取相关记忆。"},
         {"id": "intent_classifier", "name": "意图分类", "tool": "Intent Classifier", "status": "pending", "summary": "判断问题类型。"},
+        {"id": "memory_router", "name": "Memory Route（记忆路由）", "tool": "Memory Router", "status": "pending", "summary": "结合意图判断是否需要读取长期记忆。"},
+        {"id": "memory_retriever", "name": "读取长期记忆", "tool": "Memory", "status": "pending", "summary": "仅在 Memory Route 判断需要时读取相关记忆。"},
         {"id": "planner", "name": "高层规划", "tool": "Planner", "status": "pending", "summary": "决定走普通回答、上传资料、联网或混合 RAG。"},
         {"id": "orchestrator", "name": "任务编排", "tool": "Orchestrator", "status": "pending", "summary": "把计划展开成可执行节点。"},
         {"id": "web_collect", "name": "按需联网收集", "tool": "Web Collect", "status": "pending", "summary": "只有需要网页补充时才读取网页正文。"},
@@ -1912,12 +1913,6 @@ def run_compare_agent_turn(panel_id, prompt, config):
     memory_context = ""
     retrieved_memories = []
     memory_route = {}
-    memory_context, retrieved_memories, memory_route = load_routed_memory(
-        prompt,
-        enabled=config["memory_enabled"],
-        conversation_context=conversation_context,
-        route_strategy=config["memory_route_strategy"],
-    )
 
     use_autonomous_mode = False
     autonomous_route_reason = ""
@@ -1929,6 +1924,12 @@ def run_compare_agent_turn(panel_id, prompt, config):
         )
 
     if config["run_mode"] == "自主任务" and use_autonomous_mode:
+        memory_context, retrieved_memories, memory_route = load_routed_memory(
+            prompt,
+            enabled=config["memory_enabled"],
+            conversation_context=conversation_context,
+            route_strategy=config["memory_route_strategy"],
+        )
         result = call_with_supported_kwargs(
             autonomous_agent.run_autonomous_agent,
             prompt,
@@ -1943,6 +1944,8 @@ def run_compare_agent_turn(panel_id, prompt, config):
             planner_type=config["planner_type"],
             evaluator_type=config["evaluator_type"],
             memory_context=memory_context,
+            memory_enabled=config["memory_enabled"],
+            memory_route_strategy=config["memory_route_strategy"],
             conversation_context=conversation_context,
             metadata_scope={"session_id": session_id},
             progress_callback=handle_plan_progress,
@@ -1965,6 +1968,8 @@ def run_compare_agent_turn(panel_id, prompt, config):
             planner_type=config["planner_type"],
             evaluator_type=config["evaluator_type"],
             memory_context=memory_context,
+            memory_enabled=config["memory_enabled"],
+            memory_route_strategy=config["memory_route_strategy"],
             conversation_context=conversation_context,
             metadata_scope={"session_id": session_id},
             stream_callback=handle_answer_stream if config["streaming_enabled"] else None,
@@ -2043,15 +2048,15 @@ def run_compare_agent_turn(panel_id, prompt, config):
         "sources": result.get("sources", []),
         "permission_trace": result.get("permission_trace", []),
         "autonomous": autonomous_snapshot,
-        "memory_used": [item.get("id") for item in retrieved_memories],
-        "memory_route": memory_route,
+        "memory_used": result.get("memory_used", [item.get("id") for item in retrieved_memories]),
+        "memory_route": result.get("memory_route", memory_route),
         "run_snapshot": {
             "trace_id": trace_id,
             "planner_mode": result.get("planner_mode", ""),
             "tools_called": extract_tools_from_steps(result.get("steps", [])),
             "sources_used": extract_source_types(result.get("sources", [])),
-            "memory_used": [item.get("id") for item in retrieved_memories],
-            "memory_route": memory_route,
+            "memory_used": result.get("memory_used", [item.get("id") for item in retrieved_memories]),
+            "memory_route": result.get("memory_route", memory_route),
             "steps": compact_steps_for_log(result.get("steps", [])),
             "sources": compact_sources_for_log(result.get("sources", [])),
             "answer_preview": str(result.get("answer", ""))[:1200],
@@ -2086,12 +2091,6 @@ def execute_compare_agent_backend(
     memory_context = ""
     retrieved_memories = []
     memory_route = {}
-    memory_context, retrieved_memories, memory_route = load_routed_memory(
-        prompt,
-        enabled=config["memory_enabled"],
-        conversation_context=conversation_context,
-        route_strategy=config["memory_route_strategy"],
-    )
 
     use_autonomous_mode = False
     autonomous_route_reason = ""
@@ -2103,6 +2102,12 @@ def execute_compare_agent_backend(
         )
 
     if config["run_mode"] == "自主任务" and use_autonomous_mode:
+        memory_context, retrieved_memories, memory_route = load_routed_memory(
+            prompt,
+            enabled=config["memory_enabled"],
+            conversation_context=conversation_context,
+            route_strategy=config["memory_route_strategy"],
+        )
         result = call_with_supported_kwargs(
             autonomous_agent.run_autonomous_agent,
             prompt,
@@ -2117,6 +2122,8 @@ def execute_compare_agent_backend(
             planner_type=config["planner_type"],
             evaluator_type=config["evaluator_type"],
             memory_context=memory_context,
+            memory_enabled=config["memory_enabled"],
+            memory_route_strategy=config["memory_route_strategy"],
             conversation_context=conversation_context,
             metadata_scope={"session_id": session_id},
             permission_context=permission_context_from_config(config, trace_id),
@@ -2138,6 +2145,8 @@ def execute_compare_agent_backend(
             planner_type=config["planner_type"],
             evaluator_type=config["evaluator_type"],
             memory_context=memory_context,
+            memory_enabled=config["memory_enabled"],
+            memory_route_strategy=config["memory_route_strategy"],
             conversation_context=conversation_context,
             metadata_scope={"session_id": session_id},
             permission_context=permission_context_from_config(config, trace_id),
@@ -2205,15 +2214,15 @@ def execute_compare_agent_backend(
         "sources": result.get("sources", []),
         "permission_trace": result.get("permission_trace", []),
         "autonomous": autonomous_snapshot,
-        "memory_used": [item.get("id") for item in retrieved_memories],
-        "memory_route": memory_route,
+        "memory_used": result.get("memory_used", [item.get("id") for item in retrieved_memories]),
+        "memory_route": result.get("memory_route", memory_route),
         "run_snapshot": {
             "trace_id": trace_id,
             "planner_mode": result.get("planner_mode", ""),
             "tools_called": extract_tools_from_steps(result.get("steps", [])),
             "sources_used": extract_source_types(result.get("sources", [])),
-            "memory_used": [item.get("id") for item in retrieved_memories],
-            "memory_route": memory_route,
+            "memory_used": result.get("memory_used", [item.get("id") for item in retrieved_memories]),
+            "memory_route": result.get("memory_route", memory_route),
             "steps": compact_steps_for_log(result.get("steps", [])),
             "sources": compact_sources_for_log(result.get("sources", [])),
             "answer_preview": str(result.get("answer", ""))[:1200],
@@ -2707,12 +2716,6 @@ if prompt:
                 memory_context = ""
                 retrieved_memories = []
                 memory_route = {}
-                memory_context, retrieved_memories, memory_route = load_routed_memory(
-                    prompt,
-                    enabled=memory_enabled,
-                    conversation_context=conversation_context,
-                    route_strategy=memory_route_strategy,
-                )
 
                 use_autonomous_mode = False
                 autonomous_route_reason = ""
@@ -2724,6 +2727,12 @@ if prompt:
                     )
 
                 if run_mode == "自主任务" and use_autonomous_mode:
+                    memory_context, retrieved_memories, memory_route = load_routed_memory(
+                        prompt,
+                        enabled=memory_enabled,
+                        conversation_context=conversation_context,
+                        route_strategy=memory_route_strategy,
+                    )
                     result = call_with_supported_kwargs(
                         autonomous_agent.run_autonomous_agent,
                         prompt,
@@ -2738,6 +2747,8 @@ if prompt:
                         planner_type=planner_type,
                         evaluator_type=evaluator_type,
                         memory_context=memory_context,
+                        memory_enabled=memory_enabled,
+                        memory_route_strategy=memory_route_strategy,
                         conversation_context=conversation_context,
                         metadata_scope={"session_id": st.session_state.rag_session_id},
                         progress_callback=handle_plan_progress,
@@ -2761,6 +2772,8 @@ if prompt:
                         planner_type=planner_type,
                         evaluator_type=evaluator_type,
                         memory_context=memory_context,
+                        memory_enabled=memory_enabled,
+                        memory_route_strategy=memory_route_strategy,
                         conversation_context=conversation_context,
                         metadata_scope={"session_id": st.session_state.rag_session_id},
                         stream_callback=answer_stream_callback,
@@ -2838,16 +2851,16 @@ if prompt:
                 "sources": result.get("sources", []),
                 "permission_trace": result.get("permission_trace", []),
                 "autonomous": autonomous_snapshot,
-                "memory_used": [item.get("id") for item in retrieved_memories],
-                "memory_route": memory_route,
+                "memory_used": result.get("memory_used", [item.get("id") for item in retrieved_memories]),
+                "memory_route": result.get("memory_route", memory_route),
                 "run_snapshot": {
                     "trace_id": trace_id,
                     "planner_mode": result.get("planner_mode", ""),
                     "elapsed_ms": int((time.perf_counter() - started_at) * 1000),
                     "tools_called": extract_tools_from_steps(result.get("steps", [])),
                     "sources_used": extract_source_types(result.get("sources", [])),
-                    "memory_used": [item.get("id") for item in retrieved_memories],
-                    "memory_route": memory_route,
+                    "memory_used": result.get("memory_used", [item.get("id") for item in retrieved_memories]),
+                    "memory_route": result.get("memory_route", memory_route),
                     "steps": compact_steps_for_log(result.get("steps", [])),
                     "sources": compact_sources_for_log(result.get("sources", [])),
                     "answer_preview": str(result.get("answer", ""))[:1200],

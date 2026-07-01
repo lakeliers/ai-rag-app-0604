@@ -62,6 +62,7 @@ class ChatConfig(BaseModel):
     planner_type: str = agent_runtime.PLANNER_FALLBACK_MIXED
     evaluator_type: str = agent_runtime.EVALUATOR_RULES
     memory_enabled: bool = True
+    memory_route_strategy: str = agent_runtime.MEMORY_ROUTE_AUTO
     top_k: int = 3
     web_max_results: int = 2
     max_autonomous_steps: int = 3
@@ -227,10 +228,6 @@ def chat(request: ChatRequest):
 
     preferred_sources = list(SESSION_UPLOADS.get(session_id, {}).values())
     memory_context = ""
-    retrieved_memories = []
-    if config.memory_enabled:
-        retrieved_memories = memory_manager.retrieve_memories(request.question)
-        memory_context = memory_manager.build_memory_context(retrieved_memories)
 
     progress_events = []
 
@@ -256,6 +253,8 @@ def chat(request: ChatRequest):
                 planner_type=config.planner_type,
                 evaluator_type=config.evaluator_type,
                 memory_context=memory_context,
+                memory_enabled=config.memory_enabled,
+                memory_route_strategy=config.memory_route_strategy,
                 metadata_scope={"session_id": session_id},
                 progress_callback=progress_callback,
             )
@@ -273,6 +272,8 @@ def chat(request: ChatRequest):
                 planner_type=config.planner_type,
                 evaluator_type=config.evaluator_type,
                 memory_context=memory_context,
+                memory_enabled=config.memory_enabled,
+                memory_route_strategy=config.memory_route_strategy,
                 metadata_scope={"session_id": session_id},
                 progress_callback=progress_callback,
             )
@@ -292,6 +293,8 @@ def chat(request: ChatRequest):
             planner_type=config.planner_type,
             evaluator_type=config.evaluator_type,
             memory_context=memory_context,
+            memory_enabled=config.memory_enabled,
+            memory_route_strategy=config.memory_route_strategy,
             metadata_scope={"session_id": session_id},
             progress_callback=progress_callback,
         )
