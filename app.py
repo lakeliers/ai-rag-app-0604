@@ -58,6 +58,7 @@ import autonomous_agent
 import badcase_manager
 import memory_manager
 import permission_gate
+import trace_manager
 
 agent.seed_local_note()
 if seed_teaching_memory != "0":
@@ -333,6 +334,38 @@ def compact_sources_for_log(sources, limit=10):
             "document_preview": str(source.get("document", ""))[:600],
         })
     return compacted
+
+
+def build_trace_record_from_run(run, *, panel_id="", status="success", error=""):
+    snapshot = run.get("run_snapshot", {}) or {}
+    return {
+        "trace_id": run.get("trace_id", ""),
+        "event": "agent_turn",
+        "status": status,
+        "panel_id": panel_id,
+        "user_input": run.get("user_input", ""),
+        "answer_preview": str(run.get("actual_answer", ""))[:1200],
+        "planner_mode": run.get("planner_mode", ""),
+        "planner_label": run.get("planner_label", ""),
+        "elapsed_ms": run.get("elapsed_ms", snapshot.get("elapsed_ms", 0)),
+        "config": run.get("config", {}),
+        "tools_called": run.get("tools_called", []),
+        "sources_used": run.get("sources_used", []),
+        "memory_used": run.get("memory_used", []),
+        "steps": snapshot.get("steps", compact_steps_for_log(run.get("steps", []))),
+        "sources": snapshot.get("sources", compact_sources_for_log(run.get("sources", []))),
+        "permission_trace": run.get("permission_trace", []),
+        "error": error,
+    }
+
+
+def persist_trace_for_run(run, *, panel_id="", status="success", error=""):
+    trace_result = trace_manager.log_trace(
+        build_trace_record_from_run(run, panel_id=panel_id, status=status, error=error),
+        online=True,
+    )
+    run["trace_log"] = trace_result
+    return trace_result
 
 
 def source_type_label(source_type):
@@ -655,6 +688,12 @@ def render_assistant_message(content, run=None, key_suffix=""):
                         st.caption("如果这轮回答有问题，点击回答右侧的“反馈”按钮记录 badcase（不良案例）。")
                         if run.get("trace_id"):
                             st.code(run["trace_id"], language="text")
+                        trace_log = run.get("trace_log", {})
+                        if trace_log.get("online_url"):
+                            st.caption("线上 Trace Log（运行日志）已写入：")
+                            st.write(trace_log["online_url"])
+                        elif trace_log.get("error"):
+                            st.warning(f"Trace Log 写入提示：{trace_log['error']}")
                     elif tab_name == "Memory":
                         used = run.get("memory_used", [])
                         if used:
@@ -1849,6 +1888,7 @@ def run_compare_agent_turn(panel_id, prompt, config):
             "answer_preview": str(result.get("answer", ""))[:1200],
         },
     }
+    persist_trace_for_run(badcase_run, panel_id=panel_id)
     st.session_state[compare_state_key(panel_id, "last_sources")] = result["sources"]
     st.session_state[compare_state_key(panel_id, "last_agent_run")] = badcase_run
     st.session_state[messages_key].append({
@@ -1919,6 +1959,7 @@ def render_compare_agent_workspace(panel_id, title, config):
                             "answer_preview": error_answer,
                         },
                     }
+                    persist_trace_for_run(error_run, panel_id=panel_id, status="error", error=str(error))
                     st.session_state[compare_state_key(panel_id, "messages")].append({
                         "role": "assistant",
                         "content": error_answer,
@@ -2235,6 +2276,7 @@ if prompt:
         st.stop()
 
     trace_id = generate_trace_id()
+    started_at = time.perf_counter()
     st.session_state.messages.append({"role": "user", "content": prompt})
 
     with st.chat_message("user"):
@@ -2377,6 +2419,7 @@ if prompt:
                 "trace_id": trace_id,
                 "user_input": prompt,
                 "actual_answer": result["answer"],
+                "elapsed_ms": int((time.perf_counter() - started_at) * 1000),
                 "config": build_current_config(),
                 "tools_called": extract_tools_from_steps(result.get("steps", [])),
                 "sources_used": extract_source_types(result.get("sources", [])),
@@ -2391,6 +2434,7 @@ if prompt:
                 "run_snapshot": {
                     "trace_id": trace_id,
                     "planner_mode": result.get("planner_mode", ""),
+                    "elapsed_ms": int((time.perf_counter() - started_at) * 1000),
                     "tools_called": extract_tools_from_steps(result.get("steps", [])),
                     "sources_used": extract_source_types(result.get("sources", [])),
                     "memory_used": [item.get("id") for item in retrieved_memories],
@@ -2399,6 +2443,7 @@ if prompt:
                     "answer_preview": str(result.get("answer", ""))[:1200],
                 },
             }
+            persist_trace_for_run(badcase_run)
             render_assistant_message(
                 result["answer"],
                 badcase_run,
@@ -2423,6 +2468,7 @@ if prompt:
                 "trace_id": trace_id,
                 "user_input": prompt,
                 "actual_answer": error_answer,
+                "elapsed_ms": int((time.perf_counter() - started_at) * 1000),
                 "config": build_current_config(),
                 "tools_called": [],
                 "sources_used": [],
@@ -2436,10 +2482,12 @@ if prompt:
                 "run_snapshot": {
                     "trace_id": trace_id,
                     "planner_mode": "error",
+                    "elapsed_ms": int((time.perf_counter() - started_at) * 1000),
                     "error": str(e)[:1200],
                     "answer_preview": error_answer,
                 },
             }
+            persist_trace_for_run(error_run, status="error", error=str(e))
             st.error(error_answer)
             render_assistant_message(error_answer, error_run, key_suffix=f"error_{len(st.session_state.messages)}")
             st.session_state.messages.append({

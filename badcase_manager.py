@@ -8,6 +8,8 @@ from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
+import trace_manager
+
 
 ROOT = Path(__file__).resolve().parent
 EVAL_CASES_PATH = ROOT / "eval_cases.jsonl"
@@ -349,5 +351,15 @@ def save_case(
             badcase_log["github_issue_url"] = issue_url
         except Exception as exc:
             result["github_error"] = str(exc)
+
+    if trace_id:
+        try:
+            trace_manager.log_badcase_link(
+                trace_id=trace_id,
+                badcase_id=badcase_id,
+                github_issue_url=result.get("github_issue_url", ""),
+            )
+        except Exception:
+            pass
 
     return result
