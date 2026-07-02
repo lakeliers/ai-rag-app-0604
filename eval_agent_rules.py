@@ -597,6 +597,12 @@ def fake_generate_answer(
         answer = f"根据网页资料，理想汽车 2026 年一季度财报情况需要以公司公告或交易所披露为准；本轮已检索到与理想汽车、2026、一季度财报相关的稳定网页资料。参考来源：{joined_sources}。"
     elif "理想" in question or "Livis" in question or "livis" in question:
         answer = f"根据网页资料，理想 L8 Livis 与理想汽车相关功能讨论有关。参考来源：{joined_sources}。"
+    elif "预算" in question and "上海" in question:
+        answer = (
+            "建议选择杭州或南京做 12月30日-1月1日三天两晚行程。"
+            "按 4 人、每人 5000 元预算，可优先安排高铁往返、两晚中高档酒店、城市核心景点和餐饮。"
+            "实时车票、酒店价格和景区开放情况需出行前核验。"
+        )
     elif "价格表" in question or "专业版" in question or "状态" in question:
         answer = f"星河助手专业版月费 299 元，状态是灰度中；基础版 99 元且已上线。参考来源：{joined_sources}。"
     elif "上线日期" in question or "6月" in question or "星河助手" in question:
@@ -704,6 +710,7 @@ def run_case(
         router_mode=router_mode,
         source_strategy=case_source_strategy,
         multi_agent_architecture=multi_agent_architecture,
+        conversation_context=case.get("conversation_context", ""),
         chroma_path=EVAL_CHROMA_PATH,
         metadata_scope=eval_scope,
         permission_context=permission_context,

@@ -590,6 +590,20 @@ def classify_intent_by_rules(question: str, preferred_sources: list[str]) -> Int
     ]
     definition_words = ["是什么", "定义", "概念", "解释一下", "介绍一下", "什么意思", "区别是什么"]
     upload_qa_words = ["总结", "提取", "分析", "资料", "文档", "pdf", "文件", "这份"]
+    if is_planning_or_advice_question(stripped_question) and not any(
+        word in lowered_question for word in freshness_suppression_words + ["最新", "今天", "实时", "官方", "财报", "政策", "法规"]
+    ):
+        constraints["needs_web_context"] = False
+        constraints["planning_without_freshness"] = True
+        return IntentResult(
+            intent="general_qa",
+            confidence=0.82,
+            reason="用户在补充方案/行程/建议类约束，不强制要求实时资料，优先基于本轮上下文生成。",
+            suggested_action="collect_context",
+            entities=entities,
+            constraints=constraints,
+        )
+
     if (
         any(word in lowered_question for word in latest_words)
         and not any(word in lowered_question for word in freshness_suppression_words)
@@ -894,7 +908,10 @@ def plan_high_level_action(intent: IntentResult, preferred_sources: list[str], u
         action="collect_context",
         reason="通用问题先收集可用上下文，再评估是否足够回答。",
         confidence=0.68,
-        params={"needs_web": use_web, "needs_upload": bool(preferred_sources)},
+        params={
+            "needs_web": False if intent.constraints.get("planning_without_freshness") else use_web,
+            "needs_upload": bool(preferred_sources),
+        },
     )
 
 
@@ -1377,6 +1394,31 @@ def is_definition_fallback_question(question: str) -> bool:
     return any(word in question for word in definition_words) and not any(word in question for word in blocked_words)
 
 
+def is_planning_or_advice_question(question: str, conversation_context: str = "") -> bool:
+    text = f"{conversation_context}\n{question}"
+    planning_words = [
+        "计划",
+        "方案",
+        "行程",
+        "旅行",
+        "旅游",
+        "出发",
+        "预算",
+        "酒店",
+        "机票",
+        "路线",
+        "安排",
+        "你来决定",
+        "帮我决定",
+        "建议",
+        "推荐",
+    ]
+    hard_fact_words = ["财报", "股价", "销量", "政策", "法规", "上线日期", "官方", "最新", "今天", "新闻"]
+    if any(word in question for word in hard_fact_words):
+        return False
+    return any(word in text for word in planning_words)
+
+
 def build_definition_fallback_context(question: str) -> list[dict[str, Any]]:
     lowered = question.lower()
     definitions = {
@@ -1421,6 +1463,46 @@ def build_definition_fallback_context(question: str) -> list[dict[str, Any]]:
                 "content_type": "definition_fallback",
             }]
     return []
+
+
+def answer_planning_from_model(
+    question: str,
+    memory_context: str = "",
+    conversation_context: str = "",
+    model_name: str = "",
+) -> str:
+    client = agent.get_deepseek_client()
+    prompt = f"""请基于用户当前输入和本轮短期对话上下文，输出一个可执行方案。
+
+要求：
+1. 允许基于用户提供的约束和常识做合理假设，但不要编造实时价格、实时库存、实时天气或实时政策。
+2. 如果缺少实时信息，直接标注“需实际预订前核验”。
+3. 如果是旅行/行程类问题，至少包含目的地选择理由、日程安排、预算拆分、预订/执行建议。
+4. 不要说“资料不足无法回答”，除非用户明确要求必须基于外部资料。
+
+【长期记忆】
+{memory_context or "无"}
+
+【本轮会话上下文】
+{conversation_context or "无"}
+
+【当前用户输入】
+{question}
+"""
+    if client is None:
+        return (
+            "可以基于你已经给出的约束先做一个方案，但当前没有可用模型来生成详细内容。"
+            "建议按目的地、日程、预算、交通住宿和风险核验五部分展开。"
+        )
+
+    response = client.chat.completions.create(
+        model=model_name or agent.DEEPSEEK_MODEL,
+        messages=[{"role": "user", "content": prompt}],
+        temperature=0.4,
+        max_tokens=900,
+        timeout=agent.LLM_TIMEOUT_SECONDS,
+    )
+    return response.choices[0].message.content.strip()
 
 
 def merge_definition_fallback_context(question: str, search_results: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -1474,6 +1556,22 @@ def tool_generate_answer(
     stream_callback: Callable[[str, str], None] | None = None,
 ) -> ToolResult:
     generation_error = ""
+    if not search_results and is_planning_or_advice_question(question, conversation_context):
+        try:
+            answer = answer_planning_from_model(
+                question,
+                memory_context=memory_context,
+                conversation_context=conversation_context,
+                model_name=model_name,
+            )
+            return ToolResult(
+                status="degraded",
+                summary="未检索到可靠资料，已基于本轮上下文和用户约束生成方案，并提示实时信息需核验。",
+                data=answer,
+            )
+        except Exception as error:
+            generation_error = str(error)
+
     if not search_results and is_definition_fallback_question(question):
         try:
             answer = answer_definition_from_model(question, model_name=model_name)

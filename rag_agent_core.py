@@ -38,9 +38,11 @@ PARENT_TEXT_CHAR_LIMIT = int(os.getenv("PARENT_TEXT_CHAR_LIMIT", "1800"))
 INGEST_FAILED_SEARCH_RESULTS = os.getenv("INGEST_FAILED_SEARCH_RESULTS", "0") == "1"
 WEB_SEARCH_CANDIDATE_MULTIPLIER = int(os.getenv("WEB_SEARCH_CANDIDATE_MULTIPLIER", "3"))
 WEB_MIN_TEXT_CHARS = int(os.getenv("WEB_MIN_TEXT_CHARS", "100"))
-WEB_FETCH_TIMEOUT_SECONDS = float(os.getenv("WEB_FETCH_TIMEOUT_SECONDS", "20"))
+WEB_SEARCH_TIMEOUT_SECONDS = float(os.getenv("WEB_SEARCH_TIMEOUT_SECONDS", "8"))
+WEB_FETCH_TIMEOUT_SECONDS = float(os.getenv("WEB_FETCH_TIMEOUT_SECONDS", "8"))
+WEB_COLLECT_MAX_SECONDS = float(os.getenv("WEB_COLLECT_MAX_SECONDS", "35"))
 ENABLE_JINA_READER = os.getenv("ENABLE_JINA_READER", "1") == "1"
-JINA_READER_TIMEOUT_SECONDS = float(os.getenv("JINA_READER_TIMEOUT_SECONDS", "8"))
+JINA_READER_TIMEOUT_SECONDS = float(os.getenv("JINA_READER_TIMEOUT_SECONDS", "5"))
 RRF_K = 60
 RETRIEVAL_VECTOR_ONLY = "vector_only"
 RETRIEVAL_VECTOR_BM25 = "vector_bm25"
@@ -1645,7 +1647,7 @@ def duckduckgo_search(query, max_results=5):
     headers = {
         "User-Agent": "Mozilla/5.0"
     }
-    response = requests.get(url, headers=headers, timeout=15)
+    response = requests.get(url, headers=headers, timeout=WEB_SEARCH_TIMEOUT_SECONDS)
     response.raise_for_status()
 
     results = []
@@ -1669,7 +1671,7 @@ def bing_search(query, max_results=5):
     headers = {
         "User-Agent": "Mozilla/5.0"
     }
-    response = requests.get(url, headers=headers, timeout=15)
+    response = requests.get(url, headers=headers, timeout=WEB_SEARCH_TIMEOUT_SECONDS)
     response.raise_for_status()
 
     results = []
@@ -1697,7 +1699,7 @@ def baidu_search(query, max_results=5):
     headers = {
         "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X)"
     }
-    response = requests.get(url, headers=headers, timeout=15)
+    response = requests.get(url, headers=headers, timeout=WEB_SEARCH_TIMEOUT_SECONDS)
     response.raise_for_status()
 
     results = []
@@ -1841,11 +1843,20 @@ def extract_text_from_html(html_text):
     return parser.get_text()
 
 
-def fetch_web_text_with_user_agent(url, user_agent, label):
+def remaining_timeout(deadline: float | None, fallback: float) -> float:
+    if deadline is None:
+        return fallback
+    remaining = deadline - time.monotonic()
+    if remaining <= 0:
+        raise WebTextFetchError("网页收集达到时间预算")
+    return max(1.0, min(fallback, remaining))
+
+
+def fetch_web_text_with_user_agent(url, user_agent, label, deadline: float | None = None):
     response = requests.get(
         url,
         headers=web_request_headers(user_agent),
-        timeout=WEB_FETCH_TIMEOUT_SECONDS,
+        timeout=remaining_timeout(deadline, WEB_FETCH_TIMEOUT_SECONDS),
         allow_redirects=True,
     )
     response.raise_for_status()
@@ -1867,7 +1878,7 @@ def jina_reader_url(url):
     return f"https://r.jina.ai/{url}"
 
 
-def fetch_web_text_with_jina(url):
+def fetch_web_text_with_jina(url, deadline: float | None = None):
     if not ENABLE_JINA_READER:
         raise WebTextFetchError("Jina Reader 未启用")
 
@@ -1882,7 +1893,7 @@ def fetch_web_text_with_jina(url):
     response = requests.get(
         jina_reader_url(url),
         headers=headers,
-        timeout=JINA_READER_TIMEOUT_SECONDS,
+        timeout=remaining_timeout(deadline, JINA_READER_TIMEOUT_SECONDS),
         allow_redirects=True,
     )
     response.raise_for_status()
@@ -1890,7 +1901,7 @@ def fetch_web_text_with_jina(url):
     return validate_web_text(text, "Jina Reader")
 
 
-def fetch_web_text(url):
+def fetch_web_text(url, deadline: float | None = None):
     errors = []
 
     for label, user_agent in [
@@ -1898,7 +1909,7 @@ def fetch_web_text(url):
         ("移动浏览器请求", MOBILE_USER_AGENT),
     ]:
         try:
-            text = fetch_web_text_with_user_agent(url, user_agent, label)
+            text = fetch_web_text_with_user_agent(url, user_agent, label, deadline=deadline)
             print(f"正文读取成功：{label}")
             return text
         except Exception as e:
@@ -1906,7 +1917,7 @@ def fetch_web_text(url):
             print(f"正文读取失败：{label}｜{e}")
 
     try:
-        text = fetch_web_text_with_jina(url)
+        text = fetch_web_text_with_jina(url, deadline=deadline)
         print("正文读取成功：Jina Reader")
         return text
     except Exception as e:
@@ -1916,12 +1927,16 @@ def fetch_web_text(url):
     raise WebTextFetchError("；".join(errors))
 
 
-def web_collect(query, max_results=3, chroma_path=CHROMA_PATH, metadata_scope=None):
+def web_collect(query, max_results=3, chroma_path=CHROMA_PATH, metadata_scope=None, max_seconds=None):
+    deadline = time.monotonic() + float(max_seconds or WEB_COLLECT_MAX_SECONDS)
     search_query = normalize_web_query(query)
     print("正在搜索网页...")
     if search_query != query:
         print(f"检索词改写：{search_query}")
-    candidate_limit = max(max_results * WEB_SEARCH_CANDIDATE_MULTIPLIER, max_results + 3)
+    candidate_limit = min(
+        max(max_results * WEB_SEARCH_CANDIDATE_MULTIPLIER, max_results + 3),
+        max(max_results + 2, 5),
+    )
     results = search_web(search_query, max_results=candidate_limit)
 
     if not results:
@@ -1962,12 +1977,16 @@ def web_collect(query, max_results=3, chroma_path=CHROMA_PATH, metadata_scope=No
             ingested_sources.append(item)
 
     for item in results:
+        if time.monotonic() >= deadline:
+            print("联网收集达到时间预算，停止读取更多网页。")
+            break
+
         title = item["title"]
         url = item["url"]
         print(f"正在读取网页：{title}")
 
         try:
-            text = fetch_web_text(url)
+            text = fetch_web_text(url, deadline=deadline)
         except Exception as e:
             print(f"读取失败：{e}")
             ingest_search_result_fallback(item, str(e))
