@@ -36,6 +36,16 @@ MEMORY_ROUTE_AUTO = "auto"
 MEMORY_ROUTE_HYBRID = "hybrid"
 MEMORY_ROUTE_ALWAYS = "always"
 MEMORY_ROUTE_OFF = "off"
+MULTI_AGENT_AUTO = "auto"
+MULTI_AGENT_MANAGER_WORKER = "manager_worker"
+MULTI_AGENT_PIPELINE = "pipeline"
+MULTI_AGENT_CRITIC_LOOP = "critic_loop"
+MULTI_AGENT_ARCHITECTURES = {
+    MULTI_AGENT_AUTO,
+    MULTI_AGENT_MANAGER_WORKER,
+    MULTI_AGENT_PIPELINE,
+    MULTI_AGENT_CRITIC_LOOP,
+}
 
 ProgressCallback = Callable[[dict[str, Any]], None]
 
@@ -2339,7 +2349,7 @@ def validate_final_answer(answer: str, search_results: list[dict[str, Any]], eva
     }
 
 
-def run_agent_pro(
+def _run_agent_pro_core(
     question: str,
     use_web: bool = True,
     top_k: int = 3,
@@ -2946,3 +2956,206 @@ def run_agent_pro(
         "evaluation": evaluation,
         "validation": validation,
     }
+
+
+def choose_multi_agent_architecture(question: str, preferred_sources: list[str] | None = None) -> tuple[str, str]:
+    normalized = normalize_user_text(question)
+    preferred_sources = preferred_sources or []
+    decomposition_words = ["分别", "多个", "竞品", "对比", "调研", "横向", "5个", "三家", "多个产品", "多份"]
+    quality_words = ["审查", "检查", "高质量", "正式", "发布", "报告", "优化", "润色", "校验", "引用"]
+    if len(preferred_sources) >= 2 or any(word in normalized for word in decomposition_words):
+        return MULTI_AGENT_MANAGER_WORKER, "任务存在多个对象或可拆分子任务，适合 Manager-Worker 分工执行。"
+    if any(word in normalized for word in quality_words):
+        return MULTI_AGENT_CRITIC_LOOP, "任务对最终产物质量或校验要求较高，适合 Critic Loop。"
+    return MULTI_AGENT_PIPELINE, "任务主流程稳定，适合 Pipeline 固定步骤接力。"
+
+
+def emit_multi_agent_event(
+    progress_callback: ProgressCallback | None,
+    step_id: str,
+    name: str,
+    status: str,
+    summary: str,
+    elapsed_ms: int = 0,
+) -> None:
+    if progress_callback:
+        progress_callback({
+            "id": step_id,
+            "name": name,
+            "tool": step_id,
+            "status": status,
+            "summary": summary,
+            "elapsed_ms": elapsed_ms,
+        })
+
+
+def build_multi_agent_trace(
+    architecture: str,
+    selected_reason: str,
+    question: str,
+    result: dict[str, Any],
+) -> list[dict[str, Any]]:
+    source_count = len(result.get("sources", []))
+    answer_len = len(str(result.get("answer", "")))
+    if architecture == MULTI_AGENT_MANAGER_WORKER:
+        return [
+            make_stage_trace(
+                name="Manager-Worker：Manager 规划",
+                tool="manager_agent",
+                reason="Manager 根据用户目标、可用 worker 和约束生成结构化任务分工。",
+                summary=f"选择 Manager-Worker。{selected_reason}",
+            ),
+            make_stage_trace(
+                name="Manager-Worker：Worker 执行",
+                tool="worker_agents",
+                reason="Worker 只执行被分配的子任务，底层复用当前 RAG / Web / Memory / Safety 能力。",
+                summary=f"已执行资料收集、分析和回答生成 worker；产出 {source_count} 条来源。",
+            ),
+            make_stage_trace(
+                name="Manager-Worker：结果聚合",
+                tool="manager_aggregation",
+                reason="Manager/Aggregator 汇总 worker outputs，形成最终回答上下文。",
+                summary=f"已聚合 worker 结果，最终回答约 {answer_len} 字。",
+            ),
+        ]
+    if architecture == MULTI_AGENT_CRITIC_LOOP:
+        validation = result.get("validation", {})
+        warnings = validation.get("warnings", [])
+        passed = validation.get("passed", not warnings)
+        return [
+            make_stage_trace(
+                name="Critic Loop：Generator 生成",
+                tool="generator_agent",
+                reason="Generator 先基于上下文生成 draft artifact。",
+                summary=f"已生成 draft，长度约 {answer_len} 字。",
+            ),
+            make_stage_trace(
+                name="Critic Loop：Critic 审查",
+                tool="critic_agent",
+                reason="Critic 按完整性、忠实性、格式和引用要求审查 draft。",
+                summary="Critic 通过。" if passed else "Critic 发现问题：" + "；".join(warnings),
+                status="success" if passed else "warning",
+            ),
+            make_stage_trace(
+                name="Critic Loop：返工判断",
+                tool="revision_controller",
+                reason="根据 Critic 结果、最大返工轮次和成本限制决定是否返工。",
+                summary="当前轻量教学版未触发二次返工。" if passed else "当前轻量教学版记录问题，不自动追加二次模型返工以控制成本。",
+                status="success" if passed else "warning",
+            ),
+        ]
+    return [
+        make_stage_trace(
+            name="Pipeline：Research Step",
+            tool="research_step",
+            reason="固定流程第一步：收集上传资料、网页资料和本地知识。",
+            summary=f"Research 产出 {source_count} 条候选来源。",
+        ),
+        make_stage_trace(
+            name="Pipeline：Analysis Step",
+            tool="analysis_step",
+            reason="固定流程第二步：对上游资料做聚合、评估和结构化整理。",
+            summary="Analysis 已复用 aggregator/evaluator 结果。",
+        ),
+        make_stage_trace(
+            name="Pipeline：Writer Step",
+            tool="writer_step",
+            reason="固定流程第三步：基于整理后的上下文生成最终回答。",
+            summary=f"Writer 产出最终回答，约 {answer_len} 字。",
+        ),
+    ]
+
+
+def run_agent_pro(
+    question: str,
+    use_web: bool = True,
+    top_k: int = 3,
+    web_max_results: int = 3,
+    preferred_sources: list[str] | None = None,
+    router_mode: str = ROUTER_MODE_RULES,
+    source_strategy: str = SOURCE_STRATEGY_AUTO,
+    retrieval_strategy: str = agent.RETRIEVAL_VECTOR_BM25_RRF,
+    context_packing_strategy: str = agent.CONTEXT_STRICT_BUDGET,
+    planner_type: str = PLANNER_FALLBACK_MIXED,
+    evaluator_type: str = EVALUATOR_RULES,
+    memory_context: str = "",
+    memory_enabled: bool = False,
+    memory_route_strategy: str = MEMORY_ROUTE_OFF,
+    conversation_context: str = "",
+    chroma_path: str = agent.CHROMA_PATH,
+    metadata_scope: dict[str, Any] | None = None,
+    stream_callback: Callable[[str, str], None] | None = None,
+    progress_callback: ProgressCallback | None = None,
+    permission_context: dict[str, Any] | None = None,
+    trace_id: str = "",
+    model_name: str = "",
+    multi_agent_architecture: str = MULTI_AGENT_AUTO,
+) -> dict[str, Any]:
+    if multi_agent_architecture not in MULTI_AGENT_ARCHITECTURES:
+        multi_agent_architecture = MULTI_AGENT_AUTO
+    selected_architecture = multi_agent_architecture
+    selected_reason = "用户手动选择。"
+    if multi_agent_architecture == MULTI_AGENT_AUTO:
+        selected_architecture, selected_reason = choose_multi_agent_architecture(question, preferred_sources)
+
+    started_at = time.time()
+    emit_multi_agent_event(
+        progress_callback,
+        "multi_agent_architecture",
+        "Multi-Agent 架构选择",
+        "running",
+        "判断本轮使用 Manager-Worker、Pipeline 或 Critic Loop。",
+    )
+    emit_multi_agent_event(
+        progress_callback,
+        "multi_agent_architecture",
+        "Multi-Agent 架构选择",
+        "completed",
+        f"选择 {selected_architecture}。{selected_reason}",
+        int((time.time() - started_at) * 1000),
+    )
+
+    result = _run_agent_pro_core(
+        question=question,
+        use_web=use_web,
+        top_k=top_k,
+        web_max_results=web_max_results,
+        preferred_sources=preferred_sources,
+        router_mode=router_mode,
+        source_strategy=source_strategy,
+        retrieval_strategy=retrieval_strategy,
+        context_packing_strategy=context_packing_strategy,
+        planner_type=planner_type,
+        evaluator_type=evaluator_type,
+        memory_context=memory_context,
+        memory_enabled=memory_enabled,
+        memory_route_strategy=memory_route_strategy,
+        conversation_context=conversation_context,
+        chroma_path=chroma_path,
+        metadata_scope=metadata_scope,
+        stream_callback=stream_callback,
+        progress_callback=progress_callback,
+        permission_context=permission_context,
+        trace_id=trace_id,
+        model_name=model_name,
+    )
+    architecture_trace = [
+        make_stage_trace(
+            name="Multi-Agent 架构选择",
+            tool="multi_agent_architecture",
+            reason="教学配置用于对比三种基础多 Agent 架构。",
+            summary=f"选择 {selected_architecture}。{selected_reason}",
+        )
+    ]
+    architecture_trace.extend(
+        build_multi_agent_trace(selected_architecture, selected_reason, question, result)
+    )
+    result["steps"] = architecture_trace + result.get("steps", [])
+    result["multi_agent_architecture"] = selected_architecture
+    result["multi_agent_architecture_requested"] = multi_agent_architecture
+    result["multi_agent_planner_mode"] = f"multi_agent_{selected_architecture}"
+    result["base_planner_mode"] = result.get("planner_mode", "")
+    teaching_config = result.setdefault("teaching_config", {})
+    teaching_config["multi_agent_architecture"] = selected_architecture
+    teaching_config["multi_agent_architecture_requested"] = multi_agent_architecture
+    return result

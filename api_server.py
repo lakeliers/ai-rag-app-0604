@@ -61,6 +61,7 @@ class ChatConfig(BaseModel):
     router_mode: str = agent_runtime.ROUTER_MODE_RULES
     planner_type: str = agent_runtime.PLANNER_FALLBACK_MIXED
     evaluator_type: str = agent_runtime.EVALUATOR_RULES
+    multi_agent_architecture: str = agent_runtime.MULTI_AGENT_AUTO
     memory_enabled: bool = True
     memory_route_strategy: str = agent_runtime.MEMORY_ROUTE_AUTO
     top_k: int = 3
@@ -255,6 +256,7 @@ def chat(request: ChatRequest):
                 memory_context=memory_context,
                 memory_enabled=config.memory_enabled,
                 memory_route_strategy=config.memory_route_strategy,
+                multi_agent_architecture=config.multi_agent_architecture,
                 metadata_scope={"session_id": session_id},
                 progress_callback=progress_callback,
             )
@@ -274,6 +276,7 @@ def chat(request: ChatRequest):
                 memory_context=memory_context,
                 memory_enabled=config.memory_enabled,
                 memory_route_strategy=config.memory_route_strategy,
+                multi_agent_architecture=config.multi_agent_architecture,
                 metadata_scope={"session_id": session_id},
                 progress_callback=progress_callback,
             )
@@ -295,6 +298,7 @@ def chat(request: ChatRequest):
             memory_context=memory_context,
             memory_enabled=config.memory_enabled,
             memory_route_strategy=config.memory_route_strategy,
+            multi_agent_architecture=config.multi_agent_architecture,
             metadata_scope={"session_id": session_id},
             progress_callback=progress_callback,
         )

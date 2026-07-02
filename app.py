@@ -235,6 +235,12 @@ MEMORY_ROUTE_STRATEGY_LABELS = {
     "总是读取（教学对比）": "always",
     "关闭读取": "off",
 }
+MULTI_AGENT_ARCHITECTURE_LABELS = {
+    "自动选择": "auto",
+    "manager-worker": "manager_worker",
+    "pipeline": "pipeline",
+    "critic loop": "critic_loop",
+}
 
 CATEGORY_LABELS = {
     "chitchat": "chitchat（闲聊）",
@@ -533,6 +539,7 @@ def config_snapshot_pills(config):
         chunks = [chunks]
     return [
         str(config.get("run_mode", "")),
+        f"多Agent：{config.get('multi_agent_architecture_label', config.get('multi_agent_architecture', ''))}",
         f"资料：{config.get('source_strategy_label', config.get('source_strategy', ''))}",
         f"检索：{config.get('retrieval_strategy_label', config.get('retrieval_strategy', ''))}",
         f"上下文：{config.get('context_packing_label', config.get('context_packing_strategy', ''))}",
@@ -557,6 +564,8 @@ def render_config_snapshot(config, title="本轮配置快照"):
 def build_current_config():
     return {
         "run_mode": run_mode,
+        "multi_agent_architecture_label": multi_agent_architecture_label,
+        "multi_agent_architecture": multi_agent_architecture,
         "router_mode": router_mode,
         "source_strategy": source_strategy,
         "retrieval_strategy": retrieval_strategy,
@@ -875,6 +884,7 @@ def base_plan_steps(run_mode_value):
             {"id": "final_answer", "name": "生成最终回答", "tool": "Final Answer", "status": "pending", "summary": "输出给前端展示。"},
         ]
     return [
+        {"id": "multi_agent_architecture", "name": "Multi-Agent 架构选择", "tool": "Multi-Agent", "status": "pending", "summary": "选择 manager-worker、pipeline、critic loop 或自动判断。"},
         {"id": "intent_classifier", "name": "意图分类", "tool": "Intent Classifier", "status": "pending", "summary": "判断问题类型。"},
         {"id": "memory_router", "name": "Memory Route（记忆路由）", "tool": "Memory Router", "status": "pending", "summary": "结合意图判断是否需要读取长期记忆。"},
         {"id": "memory_retriever", "name": "读取长期记忆", "tool": "Memory", "status": "pending", "summary": "仅在 Memory Route 判断需要时读取相关记忆。"},
@@ -1267,7 +1277,7 @@ def render_memory_confirmation():
 
 
 def render_settings_panel():
-    global uploaded_files, run_mode, router_mode_label, router_mode, max_autonomous_steps, planner_type_label, planner_type, evaluator_type_label, evaluator_type, memory_enabled, memory_route_strategy_label, memory_route_strategy, memory_write_mode_label, memory_write_mode, source_strategy_label, source_strategy, retrieval_strategy_label, retrieval_strategy, context_packing_label, context_packing_strategy, chunking_strategy_labels, chunking_strategy, top_k, web_max_results, plan_progress_enabled, streaming_enabled, trace_level, deepseek_model_label, deepseek_model, safety_mode_label, safety_mode, confirmation_policy_label, confirmation_policy, prompt_injection_guard, max_tool_calls_per_run, max_web_pages_per_run, show_permission_audit
+    global uploaded_files, run_mode, multi_agent_architecture_label, multi_agent_architecture, router_mode_label, router_mode, max_autonomous_steps, planner_type_label, planner_type, evaluator_type_label, evaluator_type, memory_enabled, memory_route_strategy_label, memory_route_strategy, memory_write_mode_label, memory_write_mode, source_strategy_label, source_strategy, retrieval_strategy_label, retrieval_strategy, context_packing_label, context_packing_strategy, chunking_strategy_labels, chunking_strategy, top_k, web_max_results, plan_progress_enabled, streaming_enabled, trace_level, deepseek_model_label, deepseek_model, safety_mode_label, safety_mode, confirmation_policy_label, confirmation_policy, prompt_injection_guard, max_tool_calls_per_run, max_web_pages_per_run, show_permission_audit
     st.markdown("### 资料")
     uploaded_files = st.file_uploader(
         "上传文件或图片",
@@ -1345,6 +1355,13 @@ def render_settings_panel():
         agent.ENABLE_RERANKER = reranker_enabled
 
     with st.expander("Agent 高级设置", expanded=False):
+        multi_agent_architecture_label = st.selectbox(
+            "Multi-Agent（多智能体）架构",
+            list(MULTI_AGENT_ARCHITECTURE_LABELS.keys()),
+            index=0,
+            help="用于教学对比 Manager-Worker、Pipeline、Critic Loop 三种基础多 Agent 架构。",
+        )
+        multi_agent_architecture = MULTI_AGENT_ARCHITECTURE_LABELS[multi_agent_architecture_label]
         router_mode_label = st.radio(
             "路由模式",
             ["规则路由", "规则-LLM-规则路由"],
@@ -1655,6 +1672,12 @@ def render_compare_settings(panel_id, title):
         web_max_results_value = st.slider("网页结果数", 1, 5, 2, key=f"compare_web_max_{panel_id}")
 
     with st.expander("Agent / 模型", expanded=False):
+        multi_agent_architecture_label_value = st.selectbox(
+            "Multi-Agent（多智能体）架构",
+            list(MULTI_AGENT_ARCHITECTURE_LABELS.keys()),
+            index=0,
+            key=f"compare_multi_agent_{panel_id}",
+        )
         router_mode_label_value = st.radio(
             "路由模式",
             ["规则路由", "规则-LLM-规则路由"],
@@ -1760,6 +1783,8 @@ def render_compare_settings(panel_id, title):
     return {
         "uploaded_files": uploaded,
         "run_mode": run_mode_value,
+        "multi_agent_architecture_label": multi_agent_architecture_label_value,
+        "multi_agent_architecture": MULTI_AGENT_ARCHITECTURE_LABELS[multi_agent_architecture_label_value],
         "source_strategy_label": source_strategy_label_value,
         "source_strategy": SOURCE_STRATEGY_LABELS[source_strategy_label_value],
         "retrieval_strategy_label": retrieval_strategy_label_value,
@@ -1800,6 +1825,8 @@ def render_compare_settings(panel_id, title):
 def build_compare_config_snapshot(config):
     return {
         "run_mode": config["run_mode"],
+        "multi_agent_architecture_label": config["multi_agent_architecture_label"],
+        "multi_agent_architecture": config["multi_agent_architecture"],
         "source_strategy_label": config["source_strategy_label"],
         "router_mode": config["router_mode"],
         "source_strategy": config["source_strategy"],
@@ -1946,6 +1973,7 @@ def run_compare_agent_turn(panel_id, prompt, config):
             memory_context=memory_context,
             memory_enabled=config["memory_enabled"],
             memory_route_strategy=config["memory_route_strategy"],
+            multi_agent_architecture=config["multi_agent_architecture"],
             conversation_context=conversation_context,
             metadata_scope={"session_id": session_id},
             progress_callback=handle_plan_progress,
@@ -1970,6 +1998,7 @@ def run_compare_agent_turn(panel_id, prompt, config):
             memory_context=memory_context,
             memory_enabled=config["memory_enabled"],
             memory_route_strategy=config["memory_route_strategy"],
+            multi_agent_architecture=config["multi_agent_architecture"],
             conversation_context=conversation_context,
             metadata_scope={"session_id": session_id},
             stream_callback=handle_answer_stream if config["streaming_enabled"] else None,
@@ -2012,8 +2041,12 @@ def run_compare_agent_turn(panel_id, prompt, config):
         if result.get("planner_mode") == "autonomous_fallback"
         else "行业主流 Runtime（运行时）雏形"
         if result.get("planner_mode") == "pro_runtime"
+        else "Multi-Agent（多智能体）教学架构"
+        if str(result.get("planner_mode", "")).startswith("multi_agent_")
         else "规则兜底"
     )
+    if result.get("multi_agent_architecture"):
+        planner_label = f"{planner_label}｜Multi-Agent：{result.get('multi_agent_architecture')}"
     autonomous_snapshot = {}
     if result.get("planner_mode") == "autonomous_runtime":
         goal = result.get("goal")
@@ -2124,6 +2157,7 @@ def execute_compare_agent_backend(
             memory_context=memory_context,
             memory_enabled=config["memory_enabled"],
             memory_route_strategy=config["memory_route_strategy"],
+            multi_agent_architecture=config["multi_agent_architecture"],
             conversation_context=conversation_context,
             metadata_scope={"session_id": session_id},
             permission_context=permission_context_from_config(config, trace_id),
@@ -2147,6 +2181,7 @@ def execute_compare_agent_backend(
             memory_context=memory_context,
             memory_enabled=config["memory_enabled"],
             memory_route_strategy=config["memory_route_strategy"],
+            multi_agent_architecture=config["multi_agent_architecture"],
             conversation_context=conversation_context,
             metadata_scope={"session_id": session_id},
             permission_context=permission_context_from_config(config, trace_id),
@@ -2177,8 +2212,12 @@ def execute_compare_agent_backend(
         if result.get("planner_mode") == "autonomous_fallback"
         else "行业主流 Runtime（运行时）雏形"
         if result.get("planner_mode") == "pro_runtime"
+        else "Multi-Agent（多智能体）教学架构"
+        if str(result.get("planner_mode", "")).startswith("multi_agent_")
         else "规则兜底"
     )
+    if result.get("multi_agent_architecture"):
+        planner_label = f"{planner_label}｜Multi-Agent：{result.get('multi_agent_architecture')}"
     autonomous_snapshot = {}
     if result.get("planner_mode") == "autonomous_runtime":
         goal = result.get("goal")
@@ -2629,6 +2668,7 @@ st.markdown(
 st.markdown(
     '<div class="config-summary"><div class="config-summary-title">本轮配置</div>'
     f'<span class="config-pill">{run_mode}</span>'
+    f'<span class="config-pill">Multi-Agent：{multi_agent_architecture_label}</span>'
     f'<span class="config-pill">{source_strategy_label}</span>'
     f'<span class="config-pill">{retrieval_strategy_label}</span>'
     f'<span class="config-pill">{context_packing_label}</span>'
@@ -2749,6 +2789,7 @@ if prompt:
                         memory_context=memory_context,
                         memory_enabled=memory_enabled,
                         memory_route_strategy=memory_route_strategy,
+                        multi_agent_architecture=multi_agent_architecture,
                         conversation_context=conversation_context,
                         metadata_scope={"session_id": st.session_state.rag_session_id},
                         progress_callback=handle_plan_progress,
@@ -2774,6 +2815,7 @@ if prompt:
                         memory_context=memory_context,
                         memory_enabled=memory_enabled,
                         memory_route_strategy=memory_route_strategy,
+                        multi_agent_architecture=multi_agent_architecture,
                         conversation_context=conversation_context,
                         metadata_scope={"session_id": st.session_state.rag_session_id},
                         stream_callback=answer_stream_callback,
@@ -2815,8 +2857,12 @@ if prompt:
                 if result.get("planner_mode") == "autonomous_fallback"
                 else "行业主流 Runtime（运行时）雏形"
                 if result.get("planner_mode") == "pro_runtime"
+                else "Multi-Agent（多智能体）教学架构"
+                if str(result.get("planner_mode", "")).startswith("multi_agent_")
                 else "规则兜底"
             )
+            if result.get("multi_agent_architecture"):
+                planner_label = f"{planner_label}｜Multi-Agent：{result.get('multi_agent_architecture')}"
             autonomous_snapshot = {}
             if result.get("planner_mode") == "autonomous_runtime":
                 goal = result.get("goal")

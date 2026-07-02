@@ -645,6 +645,7 @@ def run_case(
     user_input = case["user_input"]
     eval_scope = {"eval_run_id": EVAL_RUN_ID}
     case_source_strategy = case.get("source_strategy", source_strategy)
+    multi_agent_architecture = case.get("multi_agent_architecture", agent_runtime.MULTI_AGENT_AUTO)
     trace_id = f"{EVAL_RUN_ID}_{case['case_id']}"
     permission_context = eval_permission_context(trace_id)
 
@@ -673,6 +674,7 @@ def run_case(
             preferred_sources=preferred_sources,
             router_mode=router_mode,
             source_strategy=case_source_strategy,
+            multi_agent_architecture=multi_agent_architecture,
             chroma_path=EVAL_CHROMA_PATH,
             metadata_scope=eval_scope,
             permission_context=permission_context,
@@ -701,6 +703,7 @@ def run_case(
         preferred_sources=preferred_sources,
         router_mode=router_mode,
         source_strategy=case_source_strategy,
+        multi_agent_architecture=multi_agent_architecture,
         chroma_path=EVAL_CHROMA_PATH,
         metadata_scope=eval_scope,
         permission_context=permission_context,
@@ -838,6 +841,20 @@ def score_expected_mode(case: dict[str, Any], result: dict[str, Any]) -> dict[st
         return {"passed": True, "expected": "", "actual": result.get("planner_mode", "")}
     actual = result.get("planner_mode", "")
     return {"passed": actual == expected, "expected": expected, "actual": actual}
+
+
+def score_multi_agent_architecture(case: dict[str, Any], result: dict[str, Any]) -> dict[str, Any]:
+    expected = case.get("expected_multi_agent_architecture")
+    actual = result.get("multi_agent_architecture", "")
+    requested = result.get("multi_agent_architecture_requested", "")
+    if not expected:
+        return {"passed": True, "expected": "", "actual": actual, "requested": requested}
+    return {
+        "passed": actual == expected,
+        "expected": expected,
+        "actual": actual,
+        "requested": requested,
+    }
 
 
 def score_expected_tools(case: dict[str, Any], result: dict[str, Any]) -> dict[str, Any]:
@@ -996,6 +1013,7 @@ def score_permission_trace(case: dict[str, Any], result: dict[str, Any]) -> dict
 def evaluate_case(case: dict[str, Any], result: dict[str, Any]) -> dict[str, Any]:
     checks = {
         "expected_mode": score_expected_mode(case, result),
+        "multi_agent_architecture": score_multi_agent_architecture(case, result),
         "expected_tools": score_expected_tools(case, result),
         "forbidden_tools": score_forbidden_tools(case, result),
         "sources": score_sources(case, result),
@@ -1015,6 +1033,8 @@ def evaluate_case(case: dict[str, Any], result: dict[str, Any]) -> dict[str, Any
         "checks": checks,
         "result": {
             "planner_mode": result.get("planner_mode", ""),
+            "multi_agent_architecture": result.get("multi_agent_architecture", ""),
+            "multi_agent_architecture_requested": result.get("multi_agent_architecture_requested", ""),
             "tools": actual_tools(result),
             "tasks": actual_tasks(result),
             "stop_reason": result.get("stop_reason", ""),
@@ -1030,6 +1050,8 @@ def evaluate_case(case: dict[str, Any], result: dict[str, Any]) -> dict[str, Any
 def build_expected_behavior(case: dict[str, Any]) -> dict[str, Any]:
     return {
         "expected_mode": case.get("expected_mode", ""),
+        "multi_agent_architecture": case.get("multi_agent_architecture", ""),
+        "expected_multi_agent_architecture": case.get("expected_multi_agent_architecture", ""),
         "expected_tools": case.get("expected_tools", []),
         "forbidden_tools": case.get("forbidden_tools", []),
         "expected_sources": case.get("expected_sources", []),
