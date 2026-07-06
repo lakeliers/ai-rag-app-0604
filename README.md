@@ -1,4 +1,4 @@
-# RAG Agent Pro
+# agent for train
 
 当前主线版本是 Streamlit 应用，线上 Streamlit Cloud 使用 `app.py` 作为生产入口。
 
@@ -11,7 +11,7 @@ streamlit run app.py
 线上地址：
 
 ```text
-https://ai-rag-app-0604.streamlit.app/
+https://agent-for-train.streamlit.app/
 ```
 
 ## 实验入口：React / Next.js

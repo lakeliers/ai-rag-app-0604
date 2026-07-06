@@ -1,8 +1,8 @@
 import "./globals.css";
 
 export const metadata = {
-  title: "RAG Agent Pro",
-  description: "检索增强智能体教学版"
+  title: "agent for train",
+  description: "AI Agent 教学与调试应用"
 };
 
 export default function RootLayout({ children }) {

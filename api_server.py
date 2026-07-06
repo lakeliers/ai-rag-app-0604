@@ -24,7 +24,7 @@ def apply_env_defaults():
 
 apply_env_defaults()
 
-app = FastAPI(title="RAG Agent Pro API")
+app = FastAPI(title="agent for train API")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=os.getenv("CORS_ALLOW_ORIGINS", "*").split(","),

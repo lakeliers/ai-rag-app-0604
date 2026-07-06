@@ -1,4 +1,4 @@
-# RAG Agent Pro 教学配置体验手册
+# agent for train 教学配置体验手册
 
 ## 1. 本轮验收结论
 

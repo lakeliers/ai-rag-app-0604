@@ -68,7 +68,7 @@ if seed_teaching_memory != "0":
 
 
 st.set_page_config(
-    page_title="RAG Agent Pro",
+    page_title="agent for train",
     page_icon="🤖",
     layout="wide",
 )
@@ -2661,7 +2661,7 @@ with st.sidebar:
     render_settings_panel()
 
 st.markdown(
-    '<div class="main-header-card"><h1>RAG Agent Pro（检索增强智能体教学版）</h1>'
+    '<div class="main-header-card"><h1>agent for train</h1>'
     '<p>提问、观察执行过程、检查证据来源、反馈 badcase。资料与教学配置在左侧栏。</p></div>',
     unsafe_allow_html=True,
 )

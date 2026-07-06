@@ -1,4 +1,4 @@
-# RAG Agent Pro Next.js Frontend
+# agent for train Next.js Frontend
 
 这是 React / Next.js 版前端实验工程，用于后续产品级 UI 探索和教学对比。
 

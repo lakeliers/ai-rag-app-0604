@@ -240,7 +240,7 @@ export default function Home() {
       <section className="workspace">
         <header className="hero">
           <div>
-            <p className="eyebrow">RAG Agent Pro</p>
+            <p className="eyebrow">agent for train</p>
             <h1>把资料、联网搜索和 Agent 过程放到一个工作区</h1>
             <p>先提问或上传资料；需要教学实验时，再打开右侧配置。</p>
           </div>

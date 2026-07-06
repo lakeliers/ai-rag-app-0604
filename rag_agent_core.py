@@ -2203,7 +2203,7 @@ def print_sources():
 
 
 def main():
-    print("RAG Agent Pro 已启动。输入 /help 查看命令，输入 /q 退出。")
+    print("agent for train 已启动。输入 /help 查看命令，输入 /q 退出。")
 
     while True:
         try:
