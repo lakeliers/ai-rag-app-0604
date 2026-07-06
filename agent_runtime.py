@@ -593,12 +593,12 @@ def classify_intent_by_rules(question: str, preferred_sources: list[str]) -> Int
     if is_planning_or_advice_question(stripped_question) and not any(
         word in lowered_question for word in freshness_suppression_words + ["最新", "今天", "实时", "官方", "财报", "政策", "法规"]
     ):
-        constraints["needs_web_context"] = False
-        constraints["planning_without_freshness"] = True
+        constraints["needs_web_context"] = True
+        constraints["planning_bounded_web"] = True
         return IntentResult(
             intent="general_qa",
             confidence=0.82,
-            reason="用户在补充方案/行程/建议类约束，不强制要求实时资料，优先基于本轮上下文生成。",
+            reason="用户在补充方案/行程/建议类约束，应联网收集参考资料，但不能因网页读取失败阻塞最终方案。",
             suggested_action="collect_context",
             entities=entities,
             constraints=constraints,
@@ -909,7 +909,7 @@ def plan_high_level_action(intent: IntentResult, preferred_sources: list[str], u
         reason="通用问题先收集可用上下文，再评估是否足够回答。",
         confidence=0.68,
         params={
-            "needs_web": False if intent.constraints.get("planning_without_freshness") else use_web,
+            "needs_web": use_web,
             "needs_upload": bool(preferred_sources),
         },
     )
