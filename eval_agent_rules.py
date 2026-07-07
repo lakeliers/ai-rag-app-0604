@@ -240,6 +240,20 @@ EVAL_WEB_FIXTURES = [
             "在评估环境中，不能因为实时网页读取失败而直接回答未找到任何相关信息。"
         ),
     },
+    {
+        "source": "网页：上海元旦短途旅行稳定样本",
+        "url": "https://example.com/eval/shanghai-new-year-trip",
+        "text": (
+            "上海元旦短途旅行稳定样本：12 月 30 日到 1 月 1 日，从上海出发、4 人、预算 5000 元每人时，"
+            "适合选择高铁 2 到 3 小时可达、冬季体验稳定、住宿与餐饮选择充足的目的地。"
+            "候选目的地包括杭州、苏州、南京、湖州安吉和宁波。"
+            "若预算按每人 5000 元计算，总预算约 20000 元，通常可拆分为交通每人 400 到 800 元、"
+            "住宿每人 1200 到 2200 元、餐饮每人 800 到 1200 元、门票和当地交通每人 500 到 900 元，"
+            "预留机动预算每人 500 到 900 元。元旦假期需提前核验高铁余票、酒店价格、景区预约和天气。"
+            "如果用户没有偏好，可以优先推荐杭州或南京：杭州适合休闲、美食和西湖/良渚/灵隐线；"
+            "南京适合历史文化、美食和城市漫游线。"
+        ),
+    },
 ]
 
 
@@ -313,6 +327,8 @@ def select_eval_web_fixtures(question: str, limit: int | None = None) -> list[di
         preferred = ["网页：星河助手网页传闻"]
     elif "rag" in lowered or "检索增强" in question:
         preferred = ["网页：RAG 定义稳定样本"]
+    elif any(word in question for word in ["旅行", "行程", "出发", "预算", "元旦", "12月30日", "1月1日"]):
+        preferred = ["网页：上海元旦短途旅行稳定样本"]
     else:
         preferred = ["网页：AI Agent 产品趋势稳定样本"]
 
@@ -652,6 +668,7 @@ def run_case(
     eval_scope = {"eval_run_id": EVAL_RUN_ID}
     case_source_strategy = case.get("source_strategy", source_strategy)
     multi_agent_architecture = case.get("multi_agent_architecture", agent_runtime.MULTI_AGENT_AUTO)
+    debate_rounds = case.get("debate_rounds", 2)
     trace_id = f"{EVAL_RUN_ID}_{case['case_id']}"
     permission_context = eval_permission_context(trace_id)
 
@@ -681,6 +698,7 @@ def run_case(
             router_mode=router_mode,
             source_strategy=case_source_strategy,
             multi_agent_architecture=multi_agent_architecture,
+            debate_rounds=debate_rounds,
             chroma_path=EVAL_CHROMA_PATH,
             metadata_scope=eval_scope,
             permission_context=permission_context,
@@ -710,6 +728,7 @@ def run_case(
         router_mode=router_mode,
         source_strategy=case_source_strategy,
         multi_agent_architecture=multi_agent_architecture,
+        debate_rounds=debate_rounds,
         conversation_context=case.get("conversation_context", ""),
         chroma_path=EVAL_CHROMA_PATH,
         metadata_scope=eval_scope,

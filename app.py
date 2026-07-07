@@ -240,6 +240,12 @@ MULTI_AGENT_ARCHITECTURE_LABELS = {
     "manager-worker": "manager_worker",
     "pipeline": "pipeline",
     "critic loop": "critic_loop",
+    "debate": "debate",
+}
+DEBATE_ROUND_LABELS = {
+    "1轮：独立观点 + Judge": 1,
+    "2轮：独立观点 + 互评 + Judge": 2,
+    "3轮：独立观点 + 互评 + 修正 + Judge": 3,
 }
 
 CATEGORY_LABELS = {
@@ -566,6 +572,8 @@ def build_current_config():
         "run_mode": run_mode,
         "multi_agent_architecture_label": multi_agent_architecture_label,
         "multi_agent_architecture": multi_agent_architecture,
+        "debate_rounds_label": debate_rounds_label,
+        "debate_rounds": debate_rounds,
         "router_mode": router_mode,
         "source_strategy": source_strategy,
         "retrieval_strategy": retrieval_strategy,
@@ -884,7 +892,7 @@ def base_plan_steps(run_mode_value):
             {"id": "final_answer", "name": "生成最终回答", "tool": "Final Answer", "status": "pending", "summary": "输出给前端展示。"},
         ]
     return [
-        {"id": "multi_agent_architecture", "name": "Multi-Agent 架构选择", "tool": "Multi-Agent", "status": "pending", "summary": "选择 manager-worker、pipeline、critic loop 或自动判断。"},
+        {"id": "multi_agent_architecture", "name": "Multi-Agent 架构选择", "tool": "Multi-Agent", "status": "pending", "summary": "选择 manager-worker、pipeline、critic loop、debate 或自动判断。"},
         {"id": "intent_classifier", "name": "意图分类", "tool": "Intent Classifier", "status": "pending", "summary": "判断问题类型。"},
         {"id": "memory_router", "name": "Memory Route（记忆路由）", "tool": "Memory Router", "status": "pending", "summary": "结合意图判断是否需要读取长期记忆。"},
         {"id": "memory_retriever", "name": "读取长期记忆", "tool": "Memory", "status": "pending", "summary": "仅在 Memory Route 判断需要时读取相关记忆。"},
@@ -1277,7 +1285,7 @@ def render_memory_confirmation():
 
 
 def render_settings_panel():
-    global uploaded_files, run_mode, multi_agent_architecture_label, multi_agent_architecture, router_mode_label, router_mode, max_autonomous_steps, planner_type_label, planner_type, evaluator_type_label, evaluator_type, memory_enabled, memory_route_strategy_label, memory_route_strategy, memory_write_mode_label, memory_write_mode, source_strategy_label, source_strategy, retrieval_strategy_label, retrieval_strategy, context_packing_label, context_packing_strategy, chunking_strategy_labels, chunking_strategy, top_k, web_max_results, plan_progress_enabled, streaming_enabled, trace_level, deepseek_model_label, deepseek_model, safety_mode_label, safety_mode, confirmation_policy_label, confirmation_policy, prompt_injection_guard, max_tool_calls_per_run, max_web_pages_per_run, show_permission_audit
+    global uploaded_files, run_mode, multi_agent_architecture_label, multi_agent_architecture, debate_rounds_label, debate_rounds, router_mode_label, router_mode, max_autonomous_steps, planner_type_label, planner_type, evaluator_type_label, evaluator_type, memory_enabled, memory_route_strategy_label, memory_route_strategy, memory_write_mode_label, memory_write_mode, source_strategy_label, source_strategy, retrieval_strategy_label, retrieval_strategy, context_packing_label, context_packing_strategy, chunking_strategy_labels, chunking_strategy, top_k, web_max_results, plan_progress_enabled, streaming_enabled, trace_level, deepseek_model_label, deepseek_model, safety_mode_label, safety_mode, confirmation_policy_label, confirmation_policy, prompt_injection_guard, max_tool_calls_per_run, max_web_pages_per_run, show_permission_audit
     st.markdown("### 资料")
     uploaded_files = st.file_uploader(
         "上传文件或图片",
@@ -1359,9 +1367,16 @@ def render_settings_panel():
             "Multi-Agent（多智能体）架构",
             list(MULTI_AGENT_ARCHITECTURE_LABELS.keys()),
             index=0,
-            help="用于教学对比 Manager-Worker、Pipeline、Critic Loop 三种基础多 Agent 架构。",
+            help="用于教学对比 Manager-Worker、Pipeline、Critic Loop、Debate 等多智能体架构。",
         )
         multi_agent_architecture = MULTI_AGENT_ARCHITECTURE_LABELS[multi_agent_architecture_label]
+        debate_rounds_label = st.selectbox(
+            "Debate（辩论）轮次",
+            list(DEBATE_ROUND_LABELS.keys()),
+            index=1,
+            help="只在 Multi-Agent 架构选择 debate 或自动选择命中 debate 时生效；轮次越多，观点修正越充分，但成本和等待时间越高。",
+        )
+        debate_rounds = DEBATE_ROUND_LABELS[debate_rounds_label]
         router_mode_label = st.radio(
             "路由模式",
             ["规则路由", "规则-LLM-规则路由"],
@@ -1678,6 +1693,13 @@ def render_compare_settings(panel_id, title):
             index=0,
             key=f"compare_multi_agent_{panel_id}",
         )
+        debate_rounds_label_value = st.selectbox(
+            "Debate（辩论）轮次",
+            list(DEBATE_ROUND_LABELS.keys()),
+            index=1,
+            key=f"compare_debate_rounds_{panel_id}",
+            help="只在本侧选择 debate 或自动命中 debate 时生效。",
+        )
         router_mode_label_value = st.radio(
             "路由模式",
             ["规则路由", "规则-LLM-规则路由"],
@@ -1785,6 +1807,8 @@ def render_compare_settings(panel_id, title):
         "run_mode": run_mode_value,
         "multi_agent_architecture_label": multi_agent_architecture_label_value,
         "multi_agent_architecture": MULTI_AGENT_ARCHITECTURE_LABELS[multi_agent_architecture_label_value],
+        "debate_rounds_label": debate_rounds_label_value,
+        "debate_rounds": DEBATE_ROUND_LABELS[debate_rounds_label_value],
         "source_strategy_label": source_strategy_label_value,
         "source_strategy": SOURCE_STRATEGY_LABELS[source_strategy_label_value],
         "retrieval_strategy_label": retrieval_strategy_label_value,
@@ -1974,6 +1998,7 @@ def run_compare_agent_turn(panel_id, prompt, config):
             memory_enabled=config["memory_enabled"],
             memory_route_strategy=config["memory_route_strategy"],
             multi_agent_architecture=config["multi_agent_architecture"],
+            debate_rounds=config.get("debate_rounds", 2),
             conversation_context=conversation_context,
             metadata_scope={"session_id": session_id},
             progress_callback=handle_plan_progress,
@@ -1999,6 +2024,7 @@ def run_compare_agent_turn(panel_id, prompt, config):
             memory_enabled=config["memory_enabled"],
             memory_route_strategy=config["memory_route_strategy"],
             multi_agent_architecture=config["multi_agent_architecture"],
+            debate_rounds=config.get("debate_rounds", 2),
             conversation_context=conversation_context,
             metadata_scope={"session_id": session_id},
             stream_callback=handle_answer_stream if config["streaming_enabled"] else None,
@@ -2158,6 +2184,7 @@ def execute_compare_agent_backend(
             memory_enabled=config["memory_enabled"],
             memory_route_strategy=config["memory_route_strategy"],
             multi_agent_architecture=config["multi_agent_architecture"],
+            debate_rounds=config.get("debate_rounds", 2),
             conversation_context=conversation_context,
             metadata_scope={"session_id": session_id},
             permission_context=permission_context_from_config(config, trace_id),
@@ -2182,6 +2209,7 @@ def execute_compare_agent_backend(
             memory_enabled=config["memory_enabled"],
             memory_route_strategy=config["memory_route_strategy"],
             multi_agent_architecture=config["multi_agent_architecture"],
+            debate_rounds=config.get("debate_rounds", 2),
             conversation_context=conversation_context,
             metadata_scope={"session_id": session_id},
             permission_context=permission_context_from_config(config, trace_id),
@@ -2790,6 +2818,7 @@ if prompt:
                         memory_enabled=memory_enabled,
                         memory_route_strategy=memory_route_strategy,
                         multi_agent_architecture=multi_agent_architecture,
+                        debate_rounds=debate_rounds,
                         conversation_context=conversation_context,
                         metadata_scope={"session_id": st.session_state.rag_session_id},
                         progress_callback=handle_plan_progress,
@@ -2816,6 +2845,7 @@ if prompt:
                         memory_enabled=memory_enabled,
                         memory_route_strategy=memory_route_strategy,
                         multi_agent_architecture=multi_agent_architecture,
+                        debate_rounds=debate_rounds,
                         conversation_context=conversation_context,
                         metadata_scope={"session_id": st.session_state.rag_session_id},
                         stream_callback=answer_stream_callback,
