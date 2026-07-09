@@ -241,6 +241,7 @@ MULTI_AGENT_ARCHITECTURE_LABELS = {
     "pipeline": "pipeline",
     "critic loop": "critic_loop",
     "debate": "debate",
+    "swarm": "swarm",
 }
 DEBATE_ROUND_LABELS = {
     "1轮：独立观点 + Judge": 1,
@@ -892,7 +893,7 @@ def base_plan_steps(run_mode_value):
             {"id": "final_answer", "name": "生成最终回答", "tool": "Final Answer", "status": "pending", "summary": "输出给前端展示。"},
         ]
     return [
-        {"id": "multi_agent_architecture", "name": "Multi-Agent 架构选择", "tool": "Multi-Agent", "status": "pending", "summary": "选择 manager-worker、pipeline、critic loop、debate 或自动判断。"},
+        {"id": "multi_agent_architecture", "name": "Multi-Agent 架构选择", "tool": "Multi-Agent", "status": "pending", "summary": "选择 manager-worker、pipeline、critic loop、debate、swarm 或自动判断。"},
         {"id": "intent_classifier", "name": "意图分类", "tool": "Intent Classifier", "status": "pending", "summary": "判断问题类型。"},
         {"id": "memory_router", "name": "Memory Route（记忆路由）", "tool": "Memory Router", "status": "pending", "summary": "结合意图判断是否需要读取长期记忆。"},
         {"id": "memory_retriever", "name": "读取长期记忆", "tool": "Memory", "status": "pending", "summary": "仅在 Memory Route 判断需要时读取相关记忆。"},
@@ -1367,7 +1368,7 @@ def render_settings_panel():
             "Multi-Agent（多智能体）架构",
             list(MULTI_AGENT_ARCHITECTURE_LABELS.keys()),
             index=0,
-            help="用于教学对比 Manager-Worker、Pipeline、Critic Loop、Debate 等多智能体架构。",
+            help="用于教学对比 Manager-Worker、Pipeline、Critic Loop、Debate、Swarm 等多智能体架构。",
         )
         multi_agent_architecture = MULTI_AGENT_ARCHITECTURE_LABELS[multi_agent_architecture_label]
         debate_rounds_label = st.selectbox(

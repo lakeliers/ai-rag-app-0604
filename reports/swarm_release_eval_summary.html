@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Swarm 架构版本验收报告</title>
+  <style>
+    body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; color: #202331; background: #f6f7fb; }
+    main { max-width: 980px; margin: 0 auto; padding: 32px 18px 56px; }
+    h1 { font-size: 30px; margin: 0 0 8px; }
+    h2 { font-size: 20px; margin: 28px 0 12px; }
+    p { line-height: 1.7; color: #4b5263; }
+    .card { background: #fff; border: 1px solid #e2e6ef; border-radius: 12px; padding: 18px; margin-top: 14px; }
+    table { width: 100%; border-collapse: collapse; background: #fff; border-radius: 12px; overflow: hidden; border: 1px solid #e2e6ef; }
+    th, td { padding: 12px 14px; border-bottom: 1px solid #eef1f6; text-align: left; vertical-align: top; }
+    th { background: #f0f3f8; color: #2e3341; }
+    tr:last-child td { border-bottom: 0; }
+    .ok { color: #0a7d46; font-weight: 700; }
+    code { background: #eef1f6; padding: 2px 5px; border-radius: 5px; }
+    ul { line-height: 1.8; }
+  </style>
+</head>
+<body>
+<main>
+  <h1>Swarm 架构版本验收报告</h1>
+  <p>本次版本把多 Agent 教学能力补充到 Swarm 架构，并把架构路由、前端配置和 eval 集合同步更新。</p>
+
+  <section class="card">
+    <h2>本次迭代内容</h2>
+    <ul>
+      <li>新增 <code>swarm</code> 多 Agent 架构：State 初始化、Agent Registry、Selector、Agent Running、State Merger、Handoff、Stop Condition、Final Composer。</li>
+      <li>架构路由支持自动选择 Swarm：用于路径不确定、需要动态接力、探索产品机会和 MVP 路线的任务。</li>
+      <li>前端多 Agent 架构配置新增 <code>swarm</code> 选项。</li>
+      <li>补充 Swarm 手动选择和自动路由的 eval case。</li>
+      <li>修正“理想汽车 2026 年一季度财报”类联网回答的实体保留逻辑。</li>
+    </ul>
+  </section>
+
+  <h2>真实 Eval 结果</h2>
+  <table>
+    <thead>
+      <tr>
+        <th>测试集</th>
+        <th>通过情况</th>
+        <th>Judge</th>
+        <th>报告文件</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>Smoke Set</td>
+        <td class="ok">17 / 17 通过</td>
+        <td>LLM-as-Judge 已启用</td>
+        <td><code>reports/swarm_real_smoke_report.html</code></td>
+      </tr>
+      <tr>
+        <td>Regression Set</td>
+        <td class="ok">27 / 27 通过</td>
+        <td>LLM-as-Judge 已启用</td>
+        <td><code>reports/swarm_real_regression_report.html</code></td>
+      </tr>
+      <tr>
+        <td>Benchmark Set</td>
+        <td class="ok">47 / 47 通过</td>
+        <td>LLM-as-Judge 已启用</td>
+        <td><code>reports/swarm_real_benchmark_report.html</code></td>
+      </tr>
+    </tbody>
+  </table>
+
+  <section class="card">
+    <h2>新增关键 Case</h2>
+    <ul>
+      <li><code>multi_agent_swarm_001</code>：验证手动选择 Swarm 时，完整展示 Swarm 动态接力链路。</li>
+      <li><code>multi_agent_auto_swarm_001</code>：验证自动路由能把路径不确定的产品探索任务分配到 Swarm。</li>
+    </ul>
+  </section>
+
+  <section class="card">
+    <h2>验收结论</h2>
+    <p><span class="ok">通过。</span> 本地最新版本已经用真实 API Key 跑完 smoke、regression、benchmark 三套 eval，全量通过，可以推送上线。</p>
+  </section>
+</main>
+</body>
+</html>

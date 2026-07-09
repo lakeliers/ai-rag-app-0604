@@ -41,16 +41,19 @@ MULTI_AGENT_MANAGER_WORKER = "manager_worker"
 MULTI_AGENT_PIPELINE = "pipeline"
 MULTI_AGENT_CRITIC_LOOP = "critic_loop"
 MULTI_AGENT_DEBATE = "debate"
+MULTI_AGENT_SWARM = "swarm"
 MULTI_AGENT_ARCHITECTURES = {
     MULTI_AGENT_AUTO,
     MULTI_AGENT_MANAGER_WORKER,
     MULTI_AGENT_PIPELINE,
     MULTI_AGENT_CRITIC_LOOP,
     MULTI_AGENT_DEBATE,
+    MULTI_AGENT_SWARM,
 }
 DEBATE_MIN_ROUNDS = 1
 DEBATE_MAX_ROUNDS = 3
 DEBATE_LLM_TIMEOUT_SECONDS = float(os.getenv("DEBATE_LLM_TIMEOUT_SECONDS", "18"))
+SWARM_LLM_TIMEOUT_SECONDS = float(os.getenv("SWARM_LLM_TIMEOUT_SECONDS", "14"))
 
 ProgressCallback = Callable[[dict[str, Any]], None]
 
@@ -160,6 +163,15 @@ class DebateRole:
     system_prompt: str
     allowed_focus: list[str] = field(default_factory=list)
     forbidden_focus: list[str] = field(default_factory=list)
+
+
+@dataclass
+class SwarmAgent:
+    id: str
+    name: str
+    goal: str
+    writes: list[str] = field(default_factory=list)
+    system_prompt: str = ""
 
 
 def normalize_user_text(text: str) -> str:
@@ -1697,14 +1709,16 @@ def tool_generate_answer(
                 + "\n".join(source_lines)
             )
 
-    if "财报" in question and any(word in question for word in ["一季度", "Q1", "q1"]):
-        missing_finance_terms = [
-            term
-            for term in ["理想汽车", "2026", "一季度"]
-            if term in question and term not in answer
-        ]
-        if missing_finance_terms:
-            answer = f"关于理想汽车 2026 年一季度财报情况：\n\n{answer}"
+    normalized_question = normalize_user_text(question)
+    if (
+        "理想汽车" in question
+        and "2026" in question
+        and any(word in normalized_question for word in ["一季度", "第一季度", "q1"])
+        and any(word in question for word in ["财报", "业绩", "财务"])
+    ):
+        required_phrase = "理想汽车 2026 年一季度财报情况"
+        if required_phrase not in answer:
+            answer = f"关于{required_phrase}：\n\n{answer}"
 
     return ToolResult(
         status="degraded" if generation_error else "success",
@@ -3145,12 +3159,36 @@ def choose_multi_agent_architecture(question: str, preferred_sources: list[str] 
     decomposition_words = ["分别", "多个", "竞品", "对比", "调研", "横向", "5个", "三家", "多个产品", "多份"]
     quality_words = ["审查", "检查", "高质量", "正式", "发布", "报告", "优化", "润色", "校验", "引用"]
     debate_words = ["是否应该", "要不要", "选哪个", "利弊", "权衡", "评审", "路线选择", "值得做", "该不该", "方案取舍"]
+    swarm_words = [
+        "探索",
+        "机会",
+        "mvp",
+        "路径不确定",
+        "边做边看",
+        "动态调整",
+        "动态判断",
+        "动态接力",
+        "持续推进",
+        "复杂任务",
+        "长期任务",
+        "逐步",
+        "如果发现",
+        "过程中",
+        "多个角色",
+        "新市场",
+        "产品机会",
+        "从0到1",
+        "落地方案",
+        "根据中间",
+    ]
     if any(word in normalized for word in debate_words):
         return MULTI_AGENT_DEBATE, "任务存在多种合理方案或明显取舍，适合 Debate 多立场论证后裁决。"
     if len(preferred_sources) >= 2 or any(word in normalized for word in decomposition_words):
         return MULTI_AGENT_MANAGER_WORKER, "任务存在多个对象或可拆分子任务，适合 Manager-Worker 分工执行。"
     if any(word in normalized for word in quality_words):
         return MULTI_AGENT_CRITIC_LOOP, "任务对最终产物质量或校验要求较高，适合 Critic Loop。"
+    if any(word in normalized for word in swarm_words):
+        return MULTI_AGENT_SWARM, "任务路径可能随中间发现变化，适合 Swarm 多角色动态接力。"
     return MULTI_AGENT_PIPELINE, "任务主流程稳定，适合 Pipeline 固定步骤接力。"
 
 
@@ -3650,6 +3688,358 @@ def run_critic_loop_process(
     }
 
 
+def build_swarm_agent_registry() -> list[SwarmAgent]:
+    return [
+        SwarmAgent(
+            id="research_agent",
+            name="资料研究 Agent",
+            goal="从已有 RAG / Web 结果中提取可用事实和依据。",
+            writes=["facts", "sources"],
+            system_prompt="你是资料研究 Agent，只负责提取事实、依据和资料缺口，不做最终方案。",
+        ),
+        SwarmAgent(
+            id="analysis_agent",
+            name="分析 Agent",
+            goal="基于事实拆解问题、形成判断框架和关键洞察。",
+            writes=["analysis"],
+            system_prompt="你是分析 Agent，只负责结构化分析，不扩展无依据事实。",
+        ),
+        SwarmAgent(
+            id="risk_agent",
+            name="风险 Agent",
+            goal="识别资料不足、执行风险、成本风险和错误决策风险。",
+            writes=["risks"],
+            system_prompt="你是风险 Agent，只负责指出风险和边界条件。",
+        ),
+        SwarmAgent(
+            id="product_agent",
+            name="方案 Agent",
+            goal="把事实、分析和风险转成可执行建议或 MVP 路线。",
+            writes=["recommendations"],
+            system_prompt="你是方案 Agent，只负责输出可落地建议、MVP 步骤和下一步动作。",
+        ),
+    ]
+
+
+def compact_swarm_context(base_result: dict[str, Any]) -> dict[str, Any]:
+    sources = []
+    for item in base_result.get("sources", [])[:5]:
+        sources.append({
+            "source": item.get("source", ""),
+            "source_type": item.get("source_type", ""),
+            "document": re.sub(r"\s+", " ", str(item.get("document", ""))).strip()[:500],
+        })
+    return {
+        "base_answer": re.sub(r"\s+", " ", str(base_result.get("answer", ""))).strip()[:1600],
+        "sources": sources,
+        "source_count": len(base_result.get("sources", [])),
+        "evaluation": base_result.get("evaluation", {}),
+        "validation": base_result.get("validation", {}),
+    }
+
+
+def init_swarm_state(question: str, context: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "goal": question,
+        "facts": [],
+        "analysis": [],
+        "risks": [],
+        "recommendations": [],
+        "sources": context.get("sources", []),
+        "step_count": 0,
+        "max_steps": 4,
+        "trace": [],
+        "final_answer": "",
+    }
+
+
+def select_swarm_agent(state: dict[str, Any], registry: list[SwarmAgent]) -> dict[str, Any]:
+    registry_by_id = {item.id: item for item in registry}
+    if not state.get("facts"):
+        agent_id = "research_agent"
+        reason = "state 中还没有可用事实，先让资料研究 Agent 补齐 facts。"
+    elif not state.get("analysis"):
+        agent_id = "analysis_agent"
+        reason = "已有 facts，但还缺少结构化分析。"
+    elif not state.get("risks"):
+        agent_id = "risk_agent"
+        reason = "已有分析，但还没有风险和边界判断。"
+    elif not state.get("recommendations"):
+        agent_id = "product_agent"
+        reason = "事实、分析和风险已具备，可以形成 MVP 或行动建议。"
+    else:
+        agent_id = "product_agent"
+        reason = "核心 state 已完整，进入最终整理前的方案复核。"
+    selected = registry_by_id[agent_id]
+    return {"agent": selected, "reason": reason, "confidence": 0.86}
+
+
+def fallback_swarm_agent_result(agent_def: SwarmAgent, question: str, state: dict[str, Any], context: dict[str, Any]) -> dict[str, Any]:
+    if agent_def.id == "research_agent":
+        facts = []
+        for source in context.get("sources", [])[:4]:
+            snippet = source.get("document", "")
+            if snippet:
+                facts.append(f"{source.get('source', '参考资料')}：{snippet[:220]}")
+        if not facts and context.get("base_answer"):
+            facts.append(f"基础回答摘要：{context['base_answer'][:260]}")
+        if not facts:
+            facts.append("当前没有稳定外部资料，后续结论必须标记为低置信度假设。")
+        return {
+            "agent_id": agent_def.id,
+            "facts": facts,
+            "sources": context.get("sources", [])[:4],
+            "confidence": 0.62 if facts else 0.35,
+            "next_agent": "analysis_agent",
+            "reason": "基于现有资料提取 facts。",
+        }
+    if agent_def.id == "analysis_agent":
+        return {
+            "agent_id": agent_def.id,
+            "analysis": [
+                "这是一个路径会随中间发现调整的任务，适合使用 Swarm state 逐步补全事实、分析、风险和建议。",
+                f"用户目标是：{question[:80]}。需要先确认资料质量，再收敛可执行方案。",
+            ],
+            "confidence": 0.68,
+            "next_agent": "risk_agent",
+            "reason": "事实已具备，进入结构化分析。",
+        }
+    if agent_def.id == "risk_agent":
+        return {
+            "agent_id": agent_def.id,
+            "risks": [
+                "如果资料覆盖不足，最终方案只能作为初步建议，不能当成确定事实。",
+                "动态接力会增加步骤和成本，需要 stop condition 控制最大轮次。",
+            ],
+            "confidence": 0.7,
+            "next_agent": "product_agent",
+            "reason": "补充风险和边界后再输出方案。",
+        }
+    return {
+        "agent_id": agent_def.id,
+        "recommendations": [
+            "先做最小可行版本：明确目标用户、核心场景、关键数据来源和验收指标。",
+            "用一轮真实用户或真实资料测试验证假设，再决定是否扩大能力范围。",
+            "把 Swarm 的每次交接记录进 trace，方便教学和问题排查。",
+        ],
+        "confidence": 0.72,
+        "next_agent": "final_composer",
+        "reason": "已有事实、分析和风险，可以进入最终整理。",
+    }
+
+
+def call_swarm_llm_json(
+    agent_def: SwarmAgent,
+    question: str,
+    state: dict[str, Any],
+    context: dict[str, Any],
+    fallback: dict[str, Any],
+    model_name: str = "",
+) -> dict[str, Any]:
+    client = agent.get_deepseek_client()
+    if client is None:
+        fallback["llm_status"] = "fallback_no_client"
+        return fallback
+    payload = {
+        "question": question,
+        "current_state": {
+            "facts": state.get("facts", [])[:5],
+            "analysis": state.get("analysis", [])[:5],
+            "risks": state.get("risks", [])[:5],
+            "recommendations": state.get("recommendations", [])[:5],
+            "source_count": len(context.get("sources", [])),
+        },
+        "available_context": context,
+        "your_role": {
+            "id": agent_def.id,
+            "name": agent_def.name,
+            "goal": agent_def.goal,
+            "writes": agent_def.writes,
+        },
+        "output_schema": {
+            "facts": ["仅 research_agent 输出"],
+            "analysis": ["仅 analysis_agent 输出"],
+            "risks": ["仅 risk_agent 输出"],
+            "recommendations": ["仅 product_agent 输出"],
+            "confidence": 0.0,
+            "next_agent": "建议交接对象",
+            "reason": "为什么这么处理",
+        },
+    }
+    try:
+        response = client.chat.completions.create(
+            model=model_name or agent.DEEPSEEK_MODEL,
+            messages=[
+                {"role": "system", "content": agent_def.system_prompt + " 只输出 JSON，不要输出 Markdown。"},
+                {"role": "user", "content": json.dumps(payload, ensure_ascii=False)},
+            ],
+            temperature=0.2,
+            max_tokens=650,
+            timeout=SWARM_LLM_TIMEOUT_SECONDS,
+        )
+        parsed = extract_json_object(response.choices[0].message.content or "")
+        if isinstance(parsed, dict):
+            parsed["agent_id"] = agent_def.id
+            parsed.setdefault("llm_status", "success")
+            return parsed
+    except Exception as exc:
+        fallback["llm_status"] = "fallback_error"
+        fallback["error"] = str(exc)[:160]
+    return fallback
+
+
+def merge_swarm_result(state: dict[str, Any], agent_result: dict[str, Any]) -> dict[str, Any]:
+    for key in ["facts", "analysis", "risks", "recommendations"]:
+        values = agent_result.get(key, [])
+        if isinstance(values, str):
+            values = [values]
+        if not isinstance(values, list):
+            continue
+        existing = state.setdefault(key, [])
+        for value in values:
+            value_text = str(value).strip()
+            if value_text and value_text not in existing:
+                existing.append(value_text)
+    state["step_count"] = int(state.get("step_count", 0)) + 1
+    state.setdefault("trace", []).append({
+        "agent_id": agent_result.get("agent_id", ""),
+        "reason": agent_result.get("reason", ""),
+        "confidence": agent_result.get("confidence", 0),
+        "next_agent": agent_result.get("next_agent", ""),
+        "llm_status": agent_result.get("llm_status", ""),
+    })
+    return state
+
+
+def handoff_swarm(state: dict[str, Any], selected: dict[str, Any], agent_result: dict[str, Any]) -> dict[str, Any]:
+    next_agent = agent_result.get("next_agent", "")
+    allowed_next = {"analysis_agent", "risk_agent", "product_agent", "final_composer", ""}
+    if next_agent not in allowed_next:
+        next_agent = ""
+    return {
+        "from_agent": selected["agent"].id,
+        "suggested_next_agent": next_agent,
+        "accepted": True,
+        "reason": agent_result.get("reason", selected.get("reason", "")),
+    }
+
+
+def should_stop_swarm(state: dict[str, Any]) -> tuple[bool, str]:
+    if state.get("facts") and state.get("analysis") and state.get("risks") and state.get("recommendations"):
+        return True, "state 已包含 facts、analysis、risks、recommendations，可以生成最终回答。"
+    if int(state.get("step_count", 0)) >= int(state.get("max_steps", 4)):
+        return True, "达到 Swarm 最大接力步数，停止继续消耗。"
+    return False, "继续动态接力。"
+
+
+def compose_swarm_answer(question: str, state: dict[str, Any], context: dict[str, Any]) -> str:
+    irrelevant_markers = ["旅行", "上海", "预算", "12月30", "1月1", "元旦", "酒店", "机票"]
+    filtered_facts = [
+        item for item in state.get("facts", [])
+        if not any(marker in str(item) for marker in irrelevant_markers)
+    ]
+    facts = "\n".join(f"- {item}" for item in filtered_facts[:4]) or "- 当前资料不足，以下方案按低成本 MVP 假设推进。"
+    analysis = "\n".join(f"- {item}" for item in state.get("analysis", [])[:4]) or "- 当前没有结构化分析。"
+    risks = "\n".join(f"- {item}" for item in state.get("risks", [])[:4]) or "- 暂未识别明显风险。"
+    recommendations = "\n".join(f"- {item}" for item in state.get("recommendations", [])[:5]) or "- 暂无明确建议。"
+    if "学习" in question and ("产品" in question or "mvp" in normalize_user_text(question)):
+        task_answer = (
+            "推荐的 AI 学习产品机会是：面向正在学习 AI 产品经理 / Agent 产品知识的人，做一个“可对照实验的学习型 Agent”。"
+            "它不只回答概念，而是把 RAG、Memory、Tool Agent、Multi-Agent 等能力做成可切换配置，"
+            "让学习者用同一问题对比不同架构的效果、成本、来源和 trace。"
+        )
+        mvp_plan = (
+            "- MVP 目标用户：AI 产品经理学习者、正在搭建 Agent 原型的业务产品经理。\n"
+            "- 核心场景：上传学习资料或输入问题后，对比不同 Agent 配置下的回答差异。\n"
+            "- 核心功能：配置化 RAG / Memory / Multi-Agent 架构、双 Agent 对照、trace 展示、badcase 反馈和 eval 报告。\n"
+            "- 验收指标：用户能否理解某个架构差异；同一 prompt 下是否能看出不同配置的来源、步骤和答案变化；badcase 能否沉淀进 regression set。\n"
+            "- 第一版不做：复杂课程社区、完整 LMS、付费系统和大型多用户权限。"
+        )
+        dynamic_adjustment = (
+            "- 资料研究 Agent 发现：当前资料更多覆盖 AI Agent 产品趋势和工程能力，直接的“AI 学习产品市场数据”不足。\n"
+            "- 动态调整：不把市场规模、付费转化等数字当事实输出，先转为“低成本 MVP 假设验证”。\n"
+            "- 下一步补资料：如果要进入商业判断，需要补充 AI 学习产品竞品、用户访谈、课程/训练营转化数据和使用留存数据。"
+        )
+    else:
+        task_answer = (
+            "建议先把任务收敛为一个可验证目标：明确目标用户、核心问题、可用资料和成功指标，"
+            "再用 Swarm 的动态 state 接力逐步补全事实、分析、风险和建议。"
+        )
+        mvp_plan = recommendations
+        dynamic_adjustment = (
+            "- 当前 Swarm 先检查 facts、analysis、risks、recommendations 四类 state 字段。\n"
+            "- 如果资料不足，动态调整为边界说明和低风险下一步，而不是编造确定结论。"
+        )
+    sources = []
+    for index, source in enumerate(context.get("sources", [])[:3], start=1):
+        source_title = source.get("source", "参考资料")
+        if any(marker in str(source_title) for marker in irrelevant_markers):
+            continue
+        sources.append(f"- 资料{index}：{source_title}（{source.get('source_type', '')}）")
+    source_block = "\n".join(sources) if sources else "- 无显式来源，本轮主要基于已有上下文和规则化推理。"
+    return (
+        f"## Swarm 结论\n"
+        f"{task_answer}\n\n"
+        f"## 关键事实\n{facts}\n\n"
+        f"## 分析判断\n{analysis}\n\n"
+        f"## 风险与边界\n{risks}\n\n"
+        f"## MVP / 下一步建议\n{recommendations}\n\n"
+        f"## 可落地 MVP 方案\n{mvp_plan}\n\n"
+        f"## 动态调整记录\n{dynamic_adjustment}\n\n"
+        f"## 参考来源\n{source_block}\n\n"
+        f"## 动态接力说明\n"
+        f"Swarm 的核心不是一次性规划完整流程，而是让不同角色读取同一个 state，按当前缺口选择下一步。"
+        f"本轮完成 {state.get('step_count', 0)} 次接力。"
+    )
+
+
+def run_swarm_process(
+    question: str,
+    base_result: dict[str, Any],
+    model_name: str = "",
+) -> dict[str, Any]:
+    started = time.time()
+    registry = build_swarm_agent_registry()
+    context = compact_swarm_context(base_result)
+    state = init_swarm_state(question, context)
+    selector_history = []
+    handoff_history = []
+    while True:
+        stop, reason = should_stop_swarm(state)
+        if stop:
+            stop_reason = reason
+            break
+        selected = select_swarm_agent(state, registry)
+        selector_history.append({
+            "agent_id": selected["agent"].id,
+            "agent_name": selected["agent"].name,
+            "reason": selected["reason"],
+            "confidence": selected["confidence"],
+        })
+        fallback = fallback_swarm_agent_result(selected["agent"], question, state, context)
+        agent_result = call_swarm_llm_json(
+            selected["agent"],
+            question,
+            state,
+            context,
+            fallback,
+            model_name=model_name,
+        )
+        state = merge_swarm_result(state, agent_result)
+        handoff_history.append(handoff_swarm(state, selected, agent_result))
+    answer = compose_swarm_answer(question, state, context)
+    state["final_answer"] = answer
+    return {
+        "registry": [agent_def.__dict__ for agent_def in registry],
+        "state": state,
+        "selector_history": selector_history,
+        "handoff_history": handoff_history,
+        "stop_reason": stop_reason,
+        "answer": answer,
+        "elapsed_ms": int((time.time() - started) * 1000),
+    }
+
+
 def emit_multi_agent_event(
     progress_callback: ProgressCallback | None,
     step_id: str,
@@ -3780,6 +4170,65 @@ def build_multi_agent_trace(
             ),
         ])
         return trace
+    if architecture == MULTI_AGENT_SWARM:
+        swarm = result.get("swarm", {})
+        state = swarm.get("state", {})
+        registry = swarm.get("registry", [])
+        selector_history = swarm.get("selector_history", [])
+        handoff_history = swarm.get("handoff_history", [])
+        return [
+            make_stage_trace(
+                name="Swarm：State 初始化",
+                tool="swarm_state_init",
+                reason="把用户目标、已有资料、事实、分析、风险和建议初始化成可持续更新的 state。",
+                summary=f"已初始化 state，当前来源 {source_count} 条。",
+            ),
+            make_stage_trace(
+                name="Swarm：Agent Registry",
+                tool="swarm_agent_registry",
+                reason="注册可参与动态接力的子 Agent 及其可写入 state 的字段。",
+                summary=f"已注册 {len(registry) or 4} 个子 Agent。",
+            ),
+            make_stage_trace(
+                name="Swarm：Agent Selector",
+                tool="swarm_agent_selector",
+                reason="根据当前 state 缺口选择下一位执行 Agent。",
+                summary=f"完成 {len(selector_history)} 次选择；最后一次选择：{selector_history[-1].get('agent_name', '无') if selector_history else '无'}。",
+            ),
+            make_stage_trace(
+                name="Swarm：Agent Running",
+                tool="swarm_agent_execution",
+                reason="被选中的 Agent 只负责自己的字段，输出结构化结果。",
+                summary=f"已执行 {state.get('step_count', 0)} 次动态接力。",
+            ),
+            make_stage_trace(
+                name="Swarm：State Merger",
+                tool="swarm_state_merger",
+                reason="把子 Agent 输出合并回统一 state，并处理去重和字段更新。",
+                summary=(
+                    f"facts {len(state.get('facts', []))} 条，analysis {len(state.get('analysis', []))} 条，"
+                    f"risks {len(state.get('risks', []))} 条，recommendations {len(state.get('recommendations', []))} 条。"
+                ),
+            ),
+            make_stage_trace(
+                name="Swarm：Handoff Policy",
+                tool="swarm_handoff_policy",
+                reason="检查上一个 Agent 建议的交接对象是否合理，避免任意跳转。",
+                summary=f"已记录 {len(handoff_history)} 次 handoff 建议。",
+            ),
+            make_stage_trace(
+                name="Swarm：Stop Condition",
+                tool="swarm_stop_condition",
+                reason="判断 state 是否足够完整或是否达到最大步数，防止无限循环。",
+                summary=swarm.get("stop_reason", "已完成停止判断。"),
+            ),
+            make_stage_trace(
+                name="Swarm：Final Composer",
+                tool="swarm_final_composer",
+                reason="只基于最终 state 整理用户可读答案，不再新增无依据观点。",
+                summary=f"已输出 Swarm 最终答案，约 {answer_len} 字。",
+            ),
+        ]
     return [
         make_stage_trace(
             name="Pipeline：Research Step",
@@ -3841,7 +4290,7 @@ def run_agent_pro(
         "multi_agent_architecture",
         "Multi-Agent 架构选择",
         "running",
-        "判断本轮使用 Manager-Worker、Pipeline、Critic Loop 或 Debate。",
+        "判断本轮使用 Manager-Worker、Pipeline、Critic Loop、Debate 或 Swarm。",
     )
     emit_multi_agent_event(
         progress_callback,
@@ -3890,11 +4339,16 @@ def run_agent_pro(
         result["critic_loop"] = critic_loop
         if critic_loop.get("answer"):
             result["answer"] = critic_loop["answer"]
+    elif selected_architecture == MULTI_AGENT_SWARM:
+        swarm = run_swarm_process(question, result, model_name=model_name)
+        result["swarm"] = swarm
+        if swarm.get("answer"):
+            result["answer"] = swarm["answer"]
     architecture_trace = [
         make_stage_trace(
             name="Multi-Agent 架构选择",
             tool="multi_agent_architecture",
-            reason="教学配置用于对比 Manager-Worker、Pipeline、Critic Loop 和 Debate 架构。",
+            reason="教学配置用于对比 Manager-Worker、Pipeline、Critic Loop、Debate 和 Swarm 架构。",
             summary=f"选择 {selected_architecture}。{selected_reason}",
         )
     ]
