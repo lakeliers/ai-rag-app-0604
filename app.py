@@ -568,6 +568,26 @@ def render_config_snapshot(config, title="本轮配置快照"):
     st.markdown(html, unsafe_allow_html=True)
 
 
+def render_answer_meta(run):
+    if not run:
+        return
+    parts = []
+    trace_id = run.get("trace_id", "")
+    if trace_id:
+        parts.append(f"Trace ID：{trace_id}")
+    tools = run.get("tools_called", []) or []
+    if tools:
+        tool_summary = "、".join(str(tool) for tool in tools[:3])
+        if len(tools) > 3:
+            tool_summary += f" 等 {len(tools)} 项"
+        parts.append(f"执行：{tool_summary}")
+    sources = run.get("sources", []) or []
+    if sources:
+        parts.append(f"引用：{summarize_source_types(sources)}")
+    if parts:
+        st.caption(" · ".join(parts))
+
+
 def build_current_config():
     return {
         "run_mode": run_mode,
@@ -809,25 +829,25 @@ def render_autonomous_panel(run):
 
 def render_assistant_message(content, run=None, key_suffix=""):
     trace_level_fallback = globals().get("trace_level", "简洁")
-    left, right = st.columns([0.94, 0.06], vertical_alignment="top")
-    with left:
-        st.write(content)
-        if run and run.get("trace_id"):
-            st.caption(f"Trace ID（运行追踪编号）：{run['trace_id']}")
-        if run:
-            render_config_snapshot(run.get("config", {}))
+    st.markdown('<div class="assistant-answer-primary">', unsafe_allow_html=True)
+    st.write(content)
+    st.markdown('</div>', unsafe_allow_html=True)
+    render_answer_meta(run)
     if run:
-        with right:
+        action_cols = st.columns([0.2, 0.2, 0.6], vertical_alignment="center")
+        with action_cols[0]:
             st.button(
-                "反馈",
+                "反馈此回答",
                 key=f"badcase_button_{key_suffix}",
                 help="反馈 badcase（不良案例）",
                 on_click=set_badcase_target,
                 args=(run,),
+                use_container_width=True,
             )
     if run:
-        with st.expander("查看执行细节 / 来源 / Safety / 反馈", expanded=False):
-            tab_names = ["执行过程", "来源", "Safety", "反馈"]
+        with st.expander("查看诊断信息", expanded=False):
+            render_config_snapshot(run.get("config", {}))
+            tab_names = ["执行过程", "来源", "Safety", "运行日志"]
             if run.get("memory_used") or st.session_state.get("pending_memory_candidates"):
                 tab_names.append("Memory")
             if run.get("autonomous"):
@@ -841,8 +861,8 @@ def render_assistant_message(content, run=None, key_suffix=""):
                         render_sources_panel(run.get("sources", []), run.get("trace_level", trace_level_fallback), run)
                     elif tab_name == "Safety":
                         render_permission_trace(run.get("permission_trace", []))
-                    elif tab_name == "反馈":
-                        st.caption("如果这轮回答有问题，点击回答右侧的“反馈”按钮记录 badcase（不良案例）。")
+                    elif tab_name == "运行日志":
+                        st.caption("用于开发者定位本轮交互问题。")
                         if run.get("trace_id"):
                             st.code(run["trace_id"], language="text")
                         trace_log = run.get("trace_log", {})
@@ -2650,6 +2670,40 @@ st.markdown("""
     background: #f8fafc;
     color: #4b5563;
     font-size: 0.82rem;
+}
+.assistant-answer-primary {
+    font-size: 1rem;
+    line-height: 1.75;
+    color: #202331;
+    margin-top: 0.1rem;
+}
+.assistant-answer-primary + div [data-testid="stMarkdownContainer"] p {
+    margin-bottom: 0.35rem;
+}
+div[data-testid="stChatMessage"]:has(.assistant-answer-primary) [data-testid="stCaptionContainer"] {
+    color: #8a93a3;
+    font-size: 0.78rem;
+}
+div[data-testid="stChatMessage"]:has(.assistant-answer-primary) div[data-testid="stButton"] button {
+    border: 1px solid #dbe2ee;
+    color: #697386;
+    background: #ffffff;
+    min-height: 2rem;
+    padding: 0.2rem 0.55rem;
+    font-size: 0.82rem;
+    border-radius: 8px;
+}
+div[data-testid="stChatMessage"]:has(.assistant-answer-primary) div[data-testid="stButton"] button:hover {
+    border-color: #ff5a5f;
+    color: #d83b40;
+    background: #fffafa;
+}
+div[data-testid="stChatMessage"]:has(.assistant-answer-primary) details {
+    margin-top: 0.45rem;
+}
+div[data-testid="stChatMessage"]:has(.assistant-answer-primary) details summary {
+    color: #697386;
+    font-size: 0.9rem;
 }
 .empty-state {
     border: 1px dashed #cfd6e3;
