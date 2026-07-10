@@ -867,7 +867,12 @@ def render_assistant_message(content, run=None, key_suffix=""):
                     use_container_width=False,
                 )
     if run:
-        with st.expander("查看本轮详情", expanded=False):
+        with st.popover(
+            "查看本轮详情",
+            key=f"run_details_{action_key}",
+            width="stretch",
+            help="查看本轮计划、执行过程、来源、安全、日志和配置",
+        ):
             tab_names = ["计划", "执行", "来源", "安全", "日志", "配置"]
             if run.get("memory_used") or st.session_state.get("pending_memory_candidates"):
                 tab_names.append("记忆")
