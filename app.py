@@ -560,8 +560,9 @@ def render_config_snapshot(config, title="本轮配置快照"):
     pills = [item for item in config_snapshot_pills(config) if item and not item.endswith("：")]
     if not pills:
         return
+    title_html = f'<span class="snapshot-title">{title}</span>' if title else ""
     html = (
-        f'<div class="run-config-snapshot"><span class="snapshot-title">{title}</span>'
+        f'<div class="run-config-snapshot">{title_html}'
         + "".join(f'<span class="config-pill">{pill}</span>' for pill in pills)
         + "</div>"
     )
@@ -571,19 +572,16 @@ def render_config_snapshot(config, title="本轮配置快照"):
 def render_answer_meta(run):
     if not run:
         return
-    parts = []
-    trace_id = run.get("trace_id", "")
-    if trace_id:
-        parts.append(f"Trace ID：{trace_id}")
-    tools = run.get("tools_called", []) or []
-    if tools:
-        tool_summary = "、".join(str(tool) for tool in tools[:3])
-        if len(tools) > 3:
-            tool_summary += f" 等 {len(tools)} 项"
-        parts.append(f"执行：{tool_summary}")
     sources = run.get("sources", []) or []
     if sources:
-        parts.append(f"引用：{summarize_source_types(sources)}")
+        parts = [f"引用 {len(sources)} 条资料"]
+    elif "direct_answer" in (run.get("tools_called", []) or []):
+        parts = ["直接回答"]
+    else:
+        parts = ["未引用资料"]
+    elapsed_ms = run.get("elapsed_ms", 0)
+    if elapsed_ms:
+        parts.append(f"{elapsed_ms / 1000:.1f} 秒")
     if parts:
         st.caption(" · ".join(parts))
 
@@ -850,40 +848,43 @@ def render_autonomous_panel(run):
 
 def render_assistant_message(content, run=None, key_suffix=""):
     trace_level_fallback = globals().get("trace_level", "简洁")
-    st.markdown('<div class="assistant-answer-primary">', unsafe_allow_html=True)
-    st.write(content)
-    st.markdown('</div>', unsafe_allow_html=True)
-    render_answer_meta(run)
+    st.markdown(content)
     if run:
-        action_cols = st.columns([0.2, 0.2, 0.6], vertical_alignment="center")
-        with action_cols[0]:
-            st.button(
-                "反馈此回答",
-                key=f"badcase_button_{key_suffix}",
-                help="反馈 badcase（不良案例）",
-                on_click=set_badcase_target,
-                args=(run,),
-                use_container_width=True,
-            )
+        action_key = hashlib.sha1(
+            f"{key_suffix}:{run.get('trace_id', '')}".encode("utf-8")
+        ).hexdigest()[:12]
+        with st.container(key=f"assistant_actions_{action_key}"):
+            action_cols = st.columns([0.78, 0.22], vertical_alignment="center")
+            with action_cols[0]:
+                render_answer_meta(run)
+            with action_cols[1]:
+                st.button(
+                    "反馈",
+                    key=f"badcase_button_{key_suffix}",
+                    help="报告这条回答的问题",
+                    on_click=set_badcase_target,
+                    args=(run,),
+                    use_container_width=False,
+                )
     if run:
-        with st.expander("查看诊断信息", expanded=False):
-            tab_names = ["Plan", "执行过程", "来源", "Safety", "运行日志", "配置"]
+        with st.expander("查看本轮详情", expanded=False):
+            tab_names = ["计划", "执行", "来源", "安全", "日志", "配置"]
             if run.get("memory_used") or st.session_state.get("pending_memory_candidates"):
-                tab_names.append("Memory")
+                tab_names.append("记忆")
             if run.get("autonomous"):
                 tab_names.append("自主任务")
             tabs = st.tabs(tab_names)
             for tab_name, tab in zip(tab_names, tabs):
                 with tab:
-                    if tab_name == "Plan":
+                    if tab_name == "计划":
                         render_plan_tab(run)
-                    elif tab_name == "执行过程":
+                    elif tab_name == "执行":
                         render_trace_panel(run, run.get("trace_level", trace_level_fallback))
                     elif tab_name == "来源":
                         render_sources_panel(run.get("sources", []), run.get("trace_level", trace_level_fallback), run)
-                    elif tab_name == "Safety":
+                    elif tab_name == "安全":
                         render_permission_trace(run.get("permission_trace", []))
-                    elif tab_name == "运行日志":
+                    elif tab_name == "日志":
                         st.caption("用于开发者定位本轮交互问题。")
                         if run.get("trace_id"):
                             st.code(run["trace_id"], language="text")
@@ -895,7 +896,7 @@ def render_assistant_message(content, run=None, key_suffix=""):
                             st.warning(f"Trace Log 写入提示：{trace_log['error']}")
                     elif tab_name == "配置":
                         render_config_snapshot(run.get("config", {}))
-                    elif tab_name == "Memory":
+                    elif tab_name == "记忆":
                         used = run.get("memory_used", [])
                         if used:
                             st.caption("本轮使用的 Memory ID（记忆编号）：")
@@ -904,6 +905,13 @@ def render_assistant_message(content, run=None, key_suffix=""):
                             st.caption("本轮没有使用长期记忆。")
                     elif tab_name == "自主任务":
                         render_autonomous_panel(run)
+        target_run = st.session_state.get("last_agent_run") or {}
+        if (
+            st.session_state.get("show_badcase_form")
+            and target_run.get("trace_id")
+            and target_run.get("trace_id") == run.get("trace_id")
+        ):
+            render_badcase_form()
 
 
 PLAN_STATUS_LABELS = {
@@ -1024,12 +1032,12 @@ def render_badcase_form():
     if not run or not st.session_state.get("show_badcase_form"):
         return
 
-    with st.expander("反馈 Bad Case（不良案例）", expanded=True):
-        st.markdown("**当前问题现场**")
+    with st.expander("反馈这条回答", expanded=True):
+        st.markdown("**本次对话**")
         if run.get("trace_id"):
-            st.code(run["trace_id"], language="text")
-        st.write("User Prompt（用户问题）：", run["user_input"])
-        with st.expander("查看 Agent Answer（智能体回答）", expanded=False):
+            st.caption(f"运行编号：{run['trace_id']}")
+        st.write("你的问题：", run["user_input"])
+        with st.expander("查看这条回答", expanded=False):
             st.write(run["actual_answer"])
             st.caption("工具调用：" + (", ".join(run["tools_called"]) or "无"))
             st.caption("资料来源：" + (", ".join(run["sources_used"]) or "无"))
@@ -1043,7 +1051,6 @@ def render_badcase_form():
             default_category = "autonomous"
 
         with st.form("badcase_form"):
-            st.markdown("**快速反馈**")
             category = st.selectbox(
                 "问题类型",
                 badcase_manager.CATEGORIES,
@@ -2626,16 +2633,11 @@ st.markdown("""
 [data-testid="stSidebar"] .block-container {
     padding-top: 1.2rem;
 }
-.main-header-card {
-    border: 1px solid #e2e6ee;
-    border-radius: 8px;
-    padding: 1rem 1.1rem;
-    background: #ffffff;
-    box-shadow: 0 10px 28px rgba(23, 31, 56, 0.06);
-    margin-bottom: 0.9rem;
+.chat-header {
+    margin: 0.1rem 0 0.65rem;
 }
-.main-header-card h1 {font-size: 1.7rem; margin: 0 0 0.25rem 0;}
-.main-header-card p {margin: 0; color: #6b7280;}
+.chat-header h1 {font-size: 1.65rem; margin: 0 0 0.2rem 0;}
+.chat-header p {margin: 0; color: #697386; font-size: 0.92rem;}
 .settings-panel, .observe-panel {
     border: 1px solid #e2e6ee;
     border-radius: 8px;
@@ -2699,39 +2701,76 @@ st.markdown("""
     color: #4b5563;
     font-size: 0.82rem;
 }
-.assistant-answer-primary {
-    font-size: 1rem;
-    line-height: 1.75;
+div[data-testid="stChatMessage"] {
+    align-items: flex-start;
+    gap: 0.75rem;
+    padding-top: 0.8rem;
+    padding-bottom: 0.8rem;
+    margin-bottom: 0.65rem;
+}
+div[data-testid="stChatMessageAvatarUser"],
+div[data-testid="stChatMessageAvatarAssistant"] {
+    flex: 0 0 2rem;
+    width: 2rem;
+    height: 2rem;
+    margin-top: 0;
+}
+div[data-testid="stChatMessageContent"] {
+    min-width: 0;
+}
+div[data-testid="stChatMessageContent"] > div[data-testid="stVerticalBlock"] {
+    gap: 0.5rem;
+}
+div[class*="st-key-assistant_actions_"] [data-testid="stHorizontalBlock"] {
+    align-items: center;
+}
+div[class*="st-key-assistant_actions_"] [data-testid="stColumn"]:last-child > div[data-testid="stVerticalBlock"] {
+    align-items: flex-end;
+}
+div[data-testid="stChatMessage"]:has([data-testid="stChatMessageAvatarAssistant"]) [data-testid="stMarkdownContainer"] {
     color: #202331;
-    margin-top: 0.1rem;
+    line-height: 1.7;
 }
-.assistant-answer-primary + div [data-testid="stMarkdownContainer"] p {
+div[data-testid="stChatMessage"]:has([data-testid="stChatMessageAvatarAssistant"]) [data-testid="stMarkdownContainer"] p {
+    margin-bottom: 0.45rem;
+}
+div[data-testid="stChatMessage"]:has([data-testid="stChatMessageAvatarAssistant"]) [data-testid="stMarkdownContainer"] p:last-child {
+    margin-bottom: 0;
+}
+div[data-testid="stChatMessage"]:has([data-testid="stChatMessageAvatarAssistant"]) [data-testid="stMarkdownContainer"] ol,
+div[data-testid="stChatMessage"]:has([data-testid="stChatMessageAvatarAssistant"]) [data-testid="stMarkdownContainer"] ul {
+    margin-top: 0.35rem;
     margin-bottom: 0.35rem;
+    padding-left: 1.35rem;
 }
-div[data-testid="stChatMessage"]:has(.assistant-answer-primary) [data-testid="stCaptionContainer"] {
-    color: #8a93a3;
+div[data-testid="stChatMessage"]:has([data-testid="stChatMessageAvatarAssistant"]) [data-testid="stCaptionContainer"] {
+    color: #697386;
     font-size: 0.78rem;
 }
-div[data-testid="stChatMessage"]:has(.assistant-answer-primary) div[data-testid="stButton"] button {
+div[data-testid="stChatMessage"]:has([data-testid="stChatMessageAvatarAssistant"]) div[data-testid="stButton"] button {
     border: 1px solid #dbe2ee;
     color: #697386;
     background: #ffffff;
-    min-height: 2rem;
+    min-height: 2.25rem;
     padding: 0.2rem 0.55rem;
     font-size: 0.82rem;
     border-radius: 8px;
 }
-div[data-testid="stChatMessage"]:has(.assistant-answer-primary) div[data-testid="stButton"] button:hover {
+div[data-testid="stChatMessage"]:has([data-testid="stChatMessageAvatarAssistant"]) div[data-testid="stButton"] button:hover {
     border-color: #ff5a5f;
     color: #d83b40;
     background: #fffafa;
 }
-div[data-testid="stChatMessage"]:has(.assistant-answer-primary) details {
-    margin-top: 0.45rem;
+div[data-testid="stChatMessage"]:has([data-testid="stChatMessageAvatarAssistant"]) details {
+    margin-top: 0.15rem;
 }
-div[data-testid="stChatMessage"]:has(.assistant-answer-primary) details summary {
+div[data-testid="stChatMessage"]:has([data-testid="stChatMessageAvatarAssistant"]) details summary {
     color: #697386;
     font-size: 0.9rem;
+}
+div[data-testid="stChatMessage"]:has([data-testid="stChatMessageAvatarAssistant"]) [data-baseweb="tab-list"] {
+    overflow-x: auto;
+    scrollbar-width: thin;
 }
 .empty-state {
     border: 1px dashed #cfd6e3;
@@ -2750,9 +2789,32 @@ div[data-testid="stChatMessage"]:has(.assistant-answer-primary) details summary 
 }
 @media (max-width: 768px) {
     .block-container {padding-left: 1rem; padding-right: 1rem;}
-    .main-header-card h1 {font-size: 1.35rem;}
+    .chat-header h1 {font-size: 1.35rem;}
+    .chat-header p {font-size: 0.84rem;}
     .config-pill {font-size: 0.78rem;}
     .run-config-snapshot {padding: 0.5rem;}
+    div[role="radiogroup"] {flex-wrap: wrap !important; row-gap: 0.35rem;}
+    div[class*="st-key-assistant_actions_"] [data-testid="stHorizontalBlock"] {
+        flex-wrap: nowrap !important;
+        gap: 0.5rem !important;
+    }
+    div[class*="st-key-assistant_actions_"] [data-testid="stColumn"] {
+        min-width: 0 !important;
+        width: auto !important;
+    }
+    div[class*="st-key-assistant_actions_"] [data-testid="stColumn"]:first-child {
+        flex: 1 1 auto !important;
+    }
+    div[class*="st-key-assistant_actions_"] [data-testid="stColumn"]:last-child {
+        flex: 0 0 auto !important;
+    }
+    div[data-testid="stChatMessage"] {
+        padding-left: 0.6rem;
+        padding-right: 0.6rem;
+    }
+    div[data-testid="stChatMessage"]:has([data-testid="stChatMessageAvatarAssistant"]) div[data-testid="stButton"] button {
+        min-height: 2.5rem;
+    }
 }
 </style>
 """, unsafe_allow_html=True)
@@ -2772,22 +2834,12 @@ with st.sidebar:
     render_settings_panel()
 
 st.markdown(
-    '<div class="main-header-card"><h1>agent for train</h1>'
-    '<p>提问、观察执行过程、检查证据来源、反馈 badcase。资料与教学配置在左侧栏。</p></div>',
+    '<div class="chat-header"><h1>agent for train</h1>'
+    '<p>直接对话；执行过程、来源和教学配置按需展开。</p></div>',
     unsafe_allow_html=True,
 )
-st.markdown(
-    '<div class="config-summary"><div class="config-summary-title">本轮配置</div>'
-    f'<span class="config-pill">{run_mode}</span>'
-    f'<span class="config-pill">Multi-Agent：{multi_agent_architecture_label}</span>'
-    f'<span class="config-pill">{source_strategy_label}</span>'
-    f'<span class="config-pill">{retrieval_strategy_label}</span>'
-    f'<span class="config-pill">{context_packing_label}</span>'
-    f'<span class="config-pill">{deepseek_model_label}</span>'
-    f'<span class="config-pill">{safety_mode_label}</span>'
-    '</div>',
-    unsafe_allow_html=True,
-)
+with st.expander("当前设置", expanded=False):
+    render_config_snapshot(build_current_config(), title="")
 
 if not st.session_state.messages:
     st.markdown(
@@ -3074,7 +3126,6 @@ if prompt:
                 },
             }
             persist_trace_for_run(error_run, status="error", error=str(e))
-            st.error(error_answer)
             render_assistant_message(error_answer, error_run, key_suffix=f"error_{len(st.session_state.messages)}")
             st.session_state.messages.append({
                 "role": "assistant",
@@ -3082,7 +3133,6 @@ if prompt:
                 "badcase_run": error_run,
             })
 
-render_badcase_form()
 if st.session_state.memory_notice:
     st.info(st.session_state.memory_notice)
 render_memory_confirmation()
