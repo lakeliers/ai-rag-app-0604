@@ -792,6 +792,27 @@ def render_trace_panel(run, trace_level_value="简洁"):
         st.divider()
 
 
+def render_plan_tab(run):
+    plan_steps = run.get("plan_steps") or []
+    if not plan_steps:
+        st.caption("本轮没有记录完整 Plan（计划）。")
+        return
+    completed = sum(1 for step in plan_steps if step.get("status") in {"completed", "skipped"})
+    total = len(plan_steps)
+    st.caption(f"执行进度：{completed}/{total} 已完成")
+    for index, step in enumerate(plan_steps, start=1):
+        status = step.get("status", "pending")
+        icon = PLAN_STATUS_ICONS.get(status, "○")
+        label = PLAN_STATUS_LABELS.get(status, status)
+        elapsed = step.get("elapsed_ms", 0)
+        elapsed_text = f" · {elapsed}ms" if elapsed else ""
+        st.markdown(f"**{index}. {icon} {label}｜{step.get('name', '')}**")
+        st.caption(f"{step.get('summary', '')}{elapsed_text}")
+        if step.get("error"):
+            st.error(step["error"])
+        st.divider()
+
+
 def render_autonomous_panel(run):
     autonomous = run.get("autonomous", {})
     if not autonomous:
@@ -846,8 +867,7 @@ def render_assistant_message(content, run=None, key_suffix=""):
             )
     if run:
         with st.expander("查看诊断信息", expanded=False):
-            render_config_snapshot(run.get("config", {}))
-            tab_names = ["执行过程", "来源", "Safety", "运行日志"]
+            tab_names = ["Plan", "执行过程", "来源", "Safety", "运行日志", "配置"]
             if run.get("memory_used") or st.session_state.get("pending_memory_candidates"):
                 tab_names.append("Memory")
             if run.get("autonomous"):
@@ -855,7 +875,9 @@ def render_assistant_message(content, run=None, key_suffix=""):
             tabs = st.tabs(tab_names)
             for tab_name, tab in zip(tab_names, tabs):
                 with tab:
-                    if tab_name == "执行过程":
+                    if tab_name == "Plan":
+                        render_plan_tab(run)
+                    elif tab_name == "执行过程":
                         render_trace_panel(run, run.get("trace_level", trace_level_fallback))
                     elif tab_name == "来源":
                         render_sources_panel(run.get("sources", []), run.get("trace_level", trace_level_fallback), run)
@@ -871,6 +893,8 @@ def render_assistant_message(content, run=None, key_suffix=""):
                             st.write(trace_log["online_url"])
                         elif trace_log.get("error"):
                             st.warning(f"Trace Log 写入提示：{trace_log['error']}")
+                    elif tab_name == "配置":
+                        render_config_snapshot(run.get("config", {}))
                     elif tab_name == "Memory":
                         used = run.get("memory_used", [])
                         if used:
@@ -2078,6 +2102,8 @@ def run_compare_agent_turn(panel_id, prompt, config):
 
     if streamed_answer["text"]:
         stream_placeholder.empty()
+    if config["plan_progress_enabled"]:
+        plan_placeholder.empty()
 
     planner_label = (
         "Autonomous Runtime（自主任务运行时）"
@@ -2124,6 +2150,7 @@ def run_compare_agent_turn(panel_id, prompt, config):
         "planner_mode": result.get("planner_mode", ""),
         "planner_label": planner_label,
         "trace_level": config["trace_level"],
+        "plan_steps": live_plan_steps if config["plan_progress_enabled"] else [],
         "steps": result.get("steps", []),
         "sources": result.get("sources", []),
         "permission_trace": result.get("permission_trace", []),
@@ -2138,6 +2165,7 @@ def run_compare_agent_turn(panel_id, prompt, config):
             "memory_used": result.get("memory_used", [item.get("id") for item in retrieved_memories]),
             "memory_route": result.get("memory_route", memory_route),
             "steps": compact_steps_for_log(result.get("steps", [])),
+            "plan_steps": compact_steps_for_log(live_plan_steps) if config["plan_progress_enabled"] else [],
             "sources": compact_sources_for_log(result.get("sources", [])),
             "answer_preview": str(result.get("answer", ""))[:1200],
         },
@@ -2933,6 +2961,8 @@ if prompt:
 
             if streamed_answer["text"]:
                 stream_placeholder.empty()
+            if plan_progress_enabled:
+                plan_placeholder.empty()
             planner_label = (
                 "Autonomous Runtime（自主任务运行时）"
                 if result.get("planner_mode") == "autonomous_runtime"
@@ -2978,6 +3008,7 @@ if prompt:
                 "planner_mode": result.get("planner_mode", ""),
                 "planner_label": planner_label,
                 "trace_level": trace_level,
+                "plan_steps": live_plan_steps if plan_progress_enabled else [],
                 "steps": result.get("steps", []),
                 "sources": result.get("sources", []),
                 "permission_trace": result.get("permission_trace", []),
@@ -2993,6 +3024,7 @@ if prompt:
                     "memory_used": result.get("memory_used", [item.get("id") for item in retrieved_memories]),
                     "memory_route": result.get("memory_route", memory_route),
                     "steps": compact_steps_for_log(result.get("steps", [])),
+                    "plan_steps": compact_steps_for_log(live_plan_steps) if plan_progress_enabled else [],
                     "sources": compact_sources_for_log(result.get("sources", [])),
                     "answer_preview": str(result.get("answer", ""))[:1200],
                 },
