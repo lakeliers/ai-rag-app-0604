@@ -34,6 +34,7 @@ SOURCE_STRATEGIES = getattr(
 )
 JUDGE_MODEL = os.getenv("JUDGE_MODEL", "")
 JUDGE_PASS_THRESHOLD = float(os.getenv("JUDGE_PASS_THRESHOLD", "3.8"))
+JUDGE_TOTAL_TIMEOUT_SECONDS = float(os.getenv("JUDGE_TOTAL_TIMEOUT_SECONDS", "75"))
 JUDGE_SYSTEM_PROMPT = """
 你是一个严格、稳定的 Agent 评估器。
 你必须基于 case、reference_context、tool_trace、rule_result 和 rubric 评分。
@@ -1645,6 +1646,26 @@ def call_llm_judge(payload: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def call_llm_judge_with_deadline(payload: dict[str, Any]) -> dict[str, Any]:
+    """Bound the entire Judge call, including a slowly delivered response body."""
+    timeout_seconds = JUDGE_TOTAL_TIMEOUT_SECONDS
+    if timeout_seconds <= 0 or not hasattr(signal, "setitimer"):
+        return call_llm_judge(payload)
+
+    previous_handler = signal.getsignal(signal.SIGALRM)
+
+    def handle_timeout(signum, frame):
+        raise TimeoutError(f"LLM-as-Judge total time exceeded {timeout_seconds:g} seconds")
+
+    signal.signal(signal.SIGALRM, handle_timeout)
+    signal.setitimer(signal.ITIMER_REAL, timeout_seconds)
+    try:
+        return call_llm_judge(payload)
+    finally:
+        signal.setitimer(signal.ITIMER_REAL, 0)
+        signal.signal(signal.SIGALRM, previous_handler)
+
+
 def attach_judge_result(case: dict[str, Any], evaluation: dict[str, Any]) -> dict[str, Any]:
     if case.get("category") == "product_lifecycle":
         rule_pass = evaluation["passed"]
@@ -1673,7 +1694,7 @@ def attach_judge_result(case: dict[str, Any], evaluation: dict[str, Any]) -> dic
 
     payload = build_judge_payload(case, evaluation)
     try:
-        judge = call_llm_judge(payload)
+        judge = call_llm_judge_with_deadline(payload)
     except Exception as error:
         judge = build_judge_fallback(payload, f"{type(error).__name__}: {error}")
 

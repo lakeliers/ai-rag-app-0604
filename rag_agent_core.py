@@ -191,6 +191,7 @@ INTENT_WEIGHTS = {
 
 LOCAL_FILES_ONLY = os.getenv("LOCAL_FILES_ONLY", "0") == "1"
 _embedding_model = None
+_client_cache = {}
 _collection_cache = {}
 
 conversation_history = []
@@ -211,9 +212,13 @@ def get_embedding_model():
 
 
 def get_collection(chroma_path=CHROMA_PATH, collection_name=COLLECTION_NAME):
-    key = (chroma_path, collection_name)
+    normalized_path = os.path.abspath(os.path.expanduser(chroma_path))
+    key = (normalized_path, collection_name)
     if key not in _collection_cache:
-        client = chromadb.PersistentClient(path=chroma_path)
+        client = _client_cache.get(normalized_path)
+        if client is None:
+            client = chromadb.PersistentClient(path=normalized_path)
+            _client_cache[normalized_path] = client
         _collection_cache[key] = client.get_or_create_collection(name=collection_name)
     return _collection_cache[key]
 

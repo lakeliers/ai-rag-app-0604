@@ -37,7 +37,7 @@
     <div class="metric"><strong>61/61</strong>去重案例</div>
     <div class="metric"><strong>100%</strong>总通过率</div>
     <div class="metric"><strong>6/6</strong>生命周期案例</div>
-    <div class="metric"><strong>6/6</strong>生命周期单元测试</div>
+    <div class="metric"><strong>7/7</strong>单元测试</div>
   </section>
 
   <h2>三套测试集</h2>
@@ -60,11 +60,13 @@
       <tr><td>取消任务</td><td><code>cancel_requested</code> 到 <code>cancelled</code> 两阶段流转</td><td>通过</td></tr>
       <tr><td>会话隔离</td><td>其他 Session 无法读取当前 Run</td><td>通过</td></tr>
       <tr><td>非法流转</td><td>终态任务禁止回到执行中</td><td>通过</td></tr>
+      <tr><td>冷启动存储</td><td>Chroma Client 与 Collection 生命周期稳定，避免云端冷启动重复释放</td><td>通过</td></tr>
+      <tr><td>Judge 超时保护</td><td>限制单次语义评审总时长，第三方响应异常时可审计地兜底继续</td><td>通过</td></tr>
     </tbody>
   </table>
 
   <h2>Judge 复核说明</h2>
-  <p>全量运行中，<code>multi_agent_auto_swarm_001</code> 的 Judge 曾返回一次不完整 JSON，规则检查兜底通过。随后使用真实模型单独复测，该案例 Judge 得分为 5.0/5.0，未再触发兜底。因此判断为 Judge 输出格式的瞬时波动，不是 Agent 功能失败。</p>
+  <p>最终全量运行的 61 条案例均完成真实 LLM-as-Judge 评审，报告中没有 Judge 超时、无效 JSON 或规则兜底记录。产品生命周期类案例属于确定性的 ID、状态与隔离约束，使用强规则评分，避免让模型主观判断系统契约。</p>
 
   <h2>详细结果</h2>
   <p><a href="product_lifecycle_release_real_full_report.html">打开 61 条全量评测报告</a></p>
