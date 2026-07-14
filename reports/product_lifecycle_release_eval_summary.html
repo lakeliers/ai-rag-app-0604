@@ -30,7 +30,7 @@
 
   <section class="verdict">
     <strong>发布结论：通过，可以上线。</strong>
-    <p>61 个去重案例全部通过，新增的同步/异步执行、状态机、取消、断点恢复、编号关联和会话隔离均通过规则验证。</p>
+    <p>61 个去重案例全部通过，新增的同步/异步执行、状态机、取消、断点恢复、编号关联和会话隔离均通过规则验证。云端冷启动优化后补跑真实 Smoke：19/20 首轮通过，唯一 Judge 语义评分波动项单独复测获得 5.0/5.0，最终关键链路均通过。</p>
   </section>
 
   <section class="grid">
@@ -61,6 +61,7 @@
       <tr><td>会话隔离</td><td>其他 Session 无法读取当前 Run</td><td>通过</td></tr>
       <tr><td>非法流转</td><td>终态任务禁止回到执行中</td><td>通过</td></tr>
       <tr><td>冷启动存储</td><td>Chroma Client 与 Collection 生命周期稳定，避免云端冷启动重复释放</td><td>通过</td></tr>
+      <tr><td>冷启动耗时</td><td>示例笔记向量化改为显式开关，线上默认不再阻塞首屏下载模型</td><td>通过</td></tr>
       <tr><td>Judge 超时保护</td><td>限制单次语义评审总时长，第三方响应异常时可审计地兜底继续</td><td>通过</td></tr>
     </tbody>
   </table>
@@ -71,6 +72,8 @@
   <h2>详细结果</h2>
   <p><a href="product_lifecycle_release_real_full_report.html">打开 61 条全量评测报告</a></p>
   <p><a href="product_lifecycle_judge_retry_report.html">打开 Judge 单例复测报告</a></p>
+  <p><a href="product_lifecycle_post_startup_real_smoke_report.html">打开冷启动优化后的真实 Smoke 首轮报告</a></p>
+  <p><a href="product_lifecycle_post_startup_judge_retry_report.html">打开唯一波动 Case 的 5.0/5.0 复测报告</a></p>
 </main>
 </body>
 </html>

@@ -1,0 +1,1443 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Agent Eval 报告</title>
+  <style>
+    body { margin: 0; background: #f6f7fb; color: #202431; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; line-height: 1.6; }
+    main { max-width: 1280px; margin: 0 auto; padding: 40px 24px 72px; }
+    h1 { margin: 0 0 8px; font-size: 34px; }
+    h2 { margin: 32px 0 14px; font-size: 22px; }
+    .sub { color: #667085; margin-bottom: 28px; }
+    .grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; }
+    .card { background: #fff; border: 1px solid #e5e7ef; border-radius: 8px; padding: 18px; }
+    .metric { font-size: 30px; font-weight: 760; }
+    .pass { color: #047857; font-weight: 700; }
+    .fail { color: #dc2626; font-weight: 700; }
+    table { width: 100%; border-collapse: collapse; background: #fff; border: 1px solid #e5e7ef; border-radius: 8px; overflow: hidden; }
+    th, td { padding: 12px 14px; border-bottom: 1px solid #e5e7ef; text-align: left; vertical-align: top; font-size: 14px; }
+    th { background: #f1f5f9; }
+    tr:last-child td { border-bottom: none; }
+    pre { margin: 0; white-space: pre-wrap; font-size: 12px; background: #f8fafc; border: 1px solid #e5e7eb; border-radius: 6px; padding: 8px; max-height: 260px; overflow: auto; }
+    .note { border-left: 4px solid #2563eb; background: #eff6ff; color: #1e3a8a; padding: 12px 14px; border-radius: 6px; }
+    @media (max-width: 900px) { .grid { grid-template-columns: 1fr; } main { padding: 28px 16px 56px; } }
+  </style>
+</head>
+<body>
+<main>
+  <h1>Agent Eval 报告</h1>
+  <div class="sub">运行模式：real。路由模式：rules。资料策略：auto。稳定网页夹具：已启用。Judge：已启用 deepseek-v4-flash。规则检查系统是否跑对；LLM-as-Judge 检查语义质量、资料忠实度和来源使用。</div>
+
+  <section class="grid">
+    <div class="card"><div class="metric">20</div><div>总样本</div></div>
+    <div class="card"><div class="metric pass">19</div><div>通过</div></div>
+    <div class="card"><div class="metric fail">1</div><div>失败</div></div>
+    <div class="card"><div class="metric">95%</div><div>通过率</div></div>
+  </section>
+
+  <h2>分测试集通过率</h2>
+  <table><thead><tr><th>测试集</th><th>通过 / 总数</th><th>通过率</th></tr></thead><tbody><tr><td>benchmark</td><td>14/15</td><td>93%</td></tr>
+<tr><td>regression</td><td>16/16</td><td>100%</td></tr>
+<tr><td>smoke</td><td>19/20</td><td>95%</td></tr></tbody></table>
+
+  <h2>分场景通过率</h2>
+  <table><thead><tr><th>场景</th><th>通过 / 总数</th><th>通过率</th></tr></thead><tbody><tr><td>autonomous</td><td>0/1</td><td>0%</td></tr>
+<tr><td>autonomous_fallback</td><td>2/2</td><td>100%</td></tr>
+<tr><td>chitchat</td><td>1/1</td><td>100%</td></tr>
+<tr><td>definition</td><td>1/1</td><td>100%</td></tr>
+<tr><td>document_qa</td><td>2/2</td><td>100%</td></tr>
+<tr><td>hybrid_rag</td><td>1/1</td><td>100%</td></tr>
+<tr><td>multi_agent_architecture</td><td>5/5</td><td>100%</td></tr>
+<tr><td>product_lifecycle</td><td>3/3</td><td>100%</td></tr>
+<tr><td>session_context</td><td>1/1</td><td>100%</td></tr>
+<tr><td>source_scope</td><td>1/1</td><td>100%</td></tr>
+<tr><td>upload_status</td><td>1/1</td><td>100%</td></tr>
+<tr><td>web_rag</td><td>1/1</td><td>100%</td></tr></tbody></table>
+
+  <h2>失败检查项</h2>
+  <table><thead><tr><th>检查项</th><th>失败次数</th></tr></thead><tbody><tr><td>judge</td><td>1</td></tr></tbody></table>
+
+  <h2>逐 Case 明细</h2>
+  <table>
+    <thead><tr><th>Case</th><th>输入</th><th>最终结果</th><th>规则检查</th><th>Judge 语义评分</th><th>实际输出摘要</th></tr></thead>
+    <tbody>
+        <tr>
+          <td><strong>chat_001</strong><br><span>chitchat</span></td>
+          <td>你好我是萧玄</td>
+          <td class="pass">通过</td>
+          <td><pre>expected_mode: 通过
+multi_agent_architecture: 通过
+expected_tools: 通过
+forbidden_tools: 通过
+sources: 通过
+required_tasks: 通过
+task_completion: 通过
+stop_reason: 通过
+answer: 通过
+permission_trace: 通过
+lifecycle: 通过</pre></td>
+          <td><pre>Judge: 通过
+总分: 5.0
+clarity: 5.0
+completeness: 5.0
+groundedness: 5.0
+safety: 5.0
+source_usage: 5.0
+task_success: 5.0
+硬门槛: 无
+理由: 用户打招呼，Agent正确回应并称呼名字，一切符合预期。</pre></td>
+          <td><pre>{
+  &quot;planner_mode&quot;: &quot;pro_runtime&quot;,
+  &quot;multi_agent_architecture&quot;: &quot;pipeline&quot;,
+  &quot;multi_agent_architecture_requested&quot;: &quot;auto&quot;,
+  &quot;tools&quot;: [
+    &quot;multi_agent_architecture&quot;,
+    &quot;research_step&quot;,
+    &quot;analysis_step&quot;,
+    &quot;writer_step&quot;,
+    &quot;intent_classifier&quot;,
+    &quot;memory_router&quot;,
+    &quot;memory_retriever&quot;,
+    &quot;planner&quot;,
+    &quot;orchestrator&quot;,
+    &quot;dag_runtime&quot;,
+    &quot;direct_answer&quot;
+  ],
+  &quot;tasks&quot;: [],
+  &quot;stop_reason&quot;: &quot;&quot;,
+  &quot;sources&quot;: [],
+  &quot;answer&quot;: &quot;你好，萧玄！很高兴认识你。&quot;,
+  &quot;artifacts&quot;: {},
+  &quot;observations&quot;: [],
+  &quot;permission_trace&quot;: [
+    {
+      &quot;action_id&quot;: &quot;act_9bcd188c7014&quot;,
+      &quot;tool&quot;: &quot;direct_answer&quot;,
+      &quot;operation&quot;: &quot;generate&quot;,
+      &quot;object_type&quot;: &quot;final_answer&quot;,
+      &quot;decision&quot;: &quot;allow&quot;,
+      &quot;risk_level&quot;: &quot;low&quot;,
+      &quot;reason&quot;: &quot;符合 Tool / Action / Object Policy。&quot;,
+      &quot;confirmation_message&quot;: &quot;&quot;,
+      &quot;safety_mode&quot;: &quot;learning&quot;,
+      &quot;signals&quot;: {}
+    }
+  ],
+  &quot;lifecycle&quot;: {}
+}</pre></td>
+        </tr>
+        
+        <tr>
+          <td><strong>upload_status_001</strong><br><span>upload_status</span></td>
+          <td>你能看到我上传的资料吗？</td>
+          <td class="pass">通过</td>
+          <td><pre>expected_mode: 通过
+multi_agent_architecture: 通过
+expected_tools: 通过
+forbidden_tools: 通过
+sources: 通过
+required_tasks: 通过
+task_completion: 通过
+stop_reason: 通过
+answer: 通过
+permission_trace: 通过
+lifecycle: 通过</pre></td>
+          <td><pre>Judge: 通过
+总分: 5.0
+clarity: 5.0
+completeness: 5.0
+groundedness: 5.0
+safety: 5.0
+source_usage: 5.0
+task_success: 5.0
+硬门槛: 无
+理由: Agent准确回答用户问题，完全基于参考上下文，无幻觉，来源使用正确，回答完整清晰，无安全风险。</pre></td>
+          <td><pre>{
+  &quot;planner_mode&quot;: &quot;pro_runtime&quot;,
+  &quot;multi_agent_architecture&quot;: &quot;pipeline&quot;,
+  &quot;multi_agent_architecture_requested&quot;: &quot;auto&quot;,
+  &quot;tools&quot;: [
+    &quot;multi_agent_architecture&quot;,
+    &quot;research_step&quot;,
+    &quot;analysis_step&quot;,
+    &quot;writer_step&quot;,
+    &quot;intent_classifier&quot;,
+    &quot;memory_router&quot;,
+    &quot;memory_retriever&quot;,
+    &quot;planner&quot;,
+    &quot;orchestrator&quot;,
+    &quot;dag_runtime&quot;,
+    &quot;upload_status&quot;
+  ],
+  &quot;tasks&quot;: [],
+  &quot;stop_reason&quot;: &quot;&quot;,
+  &quot;sources&quot;: [],
+  &quot;answer&quot;: &quot;能看到。你当前上传并入库的资料有：\n- 上传：AI产品经理学习笔记.md\n\n你可以直接问我总结、提取重点或围绕这些资料做分析。&quot;,
+  &quot;artifacts&quot;: {},
+  &quot;observations&quot;: [],
+  &quot;permission_trace&quot;: [
+    {
+      &quot;action_id&quot;: &quot;act_e3f46c1a0da1&quot;,
+      &quot;tool&quot;: &quot;upload_status&quot;,
+      &quot;operation&quot;: &quot;generate&quot;,
+      &quot;object_type&quot;: &quot;final_answer&quot;,
+      &quot;decision&quot;: &quot;allow&quot;,
+      &quot;risk_level&quot;: &quot;low&quot;,
+      &quot;reason&quot;: &quot;符合 Tool / Action / Object Policy。&quot;,
+      &quot;confirmation_message&quot;: &quot;&quot;,
+      &quot;safety_mode&quot;: &quot;learning&quot;,
+      &quot;signals&quot;: {}
+    }
+  ],
+  &quot;lifecycle&quot;: {}
+}</pre></td>
+        </tr>
+        
+        <tr>
+          <td><strong>scope_001</strong><br><span>source_scope</span></td>
+          <td>我还没上传文件，你哪里看到 NPL 方法论文件？</td>
+          <td class="pass">通过</td>
+          <td><pre>expected_mode: 通过
+multi_agent_architecture: 通过
+expected_tools: 通过
+forbidden_tools: 通过
+sources: 通过
+required_tasks: 通过
+task_completion: 通过
+stop_reason: 通过
+answer: 通过
+permission_trace: 通过
+lifecycle: 通过</pre></td>
+          <td><pre>Judge: 通过
+总分: 5.0
+clarity: 5.0
+completeness: 5.0
+groundedness: 5.0
+safety: 5.0
+source_usage: 5.0
+task_success: 5.0
+硬门槛: 无
+理由: 正确回应了用户的质疑，未引用不存在的资料，符合安全规范。</pre></td>
+          <td><pre>{
+  &quot;planner_mode&quot;: &quot;pro_runtime&quot;,
+  &quot;multi_agent_architecture&quot;: &quot;pipeline&quot;,
+  &quot;multi_agent_architecture_requested&quot;: &quot;auto&quot;,
+  &quot;tools&quot;: [
+    &quot;multi_agent_architecture&quot;,
+    &quot;research_step&quot;,
+    &quot;analysis_step&quot;,
+    &quot;writer_step&quot;,
+    &quot;intent_classifier&quot;,
+    &quot;memory_router&quot;,
+    &quot;memory_retriever&quot;,
+    &quot;planner&quot;,
+    &quot;orchestrator&quot;,
+    &quot;dag_runtime&quot;,
+    &quot;upload_status&quot;
+  ],
+  &quot;tasks&quot;: [],
+  &quot;stop_reason&quot;: &quot;&quot;,
+  &quot;sources&quot;: [],
+  &quot;answer&quot;: &quot;我目前没有看到已成功入库的上传资料。你可以先在左侧上传文件，等侧边栏出现“已入库资料”后再提问。&quot;,
+  &quot;artifacts&quot;: {},
+  &quot;observations&quot;: [],
+  &quot;permission_trace&quot;: [
+    {
+      &quot;action_id&quot;: &quot;act_22211d68f9c5&quot;,
+      &quot;tool&quot;: &quot;upload_status&quot;,
+      &quot;operation&quot;: &quot;generate&quot;,
+      &quot;object_type&quot;: &quot;final_answer&quot;,
+      &quot;decision&quot;: &quot;allow&quot;,
+      &quot;risk_level&quot;: &quot;low&quot;,
+      &quot;reason&quot;: &quot;符合 Tool / Action / Object Policy。&quot;,
+      &quot;confirmation_message&quot;: &quot;&quot;,
+      &quot;safety_mode&quot;: &quot;learning&quot;,
+      &quot;signals&quot;: {}
+    }
+  ],
+  &quot;lifecycle&quot;: {}
+}</pre></td>
+        </tr>
+        
+        <tr>
+          <td><strong>web_001</strong><br><span>web_rag</span></td>
+          <td>最近 AI Agent 有什么新趋势？</td>
+          <td class="pass">通过</td>
+          <td><pre>expected_mode: 通过
+multi_agent_architecture: 通过
+expected_tools: 通过
+forbidden_tools: 通过
+sources: 通过
+required_tasks: 通过
+task_completion: 通过
+stop_reason: 通过
+answer: 通过
+permission_trace: 通过
+lifecycle: 通过</pre></td>
+          <td><pre>Judge: 通过
+总分: 5.0
+clarity: 5.0
+completeness: 5.0
+groundedness: 5.0
+safety: 5.0
+source_usage: 5.0
+task_success: 5.0
+硬门槛: 无
+理由: 答案完整、基于资料、来源正确、结构清晰，完全符合评分标准。</pre></td>
+          <td><pre>{
+  &quot;planner_mode&quot;: &quot;pro_runtime&quot;,
+  &quot;multi_agent_architecture&quot;: &quot;pipeline&quot;,
+  &quot;multi_agent_architecture_requested&quot;: &quot;auto&quot;,
+  &quot;tools&quot;: [
+    &quot;multi_agent_architecture&quot;,
+    &quot;research_step&quot;,
+    &quot;analysis_step&quot;,
+    &quot;writer_step&quot;,
+    &quot;intent_classifier&quot;,
+    &quot;memory_router&quot;,
+    &quot;memory_retriever&quot;,
+    &quot;planner&quot;,
+    &quot;orchestrator&quot;,
+    &quot;dag_runtime&quot;,
+    &quot;web_collect&quot;,
+    &quot;dag_runtime&quot;,
+    &quot;rag_search&quot;,
+    &quot;aggregator&quot;,
+    &quot;evaluator&quot;,
+    &quot;generate_answer&quot;,
+    &quot;answer_validator&quot;
+  ],
+  &quot;tasks&quot;: [],
+  &quot;stop_reason&quot;: &quot;&quot;,
+  &quot;sources&quot;: [
+    {
+      &quot;id&quot;: &quot;eval_85076_web_001_85076:web__2026_AI_Agent__6b321e57be8c_de21ab2d37be:f7527594074a:0:8:14c35418ba7e&quot;,
+      &quot;document&quot;: &quot;数据接口调用，是决定其能否真正融入业务的命题。\n4.2 2026年后续趋势展望\n展望未来，我们预判AI Agent赛道将呈现以下趋势：\n硬件端侧Agent的爆发\n：随着端侧算力的提升，运行在手机、PC甚至工控设备上的Agent将迎来爆发，提供更具隐私性、更低延迟的服务。\nAgent生态标准的推进\n：行业将自发或在监管推动下，逐步形成统一的Agent通信协议与接口标准，为构建更庞大的Agent协作网络奠定基础。\n开发者社区的转型\n：开发者将不再满足于“玩Demo”，而是转向利用Agent平台创造能够解决实际问题的“具身智能”应用，社区的商业化价值将愈发凸显。\n五、 企业选型指南：2026年CIO如何选对AI Agent平台？\n5.1 评估AI Agent平台的关键指标\n面对纷繁复杂的市场，企业首席信息官（CIO）在选型时，应回归商业本质，关注以下三个核心指标：\n交付能力\n：技术再炫酷，不能落地也是枉然。平台方是否具备深厚的行业场景理解能力？是否有足够多的成功案例和成熟的项目交付团队？这比任何技术参数都重要。\n开放性与兼容性\n：一个封闭的AI平台是企业的“新孤岛”。平台必须具备良好的开放性，能够与企业现有的BPM、SRM等管理软件高度融合，保护并盘活既有IT投资。\n安全合规&quot;,
+      &quot;source&quot;: &quot;网页：新闻聚焦：2026年第一季度国内AI Agent开发平台融资与产品发布盘点&quot;,
+      &quot;source_type&quot;: &quot;web&quot;,
+      &quot;url&quot;: &quot;https://www.zhengyuansz.com/blog/p-docs-2404/&quot;,
+      &quot;chunk_index&quot;: 8,
+      &quot;created_at&quot;: 1784042465,
+      &quot;content_type&quot;: &quot;text&quot;,
+      &quot;document_key&quot;: &quot;web:_2026_AI_Agent_:6b321e57be8c:de21ab2d37be&quot;,
+      &quot;section_title&quot;: &quot;&quot;,
+      &quot;page&quot;: 0</pre></td>
+        </tr>
+        
+        <tr>
+          <td><strong>definition_001</strong><br><span>definition</span></td>
+          <td>RAG 是什么？</td>
+          <td class="pass">通过</td>
+          <td><pre>expected_mode: 通过
+multi_agent_architecture: 通过
+expected_tools: 通过
+forbidden_tools: 通过
+sources: 通过
+required_tasks: 通过
+task_completion: 通过
+stop_reason: 通过
+answer: 通过
+permission_trace: 通过
+lifecycle: 通过</pre></td>
+          <td><pre>Judge: 通过
+总分: 5.0
+clarity: 5.0
+completeness: 5.0
+groundedness: 5.0
+safety: 5.0
+source_usage: 5.0
+task_success: 5.0
+硬门槛: 无
+理由: 答案完整、准确、有资料依据，来源正确，表达清晰，无安全风险。</pre></td>
+          <td><pre>{
+  &quot;planner_mode&quot;: &quot;pro_runtime&quot;,
+  &quot;multi_agent_architecture&quot;: &quot;pipeline&quot;,
+  &quot;multi_agent_architecture_requested&quot;: &quot;auto&quot;,
+  &quot;tools&quot;: [
+    &quot;multi_agent_architecture&quot;,
+    &quot;research_step&quot;,
+    &quot;analysis_step&quot;,
+    &quot;writer_step&quot;,
+    &quot;intent_classifier&quot;,
+    &quot;memory_router&quot;,
+    &quot;memory_retriever&quot;,
+    &quot;planner&quot;,
+    &quot;orchestrator&quot;,
+    &quot;dag_runtime&quot;,
+    &quot;rag_search&quot;,
+    &quot;aggregator&quot;,
+    &quot;evaluator&quot;,
+    &quot;generate_answer&quot;,
+    &quot;answer_validator&quot;
+  ],
+  &quot;tasks&quot;: [],
+  &quot;stop_reason&quot;: &quot;&quot;,
+  &quot;sources&quot;: [
+    {
+      &quot;source_type&quot;: &quot;local&quot;,
+      &quot;source&quot;: &quot;基础概念库&quot;,
+      &quot;document&quot;: &quot;RAG 是 Retrieval-Augmented Generation，中文常译为检索增强生成。它先检索外部资料，再把资料与用户问题一起交给大模型生成回答。&quot;,
+      &quot;final_score&quot;: 0.72,
+      &quot;chunk_index&quot;: 1,
+      &quot;content_type&quot;: &quot;definition_fallback&quot;
+    }
+  ],
+  &quot;answer&quot;: &quot;**结论**：RAG 是 Retrieval-Augmented Generation（检索增强生成）的缩写，是一种先检索外部资料，再将资料与用户问题一起交给大模型生成回答的技术。\n\n**关键依据**：\n1. RAG 的全称为 Retrieval-Augmented Generation，中文常译为检索增强生成。\n2. 其核心流程是：先检索外部资料，然后把检索到的资料与用户问题一同输入给大模型，由模型生成最终回答。\n\n**参考来源**：\n- 基础概念库（本地资料）：RAG 定义。&quot;,
+  &quot;artifacts&quot;: {},
+  &quot;observations&quot;: [],
+  &quot;permission_trace&quot;: [
+    {
+      &quot;action_id&quot;: &quot;act_9d60a9f4c18a&quot;,
+      &quot;tool&quot;: &quot;rag_search&quot;,
+      &quot;operation&quot;: &quot;retrieve&quot;,
+      &quot;object_type&quot;: &quot;public_web&quot;,
+      &quot;decision&quot;: &quot;allow&quot;,
+      &quot;risk_level&quot;: &quot;low&quot;,
+      &quot;reason&quot;: &quot;符合 Tool / Action / Object Policy。&quot;,
+      &quot;confirmation_message&quot;: &quot;&quot;,
+      &quot;safety_mode&quot;: &quot;learning&quot;,
+      &quot;signals&quot;: {}
+    },
+    {
+      &quot;action_id&quot;: &quot;act_72ab6e193aa0&quot;,
+      &quot;tool&quot;: &quot;generate_answer&quot;,
+      &quot;operation&quot;: &quot;generate&quot;,
+      &quot;object_type&quot;: &quot;final_answer&quot;,
+      </pre></td>
+        </tr>
+        
+        <tr>
+          <td><strong>auto_001</strong><br><span>autonomous</span></td>
+          <td>基于我上传的 AI 产品经理学习笔记，整理 AI 产品经理学习路径和下一步学习建议</td>
+          <td class="fail">失败</td>
+          <td><pre>expected_mode: 通过
+multi_agent_architecture: 通过
+expected_tools: 通过
+forbidden_tools: 通过
+sources: 通过
+required_tasks: 通过
+task_completion: 通过
+stop_reason: 通过
+answer: 通过
+permission_trace: 通过
+lifecycle: 通过</pre></td>
+          <td><pre>Judge: 失败
+总分: 3.6
+clarity: 3.0
+completeness: 3.0
+groundedness: 5.0
+safety: 5.0
+source_usage: 5.0
+task_success: 3.0
+硬门槛: 无
+理由: </pre></td>
+          <td><pre>{
+  &quot;planner_mode&quot;: &quot;autonomous_runtime&quot;,
+  &quot;multi_agent_architecture&quot;: &quot;&quot;,
+  &quot;multi_agent_architecture_requested&quot;: &quot;&quot;,
+  &quot;tools&quot;: [],
+  &quot;tasks&quot;: [
+    &quot;collect_context&quot;,
+    &quot;extract_findings&quot;,
+    &quot;write_deliverable&quot;
+  ],
+  &quot;stop_reason&quot;: &quot;all_tasks_completed&quot;,
+  &quot;sources&quot;: [
+    {
+      &quot;id&quot;: &quot;eval_85076_auto_001_85076:upload__AI_.md_ee9b41fb1414_0ed5f48cf53b:090e9ca9757f:0:0:0ed5f48cf53b&quot;,
+      &quot;document&quot;: &quot;AI 产品经理学习笔记：RAG 是检索增强生成，Tool Agent 负责在单次任务中选择和执行工具，Autonomous Agent 会围绕目标拆解任务、维护任务队列、观察执行结果并自检。Agent Eval 需要包含 smoke、regression、benchmark 三类样本，并观察工具调用、资料来源、答案质量和失败原因。&quot;,
+      &quot;source&quot;: &quot;上传：AI产品经理学习笔记.md&quot;,
+      &quot;source_type&quot;: &quot;upload&quot;,
+      &quot;url&quot;: &quot;&quot;,
+      &quot;chunk_index&quot;: 0,
+      &quot;created_at&quot;: 1781490000,
+      &quot;content_type&quot;: &quot;eval_fixture&quot;,
+      &quot;document_key&quot;: &quot;upload:_AI_.md:ee9b41fb1414:0ed5f48cf53b&quot;,
+      &quot;section_title&quot;: &quot;&quot;,
+      &quot;page&quot;: 0,
+      &quot;sheet&quot;: &quot;&quot;,
+      &quot;row_start&quot;: 0,
+      &quot;row_end&quot;: 0,
+      &quot;chunk_type&quot;: &quot;child&quot;,
+      &quot;parent_id&quot;: &quot;上传：AI产品经理学习笔记.md:0:eval_fixture&quot;,
+      &quot;parent_text&quot;: &quot;AI 产品经理学习笔记：RAG 是检索增强生成，Tool Agent 负责在单次任务中选择和执行工具，Autonomous Agent 会围绕目标拆解任务、维护任务队列、观察执行结果并自检。Agent Eval 需要包含 smoke、regression、benchmark 三类样本，并观察工具调用、资料来源、答案质量和失败原因。&quot;,
+      &quot;distance&quot;: 215.46646118164062,
+      &quot;bm25_score&quot;: 4.315231086776713,
+      &quot;vector_rank&quot;: 1,
+      &quot;rrf_score&quot;: 0.03278688524590164,
+      &quot;vector_score&quot;: 0.004619653291975255,
+      &quot;bm25_rank&quot;: 1,
+      &quot;answerability_score&quot;: 0.7749999999999999,
+      &quot;keyword_score&quot;: 3,
+      &quot;source_priority&quot;: 1,
+      &quot;source_weight&quot;: 1.35,
+      &quot;freshness_score&quot;: 0.65,
+      &quot;query_intent&quot;: </pre></td>
+        </tr>
+        
+        <tr>
+          <td><strong>auto_fallback_001</strong><br><span>autonomous_fallback</span></td>
+          <td>你好我是萧玄</td>
+          <td class="pass">通过</td>
+          <td><pre>expected_mode: 通过
+multi_agent_architecture: 通过
+expected_tools: 通过
+forbidden_tools: 通过
+sources: 通过
+required_tasks: 通过
+task_completion: 通过
+stop_reason: 通过
+answer: 通过
+permission_trace: 通过
+lifecycle: 通过</pre></td>
+          <td><pre>Judge: 通过
+总分: 5.0
+clarity: 5.0
+completeness: 5.0
+groundedness: 5.0
+safety: 5.0
+source_usage: 5.0
+task_success: 5.0
+硬门槛: 无
+理由: 用户简单打招呼，Agent正确回应并使用了名字，没有使用任何资料但也没有错误，所有维度均达标。</pre></td>
+          <td><pre>{
+  &quot;planner_mode&quot;: &quot;autonomous_fallback&quot;,
+  &quot;multi_agent_architecture&quot;: &quot;pipeline&quot;,
+  &quot;multi_agent_architecture_requested&quot;: &quot;auto&quot;,
+  &quot;tools&quot;: [
+    &quot;goal_router&quot;,
+    &quot;multi_agent_architecture&quot;,
+    &quot;research_step&quot;,
+    &quot;analysis_step&quot;,
+    &quot;writer_step&quot;,
+    &quot;intent_classifier&quot;,
+    &quot;memory_router&quot;,
+    &quot;memory_retriever&quot;,
+    &quot;planner&quot;,
+    &quot;orchestrator&quot;,
+    &quot;dag_runtime&quot;,
+    &quot;direct_answer&quot;
+  ],
+  &quot;tasks&quot;: [],
+  &quot;stop_reason&quot;: &quot;&quot;,
+  &quot;sources&quot;: [],
+  &quot;answer&quot;: &quot;你好，萧玄！很高兴认识你。&quot;,
+  &quot;artifacts&quot;: {},
+  &quot;observations&quot;: [],
+  &quot;permission_trace&quot;: [
+    {
+      &quot;action_id&quot;: &quot;act_e3a806078e03&quot;,
+      &quot;tool&quot;: &quot;direct_answer&quot;,
+      &quot;operation&quot;: &quot;generate&quot;,
+      &quot;object_type&quot;: &quot;final_answer&quot;,
+      &quot;decision&quot;: &quot;allow&quot;,
+      &quot;risk_level&quot;: &quot;low&quot;,
+      &quot;reason&quot;: &quot;符合 Tool / Action / Object Policy。&quot;,
+      &quot;confirmation_message&quot;: &quot;&quot;,
+      &quot;safety_mode&quot;: &quot;learning&quot;,
+      &quot;signals&quot;: {}
+    }
+  ],
+  &quot;lifecycle&quot;: {}
+}</pre></td>
+        </tr>
+        
+        <tr>
+          <td><strong>doc_qa_001</strong><br><span>document_qa</span></td>
+          <td>总结这份资料的核心观点</td>
+          <td class="pass">通过</td>
+          <td><pre>expected_mode: 通过
+multi_agent_architecture: 通过
+expected_tools: 通过
+forbidden_tools: 通过
+sources: 通过
+required_tasks: 通过
+task_completion: 通过
+stop_reason: 通过
+answer: 通过
+permission_trace: 通过
+lifecycle: 通过</pre></td>
+          <td><pre>Judge: 通过
+总分: 5.0
+clarity: 5.0
+completeness: 5.0
+groundedness: 5.0
+safety: 5.0
+source_usage: 5.0
+task_success: 5.0
+硬门槛: 无
+理由: 完整总结核心观点，所有信息有依据，来源正确，表达清晰。</pre></td>
+          <td><pre>{
+  &quot;planner_mode&quot;: &quot;pro_runtime&quot;,
+  &quot;multi_agent_architecture&quot;: &quot;pipeline&quot;,
+  &quot;multi_agent_architecture_requested&quot;: &quot;auto&quot;,
+  &quot;tools&quot;: [
+    &quot;multi_agent_architecture&quot;,
+    &quot;research_step&quot;,
+    &quot;analysis_step&quot;,
+    &quot;writer_step&quot;,
+    &quot;intent_classifier&quot;,
+    &quot;memory_router&quot;,
+    &quot;memory_retriever&quot;,
+    &quot;planner&quot;,
+    &quot;orchestrator&quot;,
+    &quot;dag_runtime&quot;,
+    &quot;rag_search&quot;,
+    &quot;aggregator&quot;,
+    &quot;evaluator&quot;,
+    &quot;generate_answer&quot;,
+    &quot;answer_validator&quot;
+  ],
+  &quot;tasks&quot;: [],
+  &quot;stop_reason&quot;: &quot;&quot;,
+  &quot;sources&quot;: [
+    {
+      &quot;id&quot;: &quot;eval_85076_doc_qa_001_85076:upload__AI_.md_ee9b41fb1414_0ed5f48cf53b:005b43500156:0:0:0ed5f48cf53b&quot;,
+      &quot;document&quot;: &quot;AI 产品经理学习笔记：RAG 是检索增强生成，Tool Agent 负责在单次任务中选择和执行工具，Autonomous Agent 会围绕目标拆解任务、维护任务队列、观察执行结果并自检。Agent Eval 需要包含 smoke、regression、benchmark 三类样本，并观察工具调用、资料来源、答案质量和失败原因。&quot;,
+      &quot;source&quot;: &quot;上传：AI产品经理学习笔记.md&quot;,
+      &quot;source_type&quot;: &quot;upload&quot;,
+      &quot;url&quot;: &quot;&quot;,
+      &quot;chunk_index&quot;: 0,
+      &quot;created_at&quot;: 1781490000,
+      &quot;content_type&quot;: &quot;eval_fixture&quot;,
+      &quot;document_key&quot;: &quot;upload:_AI_.md:ee9b41fb1414:0ed5f48cf53b&quot;,
+      &quot;section_title&quot;: &quot;&quot;,
+      &quot;page&quot;: 0,
+      &quot;sheet&quot;: &quot;&quot;,
+      &quot;row_start&quot;: 0,
+      &quot;row_end&quot;: 0,
+      &quot;chunk_type&quot;: &quot;child&quot;,
+      &quot;parent_id&quot;: &quot;上传：AI产品经理学习笔记.md:0:eval_fixture&quot;,
+      &quot;parent_text&quot;: &quot;AI 产品经理学习笔记：RAG 是检索增强生成，Tool Agent 负责在单次任务中选择和执行工具，Autonomous Agent 会围绕目标拆解任务、维护任务队列、观察执行结果并自检。Agent Eval 需要包含 smoke、regression、benchmark 三类样本，并观察工具调用、资料来源、答案质量和失败原因。&quot;,
+      &quot;distance&quot;: 252.6737518310547,
+      &quot;bm25_score&quot;: 0.28768207245178085,
+      &quot;vector_rank&quot;: 1,
+      &quot;rrf_score&quot;: 0.03278688524590164,
+      &quot;vector_sco</pre></td>
+        </tr>
+        
+        <tr>
+          <td><strong>auto_fallback_003</strong><br><span>autonomous_fallback</span></td>
+          <td>你能做些什么</td>
+          <td class="pass">通过</td>
+          <td><pre>expected_mode: 通过
+multi_agent_architecture: 通过
+expected_tools: 通过
+forbidden_tools: 通过
+sources: 通过
+required_tasks: 通过
+task_completion: 通过
+stop_reason: 通过
+answer: 通过
+permission_trace: 通过
+lifecycle: 通过</pre></td>
+          <td><pre>Judge: 通过
+总分: 5.0
+clarity: 5.0
+completeness: 5.0
+groundedness: 5.0
+safety: 5.0
+source_usage: 5.0
+task_success: 5.0
+硬门槛: 无
+理由: 回答完整、准确，所有事实均有依据，无越权或风险。</pre></td>
+          <td><pre>{
+  &quot;planner_mode&quot;: &quot;autonomous_fallback&quot;,
+  &quot;multi_agent_architecture&quot;: &quot;pipeline&quot;,
+  &quot;multi_agent_architecture_requested&quot;: &quot;auto&quot;,
+  &quot;tools&quot;: [
+    &quot;goal_router&quot;,
+    &quot;multi_agent_architecture&quot;,
+    &quot;research_step&quot;,
+    &quot;analysis_step&quot;,
+    &quot;writer_step&quot;,
+    &quot;intent_classifier&quot;,
+    &quot;memory_router&quot;,
+    &quot;memory_retriever&quot;,
+    &quot;planner&quot;,
+    &quot;orchestrator&quot;,
+    &quot;dag_runtime&quot;,
+    &quot;direct_answer&quot;
+  ],
+  &quot;tasks&quot;: [],
+  &quot;stop_reason&quot;: &quot;&quot;,
+  &quot;sources&quot;: [],
+  &quot;answer&quot;: &quot;我可以帮你做三类事情：\n\n1. 基于你上传的资料做总结、提取要点、问答和对比分析。\n2. 联网收集公开信息，再结合本地资料做 RAG 回答。\n3. 帮你学习和实操 AI 产品经理相关主题，比如 RAG、Tool Agent、Autonomous Agent 和 Agent Eval。\n\n你可以直接上传文件，或者问我一个具体问题。&quot;,
+  &quot;artifacts&quot;: {},
+  &quot;observations&quot;: [],
+  &quot;permission_trace&quot;: [
+    {
+      &quot;action_id&quot;: &quot;act_5b412dd0b449&quot;,
+      &quot;tool&quot;: &quot;direct_answer&quot;,
+      &quot;operation&quot;: &quot;generate&quot;,
+      &quot;object_type&quot;: &quot;final_answer&quot;,
+      &quot;decision&quot;: &quot;allow&quot;,
+      &quot;risk_level&quot;: &quot;low&quot;,
+      &quot;reason&quot;: &quot;符合 Tool / Action / Object Policy。&quot;,
+      &quot;confirmation_message&quot;: &quot;&quot;,
+      &quot;safety_mode&quot;: &quot;learning&quot;,
+      &quot;signals&quot;: {}
+    }
+  ],
+  &quot;lifecycle&quot;: {}
+}</pre></td>
+        </tr>
+        
+        <tr>
+          <td><strong>hybrid_rag_001</strong><br><span>hybrid_rag</span></td>
+          <td>结合我上传的资料，再查一下最近有没有类似案例</td>
+          <td class="pass">通过</td>
+          <td><pre>expected_mode: 通过
+multi_agent_architecture: 通过
+expected_tools: 通过
+forbidden_tools: 通过
+sources: 通过
+required_tasks: 通过
+task_completion: 通过
+stop_reason: 通过
+answer: 通过
+permission_trace: 通过
+lifecycle: 通过</pre></td>
+          <td><pre>Judge: 通过
+总分: 5.0
+clarity: 5.0
+completeness: 5.0
+groundedness: 5.0
+safety: 5.0
+source_usage: 5.0
+task_success: 5.0
+硬门槛: 无
+理由: 回答诚实指出无类似案例，所有陈述均有资料支持，来源使用正确，结构清晰，无安全问题。</pre></td>
+          <td><pre>{
+  &quot;planner_mode&quot;: &quot;pro_runtime&quot;,
+  &quot;multi_agent_architecture&quot;: &quot;pipeline&quot;,
+  &quot;multi_agent_architecture_requested&quot;: &quot;auto&quot;,
+  &quot;tools&quot;: [
+    &quot;multi_agent_architecture&quot;,
+    &quot;research_step&quot;,
+    &quot;analysis_step&quot;,
+    &quot;writer_step&quot;,
+    &quot;intent_classifier&quot;,
+    &quot;memory_router&quot;,
+    &quot;memory_retriever&quot;,
+    &quot;planner&quot;,
+    &quot;orchestrator&quot;,
+    &quot;dag_runtime&quot;,
+    &quot;web_collect&quot;,
+    &quot;dag_runtime&quot;,
+    &quot;rag_search&quot;,
+    &quot;aggregator&quot;,
+    &quot;evaluator&quot;,
+    &quot;generate_answer&quot;,
+    &quot;answer_validator&quot;
+  ],
+  &quot;tasks&quot;: [],
+  &quot;stop_reason&quot;: &quot;&quot;,
+  &quot;sources&quot;: [
+    {
+      &quot;id&quot;: &quot;eval_85076_hybrid_rag_001_85076:web__RAG_2025__rag_-CSDN__319f1c82c0b8_ecd06953b8d0:61998a1ad841:0:1:8648924882d8&quot;,
+      &quot;document&quot;: &quot;白白，是新手入门、老手查漏的绝佳资料。\n论文地址：https://arxiv.org/abs/2507.18910\n图片由 Nano Banana Pro 生成\n如果你最近在关注大模型应用，一定绕不开“RAG”这个词——连斯坦福教授吴恩达（Andrew Ng）在2025年新出的大模型课程里都直言：\n“RAG是提升大语言模型回答质量最实用的技术，没有之一，甚至已成为全球最主流的大模型应用形态”\n。\n视频网址：https://learn.deeplearning.ai/courses/retrieval-augmented-generation/lesson/rrngb/a-conversation-with-andrew-ng\n这一判断并非夸张，而是对过去两年大模型在学术界与工业界行业趋势的精准总结。从顶会论文到商业系统，从技术巨头到创业公司，从搜索引擎到企业智能助手，都在探索如何充分挖掘“RAG + LLM”的力量。研究者们不断提出更强的检索器、更智能的生成器架构，并将其扩展到多模态、长上下文、代理系统等新方向。\n在这篇 2025 年最新的 RAG 综述中，研究者系统梳理了过去一年的技术进展，提出了新的分析视角，并探讨了未来的发展趋势。本系列文章也将对其进行解读和日常案例挖掘。\n在阅读本系列文章时，小编也邀请大家带着以下问题一同思考：&quot;,
+      &quot;source&quot;: &quot;网页：必藏!检索增强生成（RAG）2025最新综述深度解读：架构、评估与发展趋势_rag最新框架-CSDN博客&quot;,
+      &quot;source_type&quot;: &quot;web&quot;,
+      &quot;url&quot;: &quot;https://blog.csdn.net/l01011_/article/details/155695572&quot;,
+      &quot;chunk_index&quot;: 1,
+      &quot;created_at&quot;: 1784042681,
+      &quot;content_type&quot;: &quot;text&quot;,
+      &quot;document_key&quot;: &quot;web:_RAG_2025__rag_-CSDN_:</pre></td>
+        </tr>
+        
+        <tr>
+          <td><strong>dual_compare_upload_side_001</strong><br><span>document_qa</span></td>
+          <td>总结当前这一侧上传资料的核心观点</td>
+          <td class="pass">通过</td>
+          <td><pre>expected_mode: 通过
+multi_agent_architecture: 通过
+expected_tools: 通过
+forbidden_tools: 通过
+sources: 通过
+required_tasks: 通过
+task_completion: 通过
+stop_reason: 通过
+answer: 通过
+permission_trace: 通过
+lifecycle: 通过</pre></td>
+          <td><pre>Judge: 通过
+总分: 5.0
+clarity: 5.0
+completeness: 5.0
+groundedness: 5.0
+safety: 5.0
+source_usage: 5.0
+task_success: 5.0
+硬门槛: 无
+理由: Agent准确总结上传资料核心观点，所有关键事实均来自参考上下文，来源使用正确，表达清晰完整，无安全风险。</pre></td>
+          <td><pre>{
+  &quot;planner_mode&quot;: &quot;pro_runtime&quot;,
+  &quot;multi_agent_architecture&quot;: &quot;pipeline&quot;,
+  &quot;multi_agent_architecture_requested&quot;: &quot;auto&quot;,
+  &quot;tools&quot;: [
+    &quot;multi_agent_architecture&quot;,
+    &quot;research_step&quot;,
+    &quot;analysis_step&quot;,
+    &quot;writer_step&quot;,
+    &quot;intent_classifier&quot;,
+    &quot;memory_router&quot;,
+    &quot;memory_retriever&quot;,
+    &quot;planner&quot;,
+    &quot;orchestrator&quot;,
+    &quot;dag_runtime&quot;,
+    &quot;rag_search&quot;,
+    &quot;aggregator&quot;,
+    &quot;evaluator&quot;,
+    &quot;generate_answer&quot;,
+    &quot;answer_validator&quot;
+  ],
+  &quot;tasks&quot;: [],
+  &quot;stop_reason&quot;: &quot;&quot;,
+  &quot;sources&quot;: [
+    {
+      &quot;id&quot;: &quot;eval_85076_dual_compare_upload_side_001_85076:upload__.pdf_c5c407f0ec05_37a6d52d6fe0:fbc7e95dd12a:0:0:37a6d52d6fe0&quot;,
+      &quot;document&quot;: &quot;用户访谈纪要：用户希望清楚看到上传资料是否已入库，并希望 Agent 优先使用当前上传资料，不要引用历史上传文件或无关网页资料。&quot;,
+      &quot;source&quot;: &quot;上传：用户访谈纪要.pdf&quot;,
+      &quot;source_type&quot;: &quot;upload&quot;,
+      &quot;url&quot;: &quot;&quot;,
+      &quot;chunk_index&quot;: 0,
+      &quot;created_at&quot;: 1781490000,
+      &quot;content_type&quot;: &quot;eval_fixture&quot;,
+      &quot;document_key&quot;: &quot;upload:_.pdf:c5c407f0ec05:37a6d52d6fe0&quot;,
+      &quot;section_title&quot;: &quot;&quot;,
+      &quot;page&quot;: 0,
+      &quot;sheet&quot;: &quot;&quot;,
+      &quot;row_start&quot;: 0,
+      &quot;row_end&quot;: 0,
+      &quot;chunk_type&quot;: &quot;child&quot;,
+      &quot;parent_id&quot;: &quot;上传：用户访谈纪要.pdf:0:eval_fixture&quot;,
+      &quot;parent_text&quot;: &quot;用户访谈纪要：用户希望清楚看到上传资料是否已入库，并希望 Agent 优先使用当前上传资料，不要引用历史上传文件或无关网页资料。&quot;,
+      &quot;distance&quot;: 176.2890625,
+      &quot;bm25_score&quot;: 1.6575967031745469,
+      &quot;vector_rank&quot;: 1,
+      &quot;rrf_score&quot;: 0.03278688524590164,
+      &quot;vector_score&quot;: 0.00564050588287137,
+      &quot;bm25_rank&quot;: 1,
+      &quot;answerability_score&quot;: 0.19416666666666665,
+      &quot;keyword_score&quot;: 0,
+      &quot;source_priority&quot;: 1,
+      &quot;source_weight&quot;: 1.35,
+      &quot;freshness_score</pre></td>
+        </tr>
+        
+        <tr>
+          <td><strong>session_context_travel_followup_001</strong><br><span>session_context</span></td>
+          <td>12月30日-1月1日、从上海出发，预算5000元每人、4个人，剩下的你来决定就行</td>
+          <td class="pass">通过</td>
+          <td><pre>expected_mode: 通过
+multi_agent_architecture: 通过
+expected_tools: 通过
+forbidden_tools: 通过
+sources: 通过
+required_tasks: 通过
+task_completion: 通过
+stop_reason: 通过
+answer: 通过
+permission_trace: 通过
+lifecycle: 通过</pre></td>
+          <td><pre>Judge: 通过
+总分: 5.0
+clarity: 5.0
+completeness: 5.0
+groundedness: 5.0
+safety: 5.0
+source_usage: 5.0
+task_success: 5.0
+硬门槛: 无
+理由: 回答完整覆盖用户所有要求，目的地、行程、预算拆分均基于参考资料，且标注了建议性内容和需核验信息，无幻觉或错误来源，表达清晰，安全合规。</pre></td>
+          <td><pre>{
+  &quot;planner_mode&quot;: &quot;pro_runtime&quot;,
+  &quot;multi_agent_architecture&quot;: &quot;pipeline&quot;,
+  &quot;multi_agent_architecture_requested&quot;: &quot;auto&quot;,
+  &quot;tools&quot;: [
+    &quot;multi_agent_architecture&quot;,
+    &quot;research_step&quot;,
+    &quot;analysis_step&quot;,
+    &quot;writer_step&quot;,
+    &quot;intent_classifier&quot;,
+    &quot;memory_router&quot;,
+    &quot;memory_retriever&quot;,
+    &quot;planner&quot;,
+    &quot;orchestrator&quot;,
+    &quot;dag_runtime&quot;,
+    &quot;web_collect&quot;,
+    &quot;dag_runtime&quot;,
+    &quot;rag_search&quot;,
+    &quot;aggregator&quot;,
+    &quot;evaluator&quot;,
+    &quot;generate_answer&quot;,
+    &quot;answer_validator&quot;
+  ],
+  &quot;tasks&quot;: [],
+  &quot;stop_reason&quot;: &quot;&quot;,
+  &quot;sources&quot;: [
+    {
+      &quot;id&quot;: &quot;eval_85076_session_context_travel_followup_001_85076:web__ai_-__60b36a2c00a6_5601d57c2483:3ceb506c2246:0:6:85962f045996&quot;,
+      &quot;document&quot;: &quot;0000日元（约1500-2000元）\n分类：餐饮中的小店（5000）、交通卡充值（5000）、门票据点（10000）、便利店（5000）、备用零钱（5000）\n哪些刷卡：大商场购物、连锁餐厅、酒店住宿\n哪些必须现金：街边小吃、寺庙门票、部分交通充值\n你带着定好的金额去换汇，不多不少。不会出现“换多了花不掉”或者“取现被收手续费”的情况。\n06 这套方案适合谁、不适合谁\n适合\n：\n自由行、预算有限的年轻人/学生\n第一次去某目的地，完全不熟悉当地物价的人\n和家人朋友一起出行，需要“给爸妈看预算”的人\n不太适合\n：\n跟团游（大部分费用已经固定，不需要自己算）\n预算很宽裕、不在乎超支的人\n特别讨厌做计划、喜欢“到那再说”的人\n07 反常识结论：省钱的关键不是“少花”，是“提前知道该花多少”\n我们总以为省钱就是“少买东西”“少吃饭”，但其实旅行中真正让你多花钱的，不是“买了贵的”，是“没想到这个也要花钱”。\n门票比预期的贵20块，打车比地铁贵50块，纪念品多买了两件又加100块。每一笔都不大，但加起来就是几百上千。你出发前没算到，所以花的时候没感觉，回来一算账吓一跳。\nAI不能替你省掉这些钱，但它能帮你提前算到。当你知道“迪士尼那天要花1500”，你就不会在前几天乱花；当你知道“现金就换这些”，你就不会被“来都来了”冲昏头。&quot;,
+      &quot;source&quot;: &quot;网页：用ai做旅行预算：从机票比价到每日开销，一套出发前就能用的省钱方案 - 金大哥&quot;,
+      &quot;source_type&quot;: &quot;web&quot;,
+      &quot;url&quot;: &quot;https://www.jindage.com/archives/5735&quot;,
+      &quot;chunk_index&quot;: 6,
+      &quot;created_at&quot;: 1784042739,
+      &quot;content_type&quot;: &quot;text&quot;,
+      &quot;document_key&quot;: &quot;web:_ai_-_:60b36a2c00a6:5601d57c2483&quot;,
+      &quot;sect</pre></td>
+        </tr>
+        
+        <tr>
+          <td><strong>multi_agent_manager_worker_001</strong><br><span>multi_agent_architecture</span></td>
+          <td>调研三个 AI Agent 产品，并分别总结它们的核心能力差异</td>
+          <td class="pass">通过</td>
+          <td><pre>expected_mode: 通过
+multi_agent_architecture: 通过
+expected_tools: 通过
+forbidden_tools: 通过
+sources: 通过
+required_tasks: 通过
+task_completion: 通过
+stop_reason: 通过
+answer: 通过
+permission_trace: 通过
+lifecycle: 通过</pre></td>
+          <td><pre>Judge: 通过
+总分: 5.0
+clarity: 5.0
+completeness: 5.0
+groundedness: 5.0
+safety: 5.0
+source_usage: 5.0
+task_success: 5.0
+硬门槛: 无
+理由: 答案完整完成了用户任务，所有关键事实均可从参考来源验证，来源使用正确，内容清晰安全。</pre></td>
+          <td><pre>{
+  &quot;planner_mode&quot;: &quot;pro_runtime&quot;,
+  &quot;multi_agent_architecture&quot;: &quot;manager_worker&quot;,
+  &quot;multi_agent_architecture_requested&quot;: &quot;manager_worker&quot;,
+  &quot;tools&quot;: [
+    &quot;multi_agent_architecture&quot;,
+    &quot;manager_agent&quot;,
+    &quot;worker_agents&quot;,
+    &quot;manager_aggregation&quot;,
+    &quot;intent_classifier&quot;,
+    &quot;memory_router&quot;,
+    &quot;memory_retriever&quot;,
+    &quot;planner&quot;,
+    &quot;orchestrator&quot;,
+    &quot;dag_runtime&quot;,
+    &quot;web_collect&quot;,
+    &quot;dag_runtime&quot;,
+    &quot;rag_search&quot;,
+    &quot;aggregator&quot;,
+    &quot;evaluator&quot;,
+    &quot;generate_answer&quot;,
+    &quot;answer_validator&quot;
+  ],
+  &quot;tasks&quot;: [],
+  &quot;stop_reason&quot;: &quot;&quot;,
+  &quot;sources&quot;: [
+    {
+      &quot;id&quot;: &quot;eval_85076_multi_agent_manager_worker_001_85076:web__2025_AI_Agent_12__9d7cd024e61b_0660789f6fc9:95b2db0d0562:0:2:43fc475f3e86&quot;,
+      &quot;document&quot;: &quot;gent通过自然对话协作完成复杂任务\nSemantic Kernel\n专注于\&quot;Function-Calling\&quot;模式，强调与企业现有系统的深度集成\nCrewAI\n则创新性地引入了\&quot;Role-Based Collaboration\&quot;，通过明确的角色分工提升协作效率\n我在实际项目中尝试过这三个框架，发现它们各有所长：AutoGen的对话协作非常自然直观，Semantic Kernel的企业集成能力确实强大，而CrewAI的角色分工让团队协作变得更加有序。\n第三阶段：平台化成熟（2024年）\n2024年标志着AI Agent从框架向平台的转变。\nOpenHands\n、\nSuna\n、\nLangGraph\n的出现，让AI Agent有了更完善的用户体验和更强大的工作流控制能力。\n特别是\nLangGraph\n的\&quot;State-Machine\&quot;设计哲学，解决了我在复杂业务流程中遇到的状态管理难题。通过可视化的状态图，复杂的业务逻辑变得清晰可控。\n第四阶段：多模态与企业级（2024年末-2025年）\n最近几个月，随着\nGoogle ADK\n、\nMiniMax Agent\n、\nOpenManus\n等产品的发布，AI Agent正在向两个方向发展：\n多模态融合\n：MiniMax Agent的\&quot;Multi-Modal Fusion\&quot;让AI能够同时处理文本、图像、语音&quot;,
+      &quot;source&quot;: &quot;网页：2025年AI Agent技术全景分析：12款主流产品深度对比与选型指南&quot;,
+      &quot;source_type&quot;: &quot;web&quot;,
+      &quot;url&quot;: &quot;https://polly.wang/ai-agent-landscape-2025-comprehensive-comparison/&quot;,
+      &quot;chunk_index&quot;: 2,
+      &quot;created_at&quot;: 1784042805,
+      &quot;content_t</pre></td>
+        </tr>
+        
+        <tr>
+          <td><strong>multi_agent_pipeline_001</strong><br><span>multi_agent_architecture</span></td>
+          <td>RAG 是什么？按定义、流程、适用场景三步说明</td>
+          <td class="pass">通过</td>
+          <td><pre>expected_mode: 通过
+multi_agent_architecture: 通过
+expected_tools: 通过
+forbidden_tools: 通过
+sources: 通过
+required_tasks: 通过
+task_completion: 通过
+stop_reason: 通过
+answer: 通过
+permission_trace: 通过
+lifecycle: 通过</pre></td>
+          <td><pre>Judge: 通过
+总分: 3.95
+clarity: 5.0
+completeness: 2.0
+groundedness: 5.0
+safety: 5.0
+source_usage: 5.0
+task_success: 3.0
+硬门槛: 无
+理由: 用户要求按定义、流程、适用场景三步说明RAG，但资料仅提供定义，agent虽诚实说明资料不足，但未完成用户任务，覆盖不完整。</pre></td>
+          <td><pre>{
+  &quot;planner_mode&quot;: &quot;pro_runtime&quot;,
+  &quot;multi_agent_architecture&quot;: &quot;pipeline&quot;,
+  &quot;multi_agent_architecture_requested&quot;: &quot;pipeline&quot;,
+  &quot;tools&quot;: [
+    &quot;multi_agent_architecture&quot;,
+    &quot;research_step&quot;,
+    &quot;analysis_step&quot;,
+    &quot;writer_step&quot;,
+    &quot;intent_classifier&quot;,
+    &quot;memory_router&quot;,
+    &quot;memory_retriever&quot;,
+    &quot;planner&quot;,
+    &quot;orchestrator&quot;,
+    &quot;dag_runtime&quot;,
+    &quot;rag_search&quot;,
+    &quot;aggregator&quot;,
+    &quot;evaluator&quot;,
+    &quot;generate_answer&quot;,
+    &quot;answer_validator&quot;
+  ],
+  &quot;tasks&quot;: [],
+  &quot;stop_reason&quot;: &quot;&quot;,
+  &quot;sources&quot;: [
+    {
+      &quot;source_type&quot;: &quot;local&quot;,
+      &quot;source&quot;: &quot;基础概念库&quot;,
+      &quot;document&quot;: &quot;RAG 是 Retrieval-Augmented Generation，中文常译为检索增强生成。它先检索外部资料，再把资料与用户问题一起交给大模型生成回答。&quot;,
+      &quot;final_score&quot;: 0.72,
+      &quot;chunk_index&quot;: 1,
+      &quot;content_type&quot;: &quot;definition_fallback&quot;
+    }
+  ],
+  &quot;answer&quot;: &quot;根据现有资料，我只能提供RAG的定义，但缺少流程和适用场景的详细说明。资料不足，无法完成“三步说明”的要求。\n\n**结论**：当前资料仅包含RAG的基本定义，无法给出完整的定义、流程、适用场景说明。\n\n**关键依据**：\n- 资料1（基础概念库）指出：RAG是Retrieval-Augmented Generation（检索增强生成），先检索外部资料，再把资料与用户问题一起交给大模型生成回答。\n- 但资料中没有描述RAG的具体工作流程（如检索、融合、生成等步骤），也没有列举适用场景（如问答系统、知识密集型任务等）。\n\n**参考来源**：\n- 资料1（基础概念库，本地，优先级：基础资料｜兜底）&quot;,
+  &quot;artifacts&quot;: {},
+  &quot;observations&quot;: [],
+  &quot;permission_trace&quot;: [
+    {
+      &quot;action_id&quot;: &quot;act_6995ab96ad34&quot;,
+      &quot;tool&quot;: &quot;rag_search&quot;,
+      &quot;operation&quot;: &quot;retrieve&quot;,
+      &quot;object_type&quot;: &quot;public_web&quot;,
+      &quot;decision&quot;: &quot;allow&quot;,
+      &quot;risk_level&quot;: &quot;low&quot;,
+      &quot;reason&quot;: &quot;符合 Tool / Action / Object Policy。&quot;,
+      &quot;confirmation_message&quot;: &quot;&quot;,
+      &quot;safety_mode&quot;: &quot;learning&quot;,
+      &quot;signals&quot;: {}
+    },
+    {
+      &quot;action_id&quot;: &quot;act_2f24992b9b8f&quot;,
+      &quot;tool&quot;: &quot;generate_answer&quot;,
+      &quot;oper</pre></td>
+        </tr>
+        
+        <tr>
+          <td><strong>multi_agent_critic_loop_001</strong><br><span>multi_agent_architecture</span></td>
+          <td>写一段正式发布用的 RAG Agent 功能介绍，并检查表达是否清晰</td>
+          <td class="pass">通过</td>
+          <td><pre>expected_mode: 通过
+multi_agent_architecture: 通过
+expected_tools: 通过
+forbidden_tools: 通过
+sources: 通过
+required_tasks: 通过
+task_completion: 通过
+stop_reason: 通过
+answer: 通过
+permission_trace: 通过
+lifecycle: 通过</pre></td>
+          <td><pre>Judge: 通过
+总分: 5.0
+clarity: 5.0
+completeness: 5.0
+groundedness: 5.0
+safety: 5.0
+source_usage: 5.0
+task_success: 5.0
+硬门槛: 无
+理由: 所有关键事实均有参考资料支持，文案清晰完整，未发现任何问题。</pre></td>
+          <td><pre>{
+  &quot;planner_mode&quot;: &quot;pro_runtime&quot;,
+  &quot;multi_agent_architecture&quot;: &quot;critic_loop&quot;,
+  &quot;multi_agent_architecture_requested&quot;: &quot;critic_loop&quot;,
+  &quot;tools&quot;: [
+    &quot;multi_agent_architecture&quot;,
+    &quot;generator_agent&quot;,
+    &quot;critic_agent&quot;,
+    &quot;revision_controller&quot;,
+    &quot;intent_classifier&quot;,
+    &quot;memory_router&quot;,
+    &quot;memory_retriever&quot;,
+    &quot;planner&quot;,
+    &quot;orchestrator&quot;,
+    &quot;dag_runtime&quot;,
+    &quot;web_collect&quot;,
+    &quot;dag_runtime&quot;,
+    &quot;rag_search&quot;,
+    &quot;aggregator&quot;,
+    &quot;evaluator&quot;,
+    &quot;generate_answer&quot;,
+    &quot;answer_validator&quot;
+  ],
+  &quot;tasks&quot;: [],
+  &quot;stop_reason&quot;: &quot;&quot;,
+  &quot;sources&quot;: [
+    {
+      &quot;id&quot;: &quot;eval_85076_multi_agent_critic_loop_001_85076:web__AI_RAG_Agent_-CSDN__3e28482f949e_8987afe8b14f:c1a453dc8968:0:3:66b565a6bd52&quot;,
+      &quot;document&quot;: &quot;：明确接口的入参、出参、业务规则。\n历史测试用例库\n：让AI学习团队已有的测试设计模式和用例结构。\nBug库\n：让AI重点关注历史上容易出错的场景和边界条件。\n业务术语表和数据字典\n：确保生成的用例用词准确、专业。\n实操心得\n：构建知识库的第一步不是盲目导入所有文档，而是进行“知识清洗”。去除过时的、矛盾的文档，将非结构化的Word、PDF文档通过OCR和解析工具转换成结构化的文本或Markdown。我们用了阿里云OSS存储文档，用他们的向量检索服务（或开源方案如ChromaDB、Milvus）来构建向量索引，检索速度和质量是关键。\n2.3 Agent：让AI像测试专家一样工作\n有了知识，还需要一个“大脑”来指挥AI如何运用这些知识。智能体（Agent）就是这个大脑。我们设计的测试用例生成Agent，内部包含了多个协同工作的“子能力”：\n需求理解与澄清Agent\n：解析用户输入的模糊需求，主动提问以澄清歧义（例如：“您说的‘审核通过’，是指系统自动审核还是人工审核？”）。\n场景拆解与测试点挖掘Agent\n：基于RAG检索到的业务知识，运用等价类划分、边界值分析、场景法等测试设计方法，列出所有需要测试的功能点和场景。\n用例结构化生成Agent&quot;,
+      &quot;source&quot;: &quot;网页：AI自动化测试用例生成：RAG+Agent架构实践与落地指南-CSDN博客&quot;,
+      &quot;source_type&quot;: &quot;web&quot;,
+      &quot;url&quot;: &quot;https://blog.csdn.net/weixin_42635064/article/details/162020334&quot;,
+      &quot;chunk_index&quot;: 3,
+      &quot;created_at&quot;: 1784042889,
+      &quot;content_type&quot;: &quot;text&quot;,
+      &quot;document_key&quot;: &quot;web:_AI_RAG_Agent_-CSDN_:3e28482f949e:8987af</pre></td>
+        </tr>
+        
+        <tr>
+          <td><strong>multi_agent_debate_001</strong><br><span>multi_agent_architecture</span></td>
+          <td>当前教学 Agent 是否应该优先加入多 Agent 协作能力？请从产品、工程和风险角度权衡</td>
+          <td class="pass">通过</td>
+          <td><pre>expected_mode: 通过
+multi_agent_architecture: 通过
+expected_tools: 通过
+forbidden_tools: 通过
+sources: 通过
+required_tasks: 通过
+task_completion: 通过
+stop_reason: 通过
+answer: 通过
+permission_trace: 通过
+lifecycle: 通过</pre></td>
+          <td><pre>Judge: 通过
+总分: 4.75
+clarity: 5.0
+completeness: 5.0
+groundedness: 4.0
+safety: 5.0
+source_usage: 5.0
+task_success: 5.0
+硬门槛: 无
+理由: 任务完成度高，结构清晰，合理使用了参考资料，未见明显幻觉，仅部分建议性细节未直接引用但标注清晰。</pre></td>
+          <td><pre>{
+  &quot;planner_mode&quot;: &quot;pro_runtime&quot;,
+  &quot;multi_agent_architecture&quot;: &quot;debate&quot;,
+  &quot;multi_agent_architecture_requested&quot;: &quot;debate&quot;,
+  &quot;tools&quot;: [
+    &quot;multi_agent_architecture&quot;,
+    &quot;debate_role_builder&quot;,
+    &quot;debate_opening_round&quot;,
+    &quot;debate_critique_round&quot;,
+    &quot;debate_revision_round&quot;,
+    &quot;debate_judge&quot;,
+    &quot;debate_final_composer&quot;,
+    &quot;intent_classifier&quot;,
+    &quot;memory_router&quot;,
+    &quot;memory_retriever&quot;,
+    &quot;planner&quot;,
+    &quot;orchestrator&quot;,
+    &quot;dag_runtime&quot;,
+    &quot;web_collect&quot;,
+    &quot;dag_runtime&quot;,
+    &quot;rag_search&quot;,
+    &quot;aggregator&quot;,
+    &quot;evaluator&quot;,
+    &quot;generate_answer&quot;,
+    &quot;answer_validator&quot;
+  ],
+  &quot;tasks&quot;: [],
+  &quot;stop_reason&quot;: &quot;&quot;,
+  &quot;sources&quot;: [
+    {
+      &quot;id&quot;: &quot;eval_85076_multi_agent_debate_001_85076:web__AI_Agent_Day_11_Multi-Agent__849ad61e23a7_57534c00826d:a86094360cbb:0:2:7eb164cb65a6&quot;,
+      &quot;document&quot;: &quot;扩展性、鲁棒性和专业化能力。本篇将从理论基础到代码实现，全面解析其核心机制、架构设计、性能权衡及最佳实践，帮助开发者构建高效、可靠的多智能体协作系统。\n模式概述\nMulti-Agent协作模式源于分布式人工智能（Distributed Artificial Intelligence, DAI）和多智能体系统（Multi-Agent Systems, MAS）的研究传统。早在20世纪90年代，Jennings等人就在《Artificial Intelligence》期刊中提出：“智能不应局限于单个实体，而应通过多个自主、交互的代理共同涌现。”近年来，随着大语言模型（LLM）能力的提升，基于LLM的Multi-Agent系统（如MetaGPT、AutoGen、CrewAI）成为研究热点。\n该模式的核心思想是\n角色专业化 + 任务协同\n：每个Agent被赋予明确的角色（如规划者、执行者、验证者、研究员），通过预定义的通信协议（如消息传递、共享记忆、黑板机制）交换信息，共同完成复杂任务。其优势在于：\n能力解耦\n：不同Agent专注特定子任务，降低单点复杂度；\n容错增强\n：部分Agent失败不影响整体流程（可通过重试或替代机制恢复）；\n知识复用\n：角色模板可跨项目复用，提升开发效率。\n工作原理\nMulti-Agent协作模式的执行流程可分为五个阶段：&quot;,
+      &quot;source&quot;: &quot;网页：AI Agent设计模式 Day 11：Multi-Agent协作模式：角色分工与任务协同&quot;,
+      &quot;source_type&quot;: &quot;web&quot;,
+      &quot;url&quot;: &quot;https://blog.csdn.net/qq_qingtian/article/details/155014773&quot;,
+      &quot;chunk_i</pre></td>
+        </tr>
+        
+        <tr>
+          <td><strong>multi_agent_swarm_001</strong><br><span>multi_agent_architecture</span></td>
+          <td>帮我研究 AI 学习产品机会，并形成一个可落地 MVP 方案，过程中如果发现资料不足请动态调整下一步</td>
+          <td class="pass">通过</td>
+          <td><pre>expected_mode: 通过
+multi_agent_architecture: 通过
+expected_tools: 通过
+forbidden_tools: 通过
+sources: 通过
+required_tasks: 通过
+task_completion: 通过
+stop_reason: 通过
+answer: 通过
+permission_trace: 通过
+lifecycle: 通过</pre></td>
+          <td><pre>Judge: 通过
+总分: 5.0
+clarity: 5.0
+completeness: 5.0
+groundedness: 5.0
+safety: 5.0
+source_usage: 5.0
+task_success: 5.0
+硬门槛: 无
+理由: 所有维度均满足满分标准：任务成功完成，关键事实可验证，来源使用正确，内容完整，表达清晰，无安全风险。</pre></td>
+          <td><pre>{
+  &quot;planner_mode&quot;: &quot;pro_runtime&quot;,
+  &quot;multi_agent_architecture&quot;: &quot;swarm&quot;,
+  &quot;multi_agent_architecture_requested&quot;: &quot;swarm&quot;,
+  &quot;tools&quot;: [
+    &quot;multi_agent_architecture&quot;,
+    &quot;swarm_state_init&quot;,
+    &quot;swarm_agent_registry&quot;,
+    &quot;swarm_agent_selector&quot;,
+    &quot;swarm_agent_execution&quot;,
+    &quot;swarm_state_merger&quot;,
+    &quot;swarm_handoff_policy&quot;,
+    &quot;swarm_stop_condition&quot;,
+    &quot;swarm_final_composer&quot;,
+    &quot;intent_classifier&quot;,
+    &quot;memory_router&quot;,
+    &quot;memory_retriever&quot;,
+    &quot;planner&quot;,
+    &quot;orchestrator&quot;,
+    &quot;dag_runtime&quot;,
+    &quot;web_collect&quot;,
+    &quot;dag_runtime&quot;,
+    &quot;rag_search&quot;,
+    &quot;aggregator&quot;,
+    &quot;evaluator&quot;,
+    &quot;generate_answer&quot;,
+    &quot;answer_validator&quot;
+  ],
+  &quot;tasks&quot;: [],
+  &quot;stop_reason&quot;: &quot;&quot;,
+  &quot;sources&quot;: [
+    {
+      &quot;id&quot;: &quot;eval_85076_multi_agent_swarm_001_85076:web__2026_AI_MVP_0_1__6b8fc9b767fc_9716bf312ccb:42fdc5aaf939:0:1:a9f442837607&quot;,
+      &quot;document&quot;: &quot;0到1的AI对话MVP落地方法论，涵盖范围界定、对话设计、技术选型、评估指标与避坑指南，助你在2026年高效验证产品假设。\n主流工具举例\n1. LynxCode\nLynxCode代表一种对话生成式建站方式。它通过自然语言对话理解需求，直接生成可用的网站或 Web 应用结构，包括前端页面、必要的后台逻辑与数据结构。整个过程不需要安装环境，也不要求用户具备编程基础，更接近“把想法说清楚，网站就生成出来”。\n核心生成模式：对话式生成，通过自然语言交互理解需求生成应用\n适配场景：快速验证AI对话产品的MVP，特别是需要前端界面和后端逻辑配合的简单对话应用\n零代码友好度：极高，无需编程基础，产品经理可独立完成从想法到可运行原型的转化\n核心能力：将对话需求转化为包含前端页面、后台逻辑和数据结构的完整Web应用\n适配人群：产品经理、零基础创业者、需要快速验证需求的团队\n生成效率：极高，想法清晰后即可在对话中快速生成可运行版本\n部署与二次开发能力：生成的结构清晰，便于后续技术团队接手进行二次开发和扩展\n2. 通用对话API集成平台\n这类工具主要提供对各大模型API的统一封装和调用管理，降低技术集成门槛。\n核心生成模式：通过可视化界面配置API密钥、提示词模板和基础对话逻辑\n适配场景：希望快速接入大模型能力，验证核心对话逻辑的产品MVP&quot;,
+      &quot;source&quot;: &quot;网页：2026年产品经理AI对话MVP从0到1落地指南：范围、设计与避坑&quot;,
+      &quot;source_type&quot;: &quot;web&quot;,
+      &quot;url&quot;: &quot;https://lynxcode.cn/nian-chan-pin-jing-dui-hua-luo-di-zh</pre></td>
+        </tr>
+        
+        <tr>
+          <td><strong>lifecycle_sync_success_001</strong><br><span>product_lifecycle</span></td>
+          <td>创建并执行一个普通同步 Agent 任务</td>
+          <td class="pass">通过</td>
+          <td><pre>expected_mode: 通过
+multi_agent_architecture: 通过
+expected_tools: 通过
+forbidden_tools: 通过
+sources: 通过
+required_tasks: 通过
+task_completion: 通过
+stop_reason: 通过
+answer: 通过
+permission_trace: 通过
+lifecycle: 通过</pre></td>
+          <td><pre>Judge: 通过
+总分: 5
+clarity: 5.0
+completeness: 5.0
+groundedness: 5.0
+safety: 5.0
+source_usage: 5.0
+task_success: 5.0
+硬门槛: 无
+理由: ID、状态流转、检查点与隔离属于确定性系统行为，使用强规则验收，避免 LLM 主观误判。</pre></td>
+          <td><pre>{
+  &quot;planner_mode&quot;: &quot;product_lifecycle&quot;,
+  &quot;multi_agent_architecture&quot;: &quot;&quot;,
+  &quot;multi_agent_architecture_requested&quot;: &quot;&quot;,
+  &quot;tools&quot;: [
+    &quot;lifecycle_create&quot;,
+    &quot;lifecycle_execute&quot;
+  ],
+  &quot;tasks&quot;: [],
+  &quot;stop_reason&quot;: &quot;succeeded&quot;,
+  &quot;sources&quot;: [],
+  &quot;answer&quot;: &quot;产品运行生命周期验收完成：最终状态为 已成功；共记录 1 个 Request ID、1 个 Trace ID。&quot;,
+  &quot;artifacts&quot;: {},
+  &quot;observations&quot;: [],
+  &quot;permission_trace&quot;: [],
+  &quot;lifecycle&quot;: {
+    &quot;run_id&quot;: &quot;run_502f2d4a1495&quot;,
+    &quot;status&quot;: &quot;succeeded&quot;,
+    &quot;history_statuses&quot;: [
+      &quot;created&quot;,
+      &quot;running&quot;,
+      &quot;succeeded&quot;
+    ],
+    &quot;history_actors&quot;: [
+      &quot;backend_api&quot;,
+      &quot;backend_api&quot;,
+      &quot;backend_runtime&quot;
+    ],
+    &quot;request_count&quot;: 1,
+    &quot;trace_count&quot;: 1,
+    &quot;same_run_id&quot;: true,
+    &quot;request_rotated&quot;: false,
+    &quot;trace_rotated&quot;: false,
+    &quot;cross_session_visible&quot;: null,
+    &quot;transition_rejected&quot;: null,
+    &quot;checkpoint_created&quot;: false,
+    &quot;checkpoint_completed_steps&quot;: []
+  }
+}</pre></td>
+        </tr>
+        
+        <tr>
+          <td><strong>lifecycle_checkpoint_resume_001</strong><br><span>product_lifecycle</span></td>
+          <td>帮我规划一次旅行</td>
+          <td class="pass">通过</td>
+          <td><pre>expected_mode: 通过
+multi_agent_architecture: 通过
+expected_tools: 通过
+forbidden_tools: 通过
+sources: 通过
+required_tasks: 通过
+task_completion: 通过
+stop_reason: 通过
+answer: 通过
+permission_trace: 通过
+lifecycle: 通过</pre></td>
+          <td><pre>Judge: 通过
+总分: 5
+clarity: 5.0
+completeness: 5.0
+groundedness: 5.0
+safety: 5.0
+source_usage: 5.0
+task_success: 5.0
+硬门槛: 无
+理由: ID、状态流转、检查点与隔离属于确定性系统行为，使用强规则验收，避免 LLM 主观误判。</pre></td>
+          <td><pre>{
+  &quot;planner_mode&quot;: &quot;product_lifecycle&quot;,
+  &quot;multi_agent_architecture&quot;: &quot;&quot;,
+  &quot;multi_agent_architecture_requested&quot;: &quot;&quot;,
+  &quot;tools&quot;: [
+    &quot;lifecycle_create&quot;,
+    &quot;lifecycle_execute&quot;,
+    &quot;lifecycle_checkpoint&quot;,
+    &quot;lifecycle_resume&quot;
+  ],
+  &quot;tasks&quot;: [],
+  &quot;stop_reason&quot;: &quot;succeeded&quot;,
+  &quot;sources&quot;: [],
+  &quot;answer&quot;: &quot;产品运行生命周期验收完成：最终状态为 已成功；共记录 2 个 Request ID、2 个 Trace ID。&quot;,
+  &quot;artifacts&quot;: {},
+  &quot;observations&quot;: [],
+  &quot;permission_trace&quot;: [],
+  &quot;lifecycle&quot;: {
+    &quot;run_id&quot;: &quot;run_3034ce9b9c19&quot;,
+    &quot;status&quot;: &quot;succeeded&quot;,
+    &quot;history_statuses&quot;: [
+      &quot;created&quot;,
+      &quot;running&quot;,
+      &quot;waiting_user&quot;,
+      &quot;queued&quot;,
+      &quot;running&quot;,
+      &quot;succeeded&quot;
+    ],
+    &quot;history_actors&quot;: [
+      &quot;backend_api&quot;,
+      &quot;backend_api&quot;,
+      &quot;backend_runtime&quot;,
+      &quot;backend_api&quot;,
+      &quot;backend_worker&quot;,
+      &quot;backend_runtime&quot;
+    ],
+    &quot;request_count&quot;: 2,
+    &quot;trace_count&quot;: 2,
+    &quot;same_run_id&quot;: true,
+    &quot;request_rotated&quot;: true,
+    &quot;trace_rotated&quot;: true,
+    &quot;cross_session_visible&quot;: null,
+    &quot;transition_rejected&quot;: null,
+    &quot;checkpoint_created&quot;: true,
+    &quot;checkpoint_completed_steps&quot;: [
+      &quot;request_validation&quot;
+    ]
+  }
+}</pre></td>
+        </tr>
+        
+        <tr>
+          <td><strong>lifecycle_cancel_001</strong><br><span>product_lifecycle</span></td>
+          <td>创建异步任务后由用户取消</td>
+          <td class="pass">通过</td>
+          <td><pre>expected_mode: 通过
+multi_agent_architecture: 通过
+expected_tools: 通过
+forbidden_tools: 通过
+sources: 通过
+required_tasks: 通过
+task_completion: 通过
+stop_reason: 通过
+answer: 通过
+permission_trace: 通过
+lifecycle: 通过</pre></td>
+          <td><pre>Judge: 通过
+总分: 5
+clarity: 5.0
+completeness: 5.0
+groundedness: 5.0
+safety: 5.0
+source_usage: 5.0
+task_success: 5.0
+硬门槛: 无
+理由: ID、状态流转、检查点与隔离属于确定性系统行为，使用强规则验收，避免 LLM 主观误判。</pre></td>
+          <td><pre>{
+  &quot;planner_mode&quot;: &quot;product_lifecycle&quot;,
+  &quot;multi_agent_architecture&quot;: &quot;&quot;,
+  &quot;multi_agent_architecture_requested&quot;: &quot;&quot;,
+  &quot;tools&quot;: [
+    &quot;lifecycle_create&quot;,
+    &quot;lifecycle_queue&quot;,
+    &quot;lifecycle_cancel&quot;
+  ],
+  &quot;tasks&quot;: [],
+  &quot;stop_reason&quot;: &quot;cancelled&quot;,
+  &quot;sources&quot;: [],
+  &quot;answer&quot;: &quot;产品运行生命周期验收完成：最终状态为 已取消；共记录 1 个 Request ID、0 个 Trace ID。&quot;,
+  &quot;artifacts&quot;: {},
+  &quot;observations&quot;: [],
+  &quot;permission_trace&quot;: [],
+  &quot;lifecycle&quot;: {
+    &quot;run_id&quot;: &quot;run_699eb72d9c20&quot;,
+    &quot;status&quot;: &quot;cancelled&quot;,
+    &quot;history_statuses&quot;: [
+      &quot;created&quot;,
+      &quot;queued&quot;,
+      &quot;cancel_requested&quot;,
+      &quot;cancelled&quot;
+    ],
+    &quot;history_actors&quot;: [
+      &quot;backend_api&quot;,
+      &quot;backend_api&quot;,
+      &quot;frontend_user&quot;,
+      &quot;backend_runtime&quot;
+    ],
+    &quot;request_count&quot;: 1,
+    &quot;trace_count&quot;: 0,
+    &quot;same_run_id&quot;: true,
+    &quot;request_rotated&quot;: false,
+    &quot;trace_rotated&quot;: false,
+    &quot;cross_session_visible&quot;: null,
+    &quot;transition_rejected&quot;: null,
+    &quot;checkpoint_created&quot;: false,
+    &quot;checkpoint_completed_steps&quot;: []
+  }
+}</pre></td>
+        </tr>
+        </tbody>
+  </table>
+
+  <h2>结论</h2>
+  <div class="note">这版 Eval 同时支持规则校验和 LLM-as-Judge。规则负责硬边界，Judge 负责语义质量；最终结果要求两者都通过。</div>
+</main>
+</body>
+</html>

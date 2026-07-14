@@ -29,6 +29,7 @@ enable_llm_planner = get_secret("ENABLE_LLM_PLANNER")
 github_token = get_secret("GITHUB_TOKEN")
 github_repo = get_secret("GITHUB_REPO")
 seed_teaching_memory = get_secret("SEED_TEACHING_MEMORY")
+auto_seed_local_note = get_secret("AUTO_SEED_LOCAL_NOTE")
 
 if deepseek_key:
     os.environ["DEEPSEEK_API_KEY"] = deepseek_key
@@ -63,7 +64,8 @@ import permission_gate
 import run_lifecycle
 import trace_manager
 
-agent.seed_local_note()
+if auto_seed_local_note == "1":
+    agent.seed_local_note()
 if seed_teaching_memory != "0":
     memory_manager.seed_default_memories_if_empty()
 

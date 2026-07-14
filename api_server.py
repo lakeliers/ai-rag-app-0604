@@ -20,7 +20,8 @@ import run_lifecycle
 def apply_env_defaults():
     if os.getenv("SEED_TEACHING_MEMORY", "1") != "0":
         memory_manager.seed_default_memories_if_empty()
-    agent.seed_local_note()
+    if os.getenv("AUTO_SEED_LOCAL_NOTE", "0") == "1":
+        agent.seed_local_note()
 
 
 apply_env_defaults()
