@@ -60,6 +60,7 @@ import autonomous_agent
 import badcase_manager
 import memory_manager
 import permission_gate
+import run_lifecycle
 import trace_manager
 
 agent.seed_local_note()
@@ -454,7 +455,65 @@ def load_routed_memory(prompt, enabled=True, conversation_context="", route_stra
 
 
 def generate_trace_id():
-    return f"trace_{uuid4().hex[:12]}"
+    return run_lifecycle.generate_trace_id()
+
+
+def start_or_resume_product_run(prompt, config):
+    session_id = st.session_state.rag_session_id
+    active_run_id = st.session_state.get("active_waiting_run_id", "")
+    active_run = (
+        run_lifecycle.get_run(active_run_id, session_id=session_id)
+        if active_run_id
+        else None
+    )
+    is_resume = bool(active_run and active_run.get("status") == run_lifecycle.STATUS_WAITING_USER)
+
+    if is_resume:
+        product_run = run_lifecycle.resume_run(active_run_id, user_input=prompt)
+        product_run = run_lifecycle.transition_run(
+            active_run_id,
+            run_lifecycle.STATUS_RUNNING,
+            actor="backend_worker",
+            reason="Worker 领取恢复任务，从已保存检查点继续执行。",
+            current_step="agent_execution",
+        )
+        execution_prompt = run_lifecycle.combined_run_input(product_run)
+    else:
+        execution_mode = "async" if config.get("run_mode") == "自主任务" else "sync"
+        product_run = run_lifecycle.create_run(
+            session_id=session_id,
+            user_input=prompt,
+            execution_mode=execution_mode,
+            config=config,
+        )
+        if execution_mode == "async":
+            product_run = run_lifecycle.transition_run(
+                product_run["run_id"],
+                run_lifecycle.STATUS_QUEUED,
+                actor="backend_api",
+                reason="异步任务已写入 Task Queue（任务队列）。",
+                current_step="queued",
+            )
+            product_run = run_lifecycle.transition_run(
+                product_run["run_id"],
+                run_lifecycle.STATUS_RUNNING,
+                actor="backend_worker",
+                reason="Worker 已领取任务并开始执行。",
+                current_step="agent_execution",
+            )
+        else:
+            product_run = run_lifecycle.transition_run(
+                product_run["run_id"],
+                run_lifecycle.STATUS_RUNNING,
+                actor="backend_api",
+                reason="同步任务由当前后端进程直接执行。",
+                current_step="agent_execution",
+            )
+        execution_prompt = prompt
+
+    trace_id = generate_trace_id()
+    product_run = run_lifecycle.start_attempt(product_run["run_id"], trace_id=trace_id)
+    return product_run, execution_prompt, trace_id, is_resume
 
 
 def compact_steps_for_log(steps, limit=30):
@@ -489,6 +548,8 @@ def compact_sources_for_log(sources, limit=10):
 def build_trace_record_from_run(run, *, panel_id="", status="success", error=""):
     snapshot = run.get("run_snapshot", {}) or {}
     return {
+        "request_id": run.get("request_id", snapshot.get("request_id", "")),
+        "run_id": run.get("run_id", snapshot.get("run_id", "")),
         "trace_id": run.get("trace_id", ""),
         "event": "agent_turn",
         "status": status,
@@ -846,6 +907,51 @@ def render_autonomous_panel(run):
                 st.caption("问题：" + "；".join(reflection["issues"]))
 
 
+def render_lifecycle_panel(run):
+    lifecycle = (
+        run_lifecycle.get_run(run["run_id"])
+        if run.get("run_id")
+        else None
+    ) or run.get("lifecycle") or {}
+    if not lifecycle:
+        st.caption("这条历史回答产生于生命周期功能上线前，没有 Run 状态记录。")
+        return
+
+    status = lifecycle.get("status", "")
+    st.markdown(f"**当前状态：{run_lifecycle.STATUS_LABELS.get(status, status)}**")
+    id_rows = [
+        {"编号类型": "Request ID（请求编号）", "编号": (lifecycle.get("request_ids") or [""])[-1]},
+        {"编号类型": "Run ID（任务编号）", "编号": lifecycle.get("run_id", "")},
+        {"编号类型": "Trace ID（本次执行编号）", "编号": lifecycle.get("current_trace_id", "")},
+    ]
+    st.table(id_rows)
+    st.caption(
+        "前端负责提交、查询、取消和展示；后端负责校验、建任务、状态流转、执行、检查点与结果保存。"
+    )
+
+    history = lifecycle.get("state_history", [])
+    if history:
+        st.markdown("**状态流转**")
+        for item in history:
+            from_label = run_lifecycle.STATUS_LABELS.get(item.get("from", ""), item.get("from") or "开始")
+            to_label = run_lifecycle.STATUS_LABELS.get(item.get("to", ""), item.get("to", ""))
+            actor = item.get("actor", "backend")
+            actor_label = "前端 / 用户" if actor.startswith("frontend") else "后端"
+            st.write(f"{from_label} → {to_label}")
+            st.caption(f"处理主体：{actor_label}｜{item.get('reason', '')}")
+
+    checkpoint = lifecycle.get("checkpoint") or {}
+    if checkpoint:
+        st.markdown("**Checkpoint（断点）**")
+        st.code(checkpoint.get("checkpoint_id", ""), language="text")
+        completed_steps = checkpoint.get("completed_steps", [])
+        st.caption("已完成步骤：" + ("、".join(completed_steps) if completed_steps else "暂无"))
+
+    pending_action = lifecycle.get("pending_action") or {}
+    if status == run_lifecycle.STATUS_WAITING_USER and pending_action.get("valid"):
+        st.info(pending_action.get("prompt", "等待用户补充信息。"))
+
+
 def render_assistant_message(content, run=None, key_suffix=""):
     trace_level_fallback = globals().get("trace_level", "简洁")
     st.markdown(content)
@@ -873,7 +979,7 @@ def render_assistant_message(content, run=None, key_suffix=""):
             width="stretch",
             help="查看本轮计划、执行过程、来源、安全、日志和配置",
         ):
-            tab_names = ["计划", "执行", "来源", "安全", "日志", "配置"]
+            tab_names = ["生命周期", "计划", "执行", "来源", "安全", "日志", "配置"]
             if run.get("memory_used") or st.session_state.get("pending_memory_candidates"):
                 tab_names.append("记忆")
             if run.get("autonomous"):
@@ -881,7 +987,9 @@ def render_assistant_message(content, run=None, key_suffix=""):
             tabs = st.tabs(tab_names)
             for tab_name, tab in zip(tab_names, tabs):
                 with tab:
-                    if tab_name == "计划":
+                    if tab_name == "生命周期":
+                        render_lifecycle_panel(run)
+                    elif tab_name == "计划":
                         render_plan_tab(run)
                     elif tab_name == "执行":
                         render_trace_panel(run, run.get("trace_level", trace_level_fallback))
@@ -2197,7 +2305,7 @@ def run_compare_agent_turn(panel_id, prompt, config):
         st.session_state[compare_state_key(panel_id, "pending_memory_candidates")] = candidates
 
 
-def execute_compare_agent_backend(
+def _execute_compare_agent_backend_core(
     panel_id,
     prompt,
     config,
@@ -2205,12 +2313,17 @@ def execute_compare_agent_backend(
     session_id,
     uploaded_sources,
     conversation_context,
+    product_run,
+    trace_id,
 ):
-    trace_id = generate_trace_id()
     started_at = time.perf_counter()
     memory_context = ""
     retrieved_memories = []
     memory_route = {}
+
+    def handle_plan_progress(event):
+        if config.get("plan_progress_enabled"):
+            run_lifecycle.update_step(product_run["run_id"], event)
 
     use_autonomous_mode = False
     autonomous_route_reason = ""
@@ -2248,6 +2361,7 @@ def execute_compare_agent_backend(
             debate_rounds=config.get("debate_rounds", 2),
             conversation_context=conversation_context,
             metadata_scope={"session_id": session_id},
+            progress_callback=handle_plan_progress,
             permission_context=permission_context_from_config(config, trace_id),
             trace_id=trace_id,
             model_name=config["deepseek_model"],
@@ -2273,6 +2387,7 @@ def execute_compare_agent_backend(
             debate_rounds=config.get("debate_rounds", 2),
             conversation_context=conversation_context,
             metadata_scope={"session_id": session_id},
+            progress_callback=handle_plan_progress,
             permission_context=permission_context_from_config(config, trace_id),
             trace_id=trace_id,
             model_name=config["deepseek_model"],
@@ -2327,8 +2442,19 @@ def execute_compare_agent_backend(
             "reflections": result.get("reflections", []),
         }
 
+    lifecycle = run_lifecycle.succeed_run(
+        product_run["run_id"],
+        result={
+            "answer": result.get("answer", ""),
+            "planner_mode": result.get("planner_mode", ""),
+            "source_count": len(result.get("sources", [])),
+        },
+    )
     badcase_run = {
+        "request_id": lifecycle["request_ids"][-1],
+        "run_id": lifecycle["run_id"],
         "trace_id": trace_id,
+        "lifecycle": lifecycle,
         "user_input": prompt,
         "actual_answer": result["answer"],
         "elapsed_ms": int((time.perf_counter() - started_at) * 1000),
@@ -2345,6 +2471,8 @@ def execute_compare_agent_backend(
         "memory_used": result.get("memory_used", [item.get("id") for item in retrieved_memories]),
         "memory_route": result.get("memory_route", memory_route),
         "run_snapshot": {
+            "request_id": lifecycle["request_ids"][-1],
+            "run_id": lifecycle["run_id"],
             "trace_id": trace_id,
             "planner_mode": result.get("planner_mode", ""),
             "tools_called": extract_tools_from_steps(result.get("steps", [])),
@@ -2370,6 +2498,63 @@ def execute_compare_agent_backend(
         "badcase_run": badcase_run,
         "pending_memory_candidates": pending_memory_candidates,
     }
+
+
+def execute_compare_agent_backend(
+    panel_id,
+    prompt,
+    config,
+    *,
+    session_id,
+    uploaded_sources,
+    conversation_context,
+):
+    execution_mode = "async" if config.get("run_mode") == "自主任务" else "sync"
+    product_run = run_lifecycle.create_run(
+        session_id=session_id,
+        user_input=prompt,
+        execution_mode=execution_mode,
+        config=build_compare_config_snapshot(config),
+    )
+    if execution_mode == "async":
+        product_run = run_lifecycle.transition_run(
+            product_run["run_id"],
+            run_lifecycle.STATUS_QUEUED,
+            actor="backend_api",
+            reason=f"{panel_id} 侧异步任务已进入独立任务队列。",
+            current_step="queued",
+        )
+        product_run = run_lifecycle.transition_run(
+            product_run["run_id"],
+            run_lifecycle.STATUS_RUNNING,
+            actor="backend_worker",
+            reason=f"{panel_id} 侧 Worker 已领取任务。",
+            current_step="agent_execution",
+        )
+    else:
+        product_run = run_lifecycle.transition_run(
+            product_run["run_id"],
+            run_lifecycle.STATUS_RUNNING,
+            actor="backend_api",
+            reason=f"{panel_id} 侧同步任务由独立执行线程处理。",
+            current_step="agent_execution",
+        )
+    trace_id = generate_trace_id()
+    product_run = run_lifecycle.start_attempt(product_run["run_id"], trace_id=trace_id)
+    try:
+        return _execute_compare_agent_backend_core(
+            panel_id,
+            prompt,
+            config,
+            session_id=session_id,
+            uploaded_sources=uploaded_sources,
+            conversation_context=conversation_context,
+            product_run=product_run,
+            trace_id=trace_id,
+        )
+    except Exception as error:
+        run_lifecycle.fail_run(product_run["run_id"], str(error))
+        raise
 
 
 def apply_compare_agent_backend_result(panel_id, backend_result):
@@ -2628,6 +2813,9 @@ if "prompt_seed" not in st.session_state:
 if "queued_prompt" not in st.session_state:
     st.session_state.queued_prompt = ""
 
+if "active_waiting_run_id" not in st.session_state:
+    st.session_state.active_waiting_run_id = ""
+
 
 st.markdown("""
 <style>
@@ -2880,6 +3068,29 @@ for index, message in enumerate(st.session_state.messages):
             st.write(message["content"])
 
 
+active_waiting_run = None
+if st.session_state.active_waiting_run_id:
+    active_waiting_run = run_lifecycle.get_run(
+        st.session_state.active_waiting_run_id,
+        session_id=st.session_state.rag_session_id,
+    )
+    if not active_waiting_run or active_waiting_run.get("status") != run_lifecycle.STATUS_WAITING_USER:
+        st.session_state.active_waiting_run_id = ""
+        active_waiting_run = None
+
+if active_waiting_run:
+    pending_action = active_waiting_run.get("pending_action") or {}
+    notice_cols = st.columns([0.84, 0.16], vertical_alignment="center")
+    with notice_cols[0]:
+        st.info(pending_action.get("prompt", "当前任务正在等待你补充信息。"))
+    with notice_cols[1]:
+        if st.button("取消任务", key="cancel_waiting_product_run", use_container_width=True):
+            cancelled = run_lifecycle.request_cancel(active_waiting_run["run_id"])
+            run_lifecycle.complete_cancel(cancelled["run_id"])
+            st.session_state.active_waiting_run_id = ""
+            st.rerun()
+
+
 prompt = st.session_state.queued_prompt.strip()
 st.session_state.queued_prompt = ""
 chat_prompt = st.chat_input("输入问题，Agent（智能体）会自动检索上传资料和网络资料")
@@ -2891,13 +3102,79 @@ if prompt:
         st.error("请先配置 DEEPSEEK_API_KEY。")
         st.stop()
 
-    trace_id = generate_trace_id()
+    submitted_prompt = prompt
+    current_config = build_current_config()
+    product_run, execution_prompt, trace_id, is_resumed_run = start_or_resume_product_run(
+        submitted_prompt,
+        current_config,
+    )
+    run_id = product_run["run_id"]
     started_at = time.perf_counter()
     conversation_context = build_conversation_context(st.session_state.messages)
-    st.session_state.messages.append({"role": "user", "content": prompt})
+    st.session_state.messages.append({"role": "user", "content": submitted_prompt})
 
     with st.chat_message("user"):
-        st.write(prompt)
+        st.write(submitted_prompt)
+
+    preflight_gate = None if is_resumed_run else run_lifecycle.detect_preflight_gate(submitted_prompt)
+    if preflight_gate:
+        run_lifecycle.update_step(run_id, {
+            "id": "request_validation",
+            "name": "请求完整性校验",
+            "tool": "product_state_machine",
+            "status": "completed",
+            "summary": preflight_gate["reason"],
+        })
+        lifecycle = run_lifecycle.wait_for_user(
+            run_id,
+            prompt=preflight_gate["prompt"],
+            missing_fields=preflight_gate["missing_fields"],
+            checkpoint_payload={"original_prompt": submitted_prompt},
+        )
+        st.session_state.active_waiting_run_id = run_id
+        waiting_answer = preflight_gate["prompt"]
+        waiting_run = {
+            "request_id": lifecycle["request_ids"][-1],
+            "run_id": run_id,
+            "trace_id": trace_id,
+            "lifecycle": lifecycle,
+            "user_input": submitted_prompt,
+            "actual_answer": waiting_answer,
+            "elapsed_ms": int((time.perf_counter() - started_at) * 1000),
+            "config": current_config,
+            "tools_called": ["request_validation", "checkpoint"],
+            "sources_used": [],
+            "planner_mode": "waiting_user",
+            "planner_label": "产品状态机",
+            "trace_level": trace_level,
+            "plan_steps": [],
+            "steps": [],
+            "sources": [],
+            "permission_trace": [],
+            "memory_used": [],
+            "run_snapshot": {
+                "request_id": lifecycle["request_ids"][-1],
+                "run_id": run_id,
+                "trace_id": trace_id,
+                "status": lifecycle["status"],
+                "answer_preview": waiting_answer,
+            },
+        }
+        persist_trace_for_run(waiting_run, status="waiting_user")
+        with st.chat_message("assistant"):
+            render_assistant_message(
+                waiting_answer,
+                waiting_run,
+                key_suffix=f"waiting_{len(st.session_state.messages)}",
+            )
+        st.session_state.messages.append({
+            "role": "assistant",
+            "content": waiting_answer,
+            "badcase_run": waiting_run,
+        })
+        st.rerun()
+
+    prompt = execution_prompt
 
     with st.chat_message("assistant"):
         try:
@@ -2907,6 +3184,7 @@ if prompt:
                 render_plan_progress(plan_placeholder, live_plan_steps)
 
             def handle_plan_progress(event):
+                run_lifecycle.update_step(run_id, event)
                 if not plan_progress_enabled:
                     return
                 merge_plan_event(live_plan_steps, event)
@@ -3054,8 +3332,20 @@ if prompt:
                     "critic_results": result.get("critic_results", []),
                     "reflections": result.get("reflections", []),
                 }
+            lifecycle = run_lifecycle.succeed_run(
+                run_id,
+                result={
+                    "answer_preview": str(result.get("answer", ""))[:1200],
+                    "source_count": len(result.get("sources", [])),
+                    "elapsed_ms": int((time.perf_counter() - started_at) * 1000),
+                },
+            )
+            st.session_state.active_waiting_run_id = ""
             badcase_run = {
+                "request_id": lifecycle["request_ids"][-1],
+                "run_id": run_id,
                 "trace_id": trace_id,
+                "lifecycle": lifecycle,
                 "user_input": prompt,
                 "actual_answer": result["answer"],
                 "elapsed_ms": int((time.perf_counter() - started_at) * 1000),
@@ -3073,7 +3363,10 @@ if prompt:
                 "memory_used": result.get("memory_used", [item.get("id") for item in retrieved_memories]),
                 "memory_route": result.get("memory_route", memory_route),
                 "run_snapshot": {
+                    "request_id": lifecycle["request_ids"][-1],
+                    "run_id": run_id,
                     "trace_id": trace_id,
+                    "status": lifecycle["status"],
                     "planner_mode": result.get("planner_mode", ""),
                     "elapsed_ms": int((time.perf_counter() - started_at) * 1000),
                     "tools_called": extract_tools_from_steps(result.get("steps", [])),
@@ -3107,8 +3400,15 @@ if prompt:
 
         except Exception as e:
             error_answer = f"调用失败：{e}"
+            try:
+                lifecycle = run_lifecycle.fail_run(run_id, error=str(e))
+            except Exception:
+                lifecycle = run_lifecycle.get_run(run_id) or product_run
             error_run = {
+                "request_id": (lifecycle.get("request_ids") or [""])[-1],
+                "run_id": run_id,
                 "trace_id": trace_id,
+                "lifecycle": lifecycle,
                 "user_input": prompt,
                 "actual_answer": error_answer,
                 "elapsed_ms": int((time.perf_counter() - started_at) * 1000),
@@ -3123,7 +3423,10 @@ if prompt:
                 "permission_trace": [],
                 "memory_used": [],
                 "run_snapshot": {
+                    "request_id": (lifecycle.get("request_ids") or [""])[-1],
+                    "run_id": run_id,
                     "trace_id": trace_id,
+                    "status": lifecycle.get("status", "failed"),
                     "planner_mode": "error",
                     "elapsed_ms": int((time.perf_counter() - started_at) * 1000),
                     "error": str(e)[:1200],

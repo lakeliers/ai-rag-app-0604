@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Agent Eval 报告</title>
+  <style>
+    body { margin: 0; background: #f6f7fb; color: #202431; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; line-height: 1.6; }
+    main { max-width: 1280px; margin: 0 auto; padding: 40px 24px 72px; }
+    h1 { margin: 0 0 8px; font-size: 34px; }
+    h2 { margin: 32px 0 14px; font-size: 22px; }
+    .sub { color: #667085; margin-bottom: 28px; }
+    .grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; }
+    .card { background: #fff; border: 1px solid #e5e7ef; border-radius: 8px; padding: 18px; }
+    .metric { font-size: 30px; font-weight: 760; }
+    .pass { color: #047857; font-weight: 700; }
+    .fail { color: #dc2626; font-weight: 700; }
+    table { width: 100%; border-collapse: collapse; background: #fff; border: 1px solid #e5e7ef; border-radius: 8px; overflow: hidden; }
+    th, td { padding: 12px 14px; border-bottom: 1px solid #e5e7ef; text-align: left; vertical-align: top; font-size: 14px; }
+    th { background: #f1f5f9; }
+    tr:last-child td { border-bottom: none; }
+    pre { margin: 0; white-space: pre-wrap; font-size: 12px; background: #f8fafc; border: 1px solid #e5e7eb; border-radius: 6px; padding: 8px; max-height: 260px; overflow: auto; }
+    .note { border-left: 4px solid #2563eb; background: #eff6ff; color: #1e3a8a; padding: 12px 14px; border-radius: 6px; }
+    @media (max-width: 900px) { .grid { grid-template-columns: 1fr; } main { padding: 28px 16px 56px; } }
+  </style>
+</head>
+<body>
+<main>
+  <h1>Agent Eval 报告</h1>
+  <div class="sub">运行模式：real。路由模式：rules。资料策略：auto。稳定网页夹具：已启用。Judge：已启用 deepseek-v4-flash。规则检查系统是否跑对；LLM-as-Judge 检查语义质量、资料忠实度和来源使用。</div>
+
+  <section class="grid">
+    <div class="card"><div class="metric">1</div><div>总样本</div></div>
+    <div class="card"><div class="metric pass">1</div><div>通过</div></div>
+    <div class="card"><div class="metric fail">0</div><div>失败</div></div>
+    <div class="card"><div class="metric">100%</div><div>通过率</div></div>
+  </section>
+
+  <h2>分测试集通过率</h2>
+  <table><thead><tr><th>测试集</th><th>通过 / 总数</th><th>通过率</th></tr></thead><tbody><tr><td>benchmark</td><td>1/1</td><td>100%</td></tr>
+<tr><td>regression</td><td>1/1</td><td>100%</td></tr></tbody></table>
+
+  <h2>分场景通过率</h2>
+  <table><thead><tr><th>场景</th><th>通过 / 总数</th><th>通过率</th></tr></thead><tbody><tr><td>multi_agent_architecture</td><td>1/1</td><td>100%</td></tr></tbody></table>
+
+  <h2>失败检查项</h2>
+  <table><thead><tr><th>检查项</th><th>失败次数</th></tr></thead><tbody><tr><td>无</td><td>0</td></tr></tbody></table>
+
+  <h2>逐 Case 明细</h2>
+  <table>
+    <thead><tr><th>Case</th><th>输入</th><th>最终结果</th><th>规则检查</th><th>Judge 语义评分</th><th>实际输出摘要</th></tr></thead>
+    <tbody>
+        <tr>
+          <td><strong>multi_agent_auto_swarm_001</strong><br><span>multi_agent_architecture</span></td>
+          <td>帮我探索一个 AI 学习助手的产品机会，先收集信息，再根据中间发现动态判断下一步，并给出 MVP 路线</td>
+          <td class="pass">通过</td>
+          <td><pre>expected_mode: 通过
+multi_agent_architecture: 通过
+expected_tools: 通过
+forbidden_tools: 通过
+sources: 通过
+required_tasks: 通过
+task_completion: 通过
+stop_reason: 通过
+answer: 通过
+permission_trace: 通过
+lifecycle: 通过</pre></td>
+          <td><pre>Judge: 通过
+总分: 5.0
+clarity: 5.0
+completeness: 5.0
+groundedness: 5.0
+safety: 5.0
+source_usage: 5.0
+task_success: 5.0
+硬门槛: 无
+理由: 完整完成用户任务，所有关键事实可验证，来源使用正确，结构清晰，无安全风险。</pre></td>
+          <td><pre>{
+  &quot;planner_mode&quot;: &quot;pro_runtime&quot;,
+  &quot;multi_agent_architecture&quot;: &quot;swarm&quot;,
+  &quot;multi_agent_architecture_requested&quot;: &quot;auto&quot;,
+  &quot;tools&quot;: [
+    &quot;multi_agent_architecture&quot;,
+    &quot;swarm_state_init&quot;,
+    &quot;swarm_agent_registry&quot;,
+    &quot;swarm_agent_selector&quot;,
+    &quot;swarm_agent_execution&quot;,
+    &quot;swarm_state_merger&quot;,
+    &quot;swarm_handoff_policy&quot;,
+    &quot;swarm_stop_condition&quot;,
+    &quot;swarm_final_composer&quot;,
+    &quot;intent_classifier&quot;,
+    &quot;memory_router&quot;,
+    &quot;memory_retriever&quot;,
+    &quot;planner&quot;,
+    &quot;orchestrator&quot;,
+    &quot;dag_runtime&quot;,
+    &quot;web_collect&quot;,
+    &quot;dag_runtime&quot;,
+    &quot;rag_search&quot;,
+    &quot;aggregator&quot;,
+    &quot;evaluator&quot;,
+    &quot;generate_answer&quot;,
+    &quot;answer_validator&quot;
+  ],
+  &quot;tasks&quot;: [],
+  &quot;stop_reason&quot;: &quot;&quot;,
+  &quot;sources&quot;: [
+    {
+      &quot;source_type&quot;: &quot;web&quot;,
+      &quot;source&quot;: &quot;网页：AI Agent 产品趋势稳定样本&quot;,
+      &quot;url&quot;: &quot;https://example.com/eval/ai-agent-trends&quot;,
+      &quot;document&quot;: &quot;AI Agent 产品趋势稳定样本：2026 年 AI Agent 产品正在从单次工具调用走向任务级工作流。关键趋势包括多工具编排、可观测运行时、Agent Eval 评估体系、记忆系统、权限与安全控制、以及面向业务场景的多 Agent 协作。今天值得关注的产品动态包括：ChatGPT 类产品强化任务执行和连接器，企业知识库产品强化权限、审计和引用可追溯，开发者平台强化工具调用、工作流编排和评估闭环。三个可对标的 AI Agent 产品包括：ChatGPT（通用助手型 Agent，强调多工具调用、文件理解和连接器）、Claude（长上下文知识工作 Agent，强调文档理解、项目知识和安全边界）、Cursor（开发者自动化 Agent，强调代码理解、编辑、调试和任务执行）。也可以按产品类型归纳为：通用助手型 Agent、企业知识库/RAG Agent、开发者自动化 Agent。产品经理应关注的能力清单包括：目标理解、工具调用、RAG 资料检索、记忆管理、权限控制、可观测性、评估体系、失败恢复、成本控制和人类确认机制。多 Agent 协作的新进展包括角色分工、共享状态、任务队列、冲突仲裁和统一审计。Agent Memory 的实践趋势包括短期会话记忆、长期用户偏好、任务状态记忆、可删除/可解释的记忆、以及按权限隔离的组织知识记忆。当前 Agent MVP 的主要风险包括：路由误判、资料污染、联网不稳定、引用不准、judge 不稳定、自主循环过度执行、成本失控和缺少权限确认。下一轮优化计划应优先覆盖：路由评估集、稳定检索夹具、引用校验、请求超时、trace 可观测性、配置化教学开关和线上监控。产品经理需要重点学习：RAG 检索链路、Tool Agent 工具调用、Autono</pre></td>
+        </tr>
+        </tbody>
+  </table>
+
+  <h2>结论</h2>
+  <div class="note">这版 Eval 同时支持规则校验和 LLM-as-Judge。规则负责硬边界，Judge 负责语义质量；最终结果要求两者都通过。</div>
+</main>
+</body>
+</html>

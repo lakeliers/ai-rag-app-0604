@@ -14,6 +14,7 @@ import badcase_manager
 import memory_manager
 import parsing_layer
 import rag_agent_core as agent
+import run_lifecycle
 
 
 def apply_env_defaults():
@@ -74,6 +75,22 @@ class ChatRequest(BaseModel):
     session_id: str = ""
     question: str
     config: ChatConfig = Field(default_factory=ChatConfig)
+
+
+class RunCreateRequest(BaseModel):
+    session_id: str = ""
+    question: str
+    execution_mode: str = "async"
+    config: dict = Field(default_factory=dict)
+
+
+class RunResumeRequest(BaseModel):
+    session_id: str
+    user_input: str
+
+
+class RunCancelRequest(BaseModel):
+    session_id: str
 
 
 class BadcaseRequest(BaseModel):
@@ -188,6 +205,54 @@ def status():
         "reranker_enabled": agent.ENABLE_RERANKER,
         "default_model": agent.DEEPSEEK_MODEL,
     }
+
+
+@app.post("/api/runs")
+def create_product_run(request: RunCreateRequest):
+    session_id = normalize_session_id(request.session_id)
+    run = run_lifecycle.create_run(
+        session_id=session_id,
+        user_input=request.question,
+        execution_mode=request.execution_mode,
+        config=request.config,
+    )
+    if request.execution_mode == "async":
+        run = run_lifecycle.transition_run(
+            run["run_id"],
+            run_lifecycle.STATUS_QUEUED,
+            actor="backend_api",
+            reason="异步任务已写入 Task Queue（任务队列）。",
+            current_step="queued",
+        )
+    return run
+
+
+@app.get("/api/runs/{run_id}")
+def get_product_run(run_id: str, session_id: str):
+    run = run_lifecycle.get_run(run_id, session_id=session_id)
+    if not run:
+        raise HTTPException(status_code=404, detail="Run 不存在或不属于当前会话。")
+    return run
+
+
+@app.post("/api/runs/{run_id}/cancel")
+def cancel_product_run(run_id: str, request: RunCancelRequest):
+    run = run_lifecycle.get_run(run_id, session_id=request.session_id)
+    if not run:
+        raise HTTPException(status_code=404, detail="Run 不存在或不属于当前会话。")
+    run = run_lifecycle.request_cancel(run_id)
+    return run_lifecycle.complete_cancel(run_id)
+
+
+@app.post("/api/runs/{run_id}/resume")
+def resume_product_run(run_id: str, request: RunResumeRequest):
+    run = run_lifecycle.get_run(run_id, session_id=request.session_id)
+    if not run:
+        raise HTTPException(status_code=404, detail="Run 不存在或不属于当前会话。")
+    try:
+        return run_lifecycle.resume_run(run_id, user_input=request.user_input)
+    except ValueError as error:
+        raise HTTPException(status_code=409, detail=str(error)) from error
 
 
 @app.post("/api/upload")
@@ -317,7 +382,7 @@ def chat(request: ChatRequest):
         "teaching_config": result.get("teaching_config", {}),
         "memory": {
             "enabled": config.memory_enabled,
-            "count": len(retrieved_memories),
+            "count": len(result.get("memory_used", [])),
         },
         "uploads": SESSION_UPLOAD_STATUS.get(session_id, []),
     }

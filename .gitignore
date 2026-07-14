@@ -3,5 +3,8 @@ __pycache__/
 chroma_db/
 .streamlit/secrets.toml
 data/memory_store.json
+data/run_lifecycle.json
+data/run_lifecycle.json.lock
+data/run_lifecycle.json.corrupt_*
 frontend/node_modules/
 frontend/.next/

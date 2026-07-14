@@ -5,6 +5,7 @@ import multiprocessing as mp
 import os
 import re
 import signal
+import tempfile
 from collections import Counter, defaultdict
 from pathlib import Path
 from typing import Any
@@ -12,6 +13,7 @@ from typing import Any
 import agent_runtime
 import autonomous_agent
 import permission_gate
+import run_lifecycle
 
 
 ROOT = Path(__file__).resolve().parent
@@ -656,11 +658,166 @@ def restore_tools(original_tools: dict[str, Any]) -> None:
     agent_runtime.TOOLS.update(original_tools)
 
 
+def run_lifecycle_case(case: dict[str, Any]) -> dict[str, Any]:
+    scenario = case.get("lifecycle_scenario", "sync_success")
+    session_id = f"eval_session_{case['case_id']}"
+    steps = []
+    facts = {
+        "same_run_id": True,
+        "request_rotated": False,
+        "trace_rotated": False,
+        "cross_session_visible": None,
+        "transition_rejected": None,
+        "checkpoint_created": False,
+        "checkpoint_completed_steps": [],
+    }
+
+    with tempfile.TemporaryDirectory(prefix="agent_lifecycle_eval_") as temp_dir:
+        store_path = Path(temp_dir) / "runs.json"
+        run = run_lifecycle.create_run(
+            session_id=session_id,
+            user_input=case["user_input"],
+            execution_mode="async" if scenario in {"async_queue", "cancel"} else "sync",
+            store_path=store_path,
+        )
+        initial_run_id = run["run_id"]
+        initial_request_id = run["request_ids"][-1]
+        steps.append({"tool": "lifecycle_create", "name": "创建 Run", "status": "success"})
+
+        if scenario == "invalid_transition":
+            try:
+                run_lifecycle.transition_run(
+                    initial_run_id,
+                    run_lifecycle.STATUS_SUCCEEDED,
+                    actor="backend_runtime",
+                    reason="Eval 验证非法流转。",
+                    store_path=store_path,
+                )
+            except ValueError:
+                facts["transition_rejected"] = True
+            else:
+                facts["transition_rejected"] = False
+            steps.append({"tool": "lifecycle_transition_guard", "name": "非法流转拦截", "status": "success"})
+
+        if scenario in {"async_queue", "cancel"}:
+            run = run_lifecycle.transition_run(
+                initial_run_id,
+                run_lifecycle.STATUS_QUEUED,
+                actor="backend_api",
+                reason="Eval 异步任务入队。",
+                current_step="queued",
+                store_path=store_path,
+            )
+            steps.append({"tool": "lifecycle_queue", "name": "进入任务队列", "status": "success"})
+
+        if scenario == "cancel":
+            run = run_lifecycle.request_cancel(initial_run_id, store_path=store_path)
+            run = run_lifecycle.complete_cancel(initial_run_id, store_path=store_path)
+            steps.append({"tool": "lifecycle_cancel", "name": "两阶段取消", "status": "success"})
+        else:
+            if run["status"] != run_lifecycle.STATUS_RUNNING:
+                run = run_lifecycle.transition_run(
+                    initial_run_id,
+                    run_lifecycle.STATUS_RUNNING,
+                    actor="backend_worker" if scenario == "async_queue" else "backend_api",
+                    reason="Eval 开始执行任务。",
+                    current_step="agent_execution",
+                    store_path=store_path,
+                )
+            first_trace_id = run_lifecycle.generate_trace_id()
+            run = run_lifecycle.start_attempt(initial_run_id, trace_id=first_trace_id, store_path=store_path)
+            steps.append({"tool": "lifecycle_execute", "name": "开始执行", "status": "success"})
+
+            if scenario == "checkpoint_resume":
+                run_lifecycle.update_step(
+                    initial_run_id,
+                    {"id": "request_validation", "status": "completed", "summary": "请求校验完成"},
+                    store_path=store_path,
+                )
+                gate = run_lifecycle.detect_preflight_gate(case["user_input"])
+                if not gate:
+                    raise AssertionError("断点恢复案例未触发前置条件门。")
+                run = run_lifecycle.wait_for_user(
+                    initial_run_id,
+                    prompt=gate["prompt"],
+                    missing_fields=gate["missing_fields"],
+                    checkpoint_payload={"original_prompt": case["user_input"]},
+                    store_path=store_path,
+                )
+                facts["checkpoint_created"] = bool(run.get("checkpoint", {}).get("checkpoint_id"))
+                facts["checkpoint_completed_steps"] = run.get("checkpoint", {}).get("completed_steps", [])
+                waiting_run_id = run["run_id"]
+                run = run_lifecycle.resume_run(
+                    initial_run_id,
+                    user_input="去杭州，12月30日到1月1日，4人，每人预算5000元。",
+                    store_path=store_path,
+                )
+                run = run_lifecycle.transition_run(
+                    initial_run_id,
+                    run_lifecycle.STATUS_RUNNING,
+                    actor="backend_worker",
+                    reason="Eval 从检查点恢复。",
+                    current_step="agent_execution",
+                    store_path=store_path,
+                )
+                second_trace_id = run_lifecycle.generate_trace_id()
+                run = run_lifecycle.start_attempt(initial_run_id, trace_id=second_trace_id, store_path=store_path)
+                facts["same_run_id"] = run["run_id"] == waiting_run_id == initial_run_id
+                facts["request_rotated"] = run["request_ids"][-1] != initial_request_id
+                facts["trace_rotated"] = second_trace_id != first_trace_id and len(run["trace_ids"]) == 2
+                steps.extend([
+                    {"tool": "lifecycle_checkpoint", "name": "保存检查点", "status": "success"},
+                    {"tool": "lifecycle_resume", "name": "恢复执行", "status": "success"},
+                ])
+
+            if scenario == "session_isolation":
+                facts["cross_session_visible"] = run_lifecycle.get_run(
+                    initial_run_id,
+                    session_id="another_session",
+                    store_path=store_path,
+                ) is not None
+                steps.append({"tool": "lifecycle_isolation", "name": "会话隔离校验", "status": "success"})
+
+            run = run_lifecycle.succeed_run(
+                initial_run_id,
+                result={"answer_preview": "生命周期 Eval 通过。"},
+                store_path=store_path,
+            )
+
+        history_statuses = [item.get("to", "") for item in run.get("state_history", [])]
+        history_actors = [item.get("actor", "") for item in run.get("state_history", [])]
+        answer = (
+            f"产品运行生命周期验收完成：最终状态为 {run_lifecycle.STATUS_LABELS.get(run['status'], run['status'])}；"
+            f"共记录 {len(run.get('request_ids', []))} 个 Request ID、"
+            f"{len(run.get('trace_ids', []))} 个 Trace ID。"
+        )
+        return {
+            "planner_mode": "product_lifecycle",
+            "answer": answer,
+            "sources": [],
+            "steps": steps,
+            "tasks": [],
+            "stop_reason": run["status"],
+            "lifecycle": {
+                "run_id": run["run_id"],
+                "status": run["status"],
+                "history_statuses": history_statuses,
+                "history_actors": history_actors,
+                "request_count": len(run.get("request_ids", [])),
+                "trace_count": len(run.get("trace_ids", [])),
+                **facts,
+            },
+        }
+
+
 def run_case(
     case: dict[str, Any],
     router_mode: str = ROUTER_MODE_RULES,
     source_strategy: str = SOURCE_STRATEGY_AUTO,
 ) -> dict[str, Any]:
+    if case.get("category") == "product_lifecycle":
+        return run_lifecycle_case(case)
+
     ensure_eval_upload_fixtures([case])
     selected_mode = case.get("selected_mode", "normal")
     preferred_sources = case.get("preferred_sources", [])
@@ -1036,6 +1193,48 @@ def score_permission_trace(case: dict[str, Any], result: dict[str, Any]) -> dict
     }
 
 
+def score_lifecycle(case: dict[str, Any], result: dict[str, Any]) -> dict[str, Any]:
+    expected_status = case.get("expected_lifecycle_status")
+    if not expected_status:
+        return {"passed": True, "issues": [], "actual": result.get("lifecycle", {})}
+
+    lifecycle = result.get("lifecycle", {}) or {}
+    issues = []
+    if lifecycle.get("status") != expected_status:
+        issues.append(f"最终状态应为 {expected_status}，实际为 {lifecycle.get('status', '')}")
+    for status in case.get("required_lifecycle_statuses", []):
+        if status not in lifecycle.get("history_statuses", []):
+            issues.append(f"状态历史缺少 {status}")
+    for actor in case.get("required_lifecycle_actors", []):
+        if actor not in lifecycle.get("history_actors", []):
+            issues.append(f"状态历史缺少处理主体 {actor}")
+
+    exact_fields = {
+        "expected_request_count": "request_count",
+        "expected_trace_count": "trace_count",
+        "expected_cross_session_visible": "cross_session_visible",
+        "expected_transition_rejected": "transition_rejected",
+    }
+    for case_field, actual_field in exact_fields.items():
+        if case_field in case and lifecycle.get(actual_field) != case[case_field]:
+            issues.append(f"{actual_field} 应为 {case[case_field]}，实际为 {lifecycle.get(actual_field)}")
+
+    truthy_fields = {
+        "require_same_run_id": "same_run_id",
+        "require_request_rotation": "request_rotated",
+        "require_trace_rotation": "trace_rotated",
+        "require_checkpoint": "checkpoint_created",
+    }
+    for case_field, actual_field in truthy_fields.items():
+        if case.get(case_field) and not lifecycle.get(actual_field):
+            issues.append(f"未满足 {actual_field}")
+    for step_id in case.get("required_checkpoint_steps", []):
+        if step_id not in lifecycle.get("checkpoint_completed_steps", []):
+            issues.append(f"检查点未保存已完成步骤 {step_id}")
+
+    return {"passed": not issues, "issues": issues, "actual": lifecycle}
+
+
 def evaluate_case(case: dict[str, Any], result: dict[str, Any]) -> dict[str, Any]:
     checks = {
         "expected_mode": score_expected_mode(case, result),
@@ -1048,6 +1247,7 @@ def evaluate_case(case: dict[str, Any], result: dict[str, Any]) -> dict[str, Any
         "stop_reason": score_stop_reason(case, result),
         "answer": score_answer(case, result),
         "permission_trace": score_permission_trace(case, result),
+        "lifecycle": score_lifecycle(case, result),
     }
     passed = all(check["passed"] for check in checks.values())
     failed_checks = [name for name, check in checks.items() if not check["passed"]]
@@ -1069,6 +1269,7 @@ def evaluate_case(case: dict[str, Any], result: dict[str, Any]) -> dict[str, Any
             "artifacts": result.get("artifacts", {}),
             "observations": result.get("observations", []),
             "permission_trace": result.get("permission_trace", []),
+            "lifecycle": result.get("lifecycle", {}),
         },
     }
 
@@ -1091,6 +1292,9 @@ def build_expected_behavior(case: dict[str, Any]) -> dict[str, Any]:
         "required_permission_tools": case.get("required_permission_tools", []),
         "expected_permission_decisions": case.get("expected_permission_decisions", []),
         "forbidden_permission_decisions": case.get("forbidden_permission_decisions", []),
+        "expected_lifecycle_status": case.get("expected_lifecycle_status", ""),
+        "required_lifecycle_statuses": case.get("required_lifecycle_statuses", []),
+        "required_lifecycle_actors": case.get("required_lifecycle_actors", []),
     }
 
 
@@ -1442,6 +1646,31 @@ def call_llm_judge(payload: dict[str, Any]) -> dict[str, Any]:
 
 
 def attach_judge_result(case: dict[str, Any], evaluation: dict[str, Any]) -> dict[str, Any]:
+    if case.get("category") == "product_lifecycle":
+        rule_pass = evaluation["passed"]
+        score = 5 if rule_pass else 0
+        evaluation["rule_pass"] = rule_pass
+        evaluation["judge"] = {
+            "enabled": True,
+            "available": False,
+            "method": "deterministic_rules",
+            "model": "",
+            "pass": rule_pass,
+            "overall_score": score,
+            "scores": {
+                "task_success": score,
+                "groundedness": score,
+                "source_usage": score,
+                "completeness": score,
+                "clarity": score,
+                "safety": score,
+            },
+            "hard_fail_reasons": [],
+            "failed_dimensions": [] if rule_pass else ["lifecycle_contract"],
+            "reason": "ID、状态流转、检查点与隔离属于确定性系统行为，使用强规则验收，避免 LLM 主观误判。",
+        }
+        return evaluation
+
     payload = build_judge_payload(case, evaluation)
     try:
         judge = call_llm_judge(payload)
@@ -1530,10 +1759,14 @@ def run_eval(
     total = len(rows)
     passed = sum(1 for row in rows if row["evaluation"]["passed"])
     by_category = defaultdict(lambda: {"total": 0, "passed": 0})
+    by_suite = defaultdict(lambda: {"total": 0, "passed": 0})
     for row in rows:
         category = row["evaluation"]["category"]
         by_category[category]["total"] += 1
         by_category[category]["passed"] += int(row["evaluation"]["passed"])
+        for suite in row["case"].get("suite", []):
+            by_suite[suite]["total"] += 1
+            by_suite[suite]["passed"] += int(row["evaluation"]["passed"])
 
     failed_check_counter = Counter()
     for row in rows:
@@ -1551,6 +1784,7 @@ def run_eval(
         "source_strategy": source_strategy,
         "stable_web": stable_web,
         "by_category": dict(by_category),
+        "by_suite": dict(by_suite),
         "failed_check_counts": dict(failed_check_counter),
         "rows": rows,
     }
@@ -1566,6 +1800,10 @@ def render_report(report: dict[str, Any], output_path: Path) -> None:
         f"<tr><td>{esc(category)}</td><td>{stats['passed']}/{stats['total']}</td><td>{stats['passed'] / stats['total']:.0%}</td></tr>"
         for category, stats in sorted(report["by_category"].items())
     )
+    suite_rows = "\n".join(
+        f"<tr><td>{esc(suite)}</td><td>{stats['passed']}/{stats['total']}</td><td>{stats['passed'] / stats['total']:.0%}</td></tr>"
+        for suite, stats in sorted(report.get("by_suite", {}).items())
+    ) or "<tr><td>未标记</td><td>0/0</td><td>0%</td></tr>"
     failed_checks = report["failed_check_counts"] or {}
     failed_check_rows = "\n".join(
         f"<tr><td>{esc(name)}</td><td>{count}</td></tr>"
@@ -1646,6 +1884,9 @@ def render_report(report: dict[str, Any], output_path: Path) -> None:
     <div class="card"><div class="metric fail">{report['failed']}</div><div>失败</div></div>
     <div class="card"><div class="metric">{report['pass_rate']:.0%}</div><div>通过率</div></div>
   </section>
+
+  <h2>分测试集通过率</h2>
+  <table><thead><tr><th>测试集</th><th>通过 / 总数</th><th>通过率</th></tr></thead><tbody>{suite_rows}</tbody></table>
 
   <h2>分场景通过率</h2>
   <table><thead><tr><th>场景</th><th>通过 / 总数</th><th>通过率</th></tr></thead><tbody>{category_rows}</tbody></table>
