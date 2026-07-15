@@ -2135,10 +2135,9 @@ def run_compare_agent_turn(panel_id, prompt, config):
         render_plan_progress(plan_placeholder, live_plan_steps)
 
     def handle_plan_progress(event):
-        if not config["plan_progress_enabled"]:
-            return
         merge_plan_event(live_plan_steps, event)
-        render_plan_progress(plan_placeholder, live_plan_steps)
+        if config["plan_progress_enabled"]:
+            render_plan_progress(plan_placeholder, live_plan_steps)
 
     stream_placeholder = st.empty()
     streamed_answer = {"text": ""}
@@ -2297,7 +2296,7 @@ def run_compare_agent_turn(panel_id, prompt, config):
         "planner_mode": result.get("planner_mode", ""),
         "planner_label": planner_label,
         "trace_level": config["trace_level"],
-        "plan_steps": live_plan_steps if config["plan_progress_enabled"] else [],
+        "plan_steps": live_plan_steps,
         "steps": result.get("steps", []),
         "sources": result.get("sources", []),
         "permission_trace": result.get("permission_trace", []),
@@ -2312,7 +2311,7 @@ def run_compare_agent_turn(panel_id, prompt, config):
             "memory_used": result.get("memory_used", [item.get("id") for item in retrieved_memories]),
             "memory_route": result.get("memory_route", memory_route),
             "steps": compact_steps_for_log(result.get("steps", [])),
-            "plan_steps": compact_steps_for_log(live_plan_steps) if config["plan_progress_enabled"] else [],
+            "plan_steps": compact_steps_for_log(live_plan_steps),
             "sources": compact_sources_for_log(result.get("sources", [])),
             "answer_preview": str(result.get("answer", ""))[:1200],
         },
@@ -2347,10 +2346,11 @@ def _execute_compare_agent_backend_core(
     memory_context = ""
     retrieved_memories = []
     memory_route = {}
+    live_plan_steps = base_plan_steps(config["run_mode"])
 
     def handle_plan_progress(event):
-        if config.get("plan_progress_enabled"):
-            run_lifecycle.update_step(product_run["run_id"], event)
+        run_lifecycle.update_step(product_run["run_id"], event)
+        merge_plan_event(live_plan_steps, event)
 
     use_autonomous_mode = False
     autonomous_route_reason = ""
@@ -2491,6 +2491,7 @@ def _execute_compare_agent_backend_core(
         "planner_mode": result.get("planner_mode", ""),
         "planner_label": planner_label,
         "trace_level": config["trace_level"],
+        "plan_steps": live_plan_steps,
         "steps": result.get("steps", []),
         "sources": result.get("sources", []),
         "permission_trace": result.get("permission_trace", []),
@@ -2507,6 +2508,7 @@ def _execute_compare_agent_backend_core(
             "memory_used": result.get("memory_used", [item.get("id") for item in retrieved_memories]),
             "memory_route": result.get("memory_route", memory_route),
             "steps": compact_steps_for_log(result.get("steps", [])),
+            "plan_steps": compact_steps_for_log(live_plan_steps),
             "sources": compact_sources_for_log(result.get("sources", [])),
             "answer_preview": str(result.get("answer", ""))[:1200],
         },
@@ -3239,10 +3241,9 @@ if prompt:
 
             def handle_plan_progress(event):
                 run_lifecycle.update_step(run_id, event)
-                if not plan_progress_enabled:
-                    return
                 merge_plan_event(live_plan_steps, event)
-                render_plan_progress(plan_placeholder, live_plan_steps)
+                if plan_progress_enabled:
+                    render_plan_progress(plan_placeholder, live_plan_steps)
 
             stream_placeholder = st.empty()
             streamed_answer = {"text": ""}
@@ -3410,7 +3411,7 @@ if prompt:
                 "planner_mode": result.get("planner_mode", ""),
                 "planner_label": planner_label,
                 "trace_level": trace_level,
-                "plan_steps": live_plan_steps if plan_progress_enabled else [],
+                "plan_steps": live_plan_steps,
                 "steps": result.get("steps", []),
                 "sources": result.get("sources", []),
                 "permission_trace": result.get("permission_trace", []),
@@ -3429,7 +3430,7 @@ if prompt:
                     "memory_used": result.get("memory_used", [item.get("id") for item in retrieved_memories]),
                     "memory_route": result.get("memory_route", memory_route),
                     "steps": compact_steps_for_log(result.get("steps", [])),
-                    "plan_steps": compact_steps_for_log(live_plan_steps) if plan_progress_enabled else [],
+                    "plan_steps": compact_steps_for_log(live_plan_steps),
                     "sources": compact_sources_for_log(result.get("sources", [])),
                     "answer_preview": str(result.get("answer", ""))[:1200],
                 },
