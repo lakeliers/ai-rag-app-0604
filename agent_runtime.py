@@ -73,9 +73,14 @@ CAPABILITY_PATTERNS = [
 ]
 CONTEXT_REFERENCE_PATTERNS = [
     r"(我|我的|本人).{0,8}(名字|姓名|称呼).{0,8}(是什么|叫什?么|是啥|吗|\?)",
-    r"(你知道|还记得|记得).{0,8}(我|我的).{0,8}(名字|姓名|称呼)",
+    r"(你知道|还记得|记得).{0,8}(我|我的).{0,8}(名字|姓名|称呼|叫什?么)",
     r"(刚才|前面|之前|上面).{0,12}(我).{0,8}(叫什?么|说.*名字|说.*称呼|说.*是谁)",
     r"(我刚才|我前面|我之前).{0,12}(说).{0,8}(我叫|我是|名字)",
+]
+
+SESSION_NAME_QUERY_PATTERNS = [
+    r"(你知道|还记得|记得).{0,8}(我|我的).{0,8}(名字|姓名|称呼|叫什?么)",
+    r"(我|我的|本人).{0,8}(名字|姓名|称呼).{0,8}(是什么|叫什?么|是啥|吗|\?)",
 ]
 CONCRETE_TASK_WORDS = [
     "调研",
@@ -203,6 +208,24 @@ def is_lightweight_direct_intent(question: str) -> tuple[bool, str, str]:
     return False, "", ""
 
 
+def extract_session_name(conversation_context: str) -> str:
+    """Read a name only from an explicit user self-introduction in this session."""
+    if not conversation_context:
+        return ""
+    matches = re.findall(
+        r"用户：[^\n]{0,80}?(?:我是|我叫)\s*([\u4e00-\u9fffA-Za-z][\u4e00-\u9fffA-Za-z0-9_-]{0,15})",
+        conversation_context,
+    )
+    return matches[-1] if matches else ""
+
+
+def is_session_name_lookup(question: str, conversation_context: str) -> bool:
+    return bool(
+        extract_session_name(conversation_context)
+        and matches_any_pattern(question, SESSION_NAME_QUERY_PATTERNS)
+    )
+
+
 def looks_like_external_entity_lookup(question: str) -> bool:
     normalized = normalize_user_text(question)
     lookup_words = [
@@ -321,6 +344,18 @@ def load_memory_after_intent(
     conversation_context: str = "",
     model_name: str = "",
 ) -> tuple[str, list[dict[str, Any]], dict[str, Any]]:
+    session_name = extract_session_name(conversation_context)
+    if is_session_name_lookup(question, conversation_context):
+        return "", [], {
+            "need_memory": False,
+            "memory_types": ["session_memory"],
+            "query": question,
+            "reason": f"本轮会话中已找到用户自我介绍“{session_name}”，优先使用 Session Memory，不读取长期记忆。",
+            "confidence": 0.98,
+            "source": "session_memory",
+            "route_strategy": route_strategy,
+            "intent": intent.intent,
+        }
     if not enabled:
         return "", [], {
             "need_memory": False,
@@ -1748,6 +1783,17 @@ def tool_direct_answer(
         return ToolResult(
             status="success",
             summary="识别为能力介绍问题，已直接说明可用能力。",
+            data=answer,
+        )
+
+    session_name = extract_session_name(conversation_context)
+    if session_name and matches_any_pattern(question, SESSION_NAME_QUERY_PATTERNS):
+        answer = f"你刚才说你是{session_name}。"
+        if stream_callback:
+            stream_callback(answer, answer)
+        return ToolResult(
+            status="success",
+            summary="已从本轮 Session Memory 读取用户自我介绍。",
             data=answer,
         )
 

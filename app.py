@@ -19,6 +19,9 @@ def get_secret(name):
 
 deepseek_key = get_secret("DEEPSEEK_API_KEY")
 dashscope_key = get_secret("DASHSCOPE_API_KEY")
+embedding_provider = get_secret("EMBEDDING_PROVIDER")
+embedding_model = get_secret("EMBEDDING_MODEL_NAME")
+embedding_dimensions = get_secret("EMBEDDING_DIMENSIONS")
 enable_reranker = get_secret("ENABLE_RERANKER")
 reranker_model_name = get_secret("RERANKER_MODEL_NAME")
 rerank_limit = get_secret("RERANK_LIMIT")
@@ -35,6 +38,12 @@ if deepseek_key:
     os.environ["DEEPSEEK_API_KEY"] = deepseek_key
 if dashscope_key:
     os.environ["DASHSCOPE_API_KEY"] = dashscope_key
+if embedding_provider:
+    os.environ["EMBEDDING_PROVIDER"] = str(embedding_provider)
+if embedding_model:
+    os.environ["EMBEDDING_MODEL_NAME"] = str(embedding_model)
+if embedding_dimensions:
+    os.environ["EMBEDDING_DIMENSIONS"] = str(embedding_dimensions)
 if enable_reranker:
     os.environ["ENABLE_RERANKER"] = enable_reranker
 if reranker_model_name:
@@ -143,26 +152,36 @@ def ingest_uploaded_files_for_state(uploaded_files, chunking_strategy, *, state_
                 "请提取这张图片中的关键信息，整理成适合知识库检索的文字资料。",
             )
             source = f"图片：{uploaded_file.name}"
-            chunk_count = agent.add_text_to_chroma(
-                summary,
-                source=source,
-                source_type="upload",
-                url=uploaded_file.name,
-                content_type="image",
-                chunking_strategy=chunking_strategy,
-                metadata_scope=metadata_scope,
-            )
+            try:
+                chunk_count = agent.add_text_to_chroma(
+                    summary,
+                    source=source,
+                    source_type="upload",
+                    url=uploaded_file.name,
+                    content_type="image",
+                    chunking_strategy=chunking_strategy,
+                    metadata_scope=metadata_scope,
+                )
+            except agent.EmbeddingServiceError as exc:
+                st.warning(f"{uploaded_file.name} 暂时无法向量化，请稍后重试。原因：{exc}")
+                st.session_state[upload_processing_key][uploaded_file.name] = "入库失败：向量服务不可用"
+                continue
         else:
             sections = read_upload_as_sections(uploaded_file)
             source = f"上传：{uploaded_file.name}"
-            chunk_count = agent.add_sections_to_chroma(
-                sections,
-                source=source,
-                source_type="upload",
-                url=uploaded_file.name,
-                chunking_strategy=chunking_strategy,
-                metadata_scope=metadata_scope,
-            )
+            try:
+                chunk_count = agent.add_sections_to_chroma(
+                    sections,
+                    source=source,
+                    source_type="upload",
+                    url=uploaded_file.name,
+                    chunking_strategy=chunking_strategy,
+                    metadata_scope=metadata_scope,
+                )
+            except agent.EmbeddingServiceError as exc:
+                st.warning(f"{uploaded_file.name} 暂时无法向量化，请稍后重试。原因：{exc}")
+                st.session_state[upload_processing_key][uploaded_file.name] = "入库失败：向量服务不可用"
+                continue
 
         st.session_state[ingested_key][key] = source
         st.session_state[upload_status_key].append(f"{source}：{chunk_count} 块｜切分：{format_chunking_labels(chunking_strategy)}")
@@ -1723,6 +1742,11 @@ def render_settings_panel():
     st.divider()
     st.caption("状态")
     st.caption(f"DeepSeek：{'已配置' if deepseek_key else '未配置'}｜通义百炼：{'已配置' if dashscope_key else '未配置'}")
+    embedding_info = agent.embedding_runtime_info()
+    st.caption(
+        f"Embedding（向量化）：{embedding_info['label']}｜"
+        f"{'已配置' if embedding_info['configured'] else '未配置'}"
+    )
     st.caption(f"Reranker：{'已启用' if agent.ENABLE_RERANKER else '未启用'}｜Streaming：{'已启用' if streaming_enabled else '未启用'}")
 
     if "upload_status" in st.session_state and st.session_state.upload_status:
@@ -2818,6 +2842,33 @@ if "queued_prompt" not in st.session_state:
 if "active_waiting_run_id" not in st.session_state:
     st.session_state.active_waiting_run_id = ""
 
+if "active_execution_run_id" not in st.session_state:
+    st.session_state.active_execution_run_id = ""
+
+# Streamlit's Stop button interrupts the script instead of returning a normal
+# result. On the next rerun, close the orphaned lifecycle run before rendering.
+interrupted_run_id = st.session_state.active_execution_run_id
+if interrupted_run_id:
+    interrupted_run = run_lifecycle.get_run(
+        interrupted_run_id,
+        session_id=st.session_state.rag_session_id,
+    )
+    if interrupted_run and interrupted_run.get("status") in {
+        run_lifecycle.STATUS_RUNNING,
+        run_lifecycle.STATUS_CANCEL_REQUESTED,
+    }:
+        try:
+            if interrupted_run.get("status") == run_lifecycle.STATUS_RUNNING:
+                run_lifecycle.request_cancel(interrupted_run_id)
+            run_lifecycle.complete_cancel(interrupted_run_id)
+            st.session_state.messages.append({
+                "role": "assistant",
+                "content": "本轮任务已取消，未生成最终回答。你可以调整问题后重新发送。",
+            })
+        except Exception:
+            pass
+    st.session_state.active_execution_run_id = ""
+
 
 st.markdown("""
 <style>
@@ -3111,6 +3162,7 @@ if prompt:
         current_config,
     )
     run_id = product_run["run_id"]
+    st.session_state.active_execution_run_id = run_id
     started_at = time.perf_counter()
     conversation_context = build_conversation_context(st.session_state.messages)
     st.session_state.messages.append({"role": "user", "content": submitted_prompt})
@@ -3343,6 +3395,7 @@ if prompt:
                 },
             )
             st.session_state.active_waiting_run_id = ""
+            st.session_state.active_execution_run_id = ""
             badcase_run = {
                 "request_id": lifecycle["request_ids"][-1],
                 "run_id": run_id,
@@ -3382,11 +3435,6 @@ if prompt:
                 },
             }
             persist_trace_for_run(badcase_run)
-            render_assistant_message(
-                result["answer"],
-                badcase_run,
-                key_suffix=f"live_{len(st.session_state.messages)}",
-            )
             st.session_state.messages.append({
                 "role": "assistant",
                 "content": result["answer"],
@@ -3399,6 +3447,7 @@ if prompt:
                 for candidate in candidates:
                     candidate["candidate_id"] = memory_manager.candidate_id(candidate)
                 st.session_state.pending_memory_candidates = candidates
+            st.rerun()
 
         except Exception as e:
             error_answer = f"调用失败：{e}"
@@ -3436,12 +3485,13 @@ if prompt:
                 },
             }
             persist_trace_for_run(error_run, status="error", error=str(e))
-            render_assistant_message(error_answer, error_run, key_suffix=f"error_{len(st.session_state.messages)}")
             st.session_state.messages.append({
                 "role": "assistant",
                 "content": error_answer,
                 "badcase_run": error_run,
             })
+            st.session_state.active_execution_run_id = ""
+            st.rerun()
 
 if st.session_state.memory_notice:
     st.info(st.session_state.memory_notice)

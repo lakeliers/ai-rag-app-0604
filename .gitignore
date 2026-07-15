@@ -1,6 +1,7 @@
 __pycache__/
 *.pyc
 chroma_db/
+chroma_eval_db/
 .streamlit/secrets.toml
 data/memory_store.json
 data/run_lifecycle.json

@@ -20,9 +20,26 @@ from parsing_layer import ParsedSection
 from chunking_layer import ChunkCandidate, chunk_section, format_section_text, split_table_section, split_text_fixed, split_text_recursive
 
 
-EMBEDDING_MODEL_NAME = "shibing624/text2vec-base-chinese"
+LOCAL_EMBEDDING_MODEL_NAME = os.getenv(
+    "LOCAL_EMBEDDING_MODEL_NAME",
+    "shibing624/text2vec-base-chinese",
+)
+EMBEDDING_PROVIDER = os.getenv("EMBEDDING_PROVIDER", "dashscope").strip().lower()
+EMBEDDING_MODEL_NAME = os.getenv("EMBEDDING_MODEL_NAME", "text-embedding-v4")
+EMBEDDING_DIMENSIONS = int(os.getenv("EMBEDDING_DIMENSIONS", "1024"))
+EMBEDDING_BATCH_SIZE = min(max(int(os.getenv("EMBEDDING_BATCH_SIZE", "10")), 1), 10)
+EMBEDDING_TIMEOUT_SECONDS = float(os.getenv("EMBEDDING_TIMEOUT_SECONDS", "15"))
+EMBEDDING_MAX_RETRIES = int(os.getenv("EMBEDDING_MAX_RETRIES", "1"))
+DASHSCOPE_BASE_URL = os.getenv(
+    "DASHSCOPE_BASE_URL",
+    "https://dashscope.aliyuncs.com/compatible-mode/v1",
+)
 CHROMA_PATH = os.getenv("CHROMA_PATH", "./chroma_db")
-COLLECTION_NAME = "file_docs"
+LEGACY_COLLECTION_NAME = "file_docs"
+COLLECTION_NAME = os.getenv(
+    "CHROMA_COLLECTION_NAME",
+    f"file_docs_{EMBEDDING_PROVIDER}_{EMBEDDING_MODEL_NAME}_{EMBEDDING_DIMENSIONS}",
+).replace("-", "_")
 DEEPSEEK_MODEL = os.getenv("DEEPSEEK_MODEL", "deepseek-v4-flash")
 QWEN_VL_MODEL = os.getenv("QWEN_VL_MODEL", "qwen-vl-plus")
 LLM_TIMEOUT_SECONDS = float(os.getenv("LLM_TIMEOUT_SECONDS", "45"))
@@ -189,8 +206,12 @@ INTENT_WEIGHTS = {
 }
 
 
-LOCAL_FILES_ONLY = os.getenv("LOCAL_FILES_ONLY", "0") == "1"
+# Production requests must not block on a first-use Hugging Face download. Set
+# LOCAL_FILES_ONLY=0 only in a controlled environment that intentionally warms models.
+LOCAL_FILES_ONLY = os.getenv("LOCAL_FILES_ONLY", "1") == "1"
 _embedding_model = None
+embedding_load_failed = False
+_embedding_client = None
 _client_cache = {}
 _collection_cache = {}
 
@@ -201,14 +222,86 @@ reranker_load_failed = False
 
 
 def get_embedding_model():
-    global _embedding_model
+    global _embedding_model, embedding_load_failed
     if _embedding_model is None:
+        if embedding_load_failed:
+            raise RuntimeError("向量模型在当前运行环境不可用。")
         print("正在加载本地向量模型...")
-        _embedding_model = SentenceTransformer(
-            EMBEDDING_MODEL_NAME,
-            local_files_only=LOCAL_FILES_ONLY,
-        )
+        try:
+            _embedding_model = SentenceTransformer(
+                LOCAL_EMBEDDING_MODEL_NAME,
+                local_files_only=LOCAL_FILES_ONLY,
+            )
+        except Exception as exc:
+            embedding_load_failed = True
+            print(f"向量模型加载失败，继续使用关键词检索：{exc}")
+            raise RuntimeError("向量模型不可用，已降级为关键词检索。") from exc
     return _embedding_model
+
+
+class EmbeddingServiceError(RuntimeError):
+    """Raised when the configured embedding provider cannot return valid vectors."""
+
+
+def get_embedding_client():
+    global _embedding_client
+    if _embedding_client is not None:
+        return _embedding_client
+
+    api_key = os.getenv("DASHSCOPE_API_KEY")
+    if not api_key:
+        raise EmbeddingServiceError("未配置 DASHSCOPE_API_KEY，无法调用云端向量服务。")
+
+    _embedding_client = OpenAI(
+        api_key=api_key,
+        base_url=DASHSCOPE_BASE_URL,
+        timeout=EMBEDDING_TIMEOUT_SECONDS,
+        max_retries=EMBEDDING_MAX_RETRIES,
+    )
+    return _embedding_client
+
+
+def embedding_runtime_info():
+    if EMBEDDING_PROVIDER == "dashscope":
+        configured = bool(os.getenv("DASHSCOPE_API_KEY"))
+        return {
+            "provider": "dashscope",
+            "model": EMBEDDING_MODEL_NAME,
+            "dimensions": EMBEDDING_DIMENSIONS,
+            "collection": COLLECTION_NAME,
+            "configured": configured,
+            "label": f"百炼 {EMBEDDING_MODEL_NAME} / {EMBEDDING_DIMENSIONS}维",
+        }
+    return {
+        "provider": "local",
+        "model": LOCAL_EMBEDDING_MODEL_NAME,
+        "dimensions": None,
+        "collection": COLLECTION_NAME,
+        "configured": True,
+        "label": f"本地 {LOCAL_EMBEDDING_MODEL_NAME}",
+    }
+
+
+def check_embedding_health():
+    started_at = time.perf_counter()
+    try:
+        vectors = embed_texts(["向量服务健康检查"])
+        dimensions = len(vectors[0]) if vectors else 0
+        return {
+            **embedding_runtime_info(),
+            "healthy": dimensions > 0,
+            "actual_dimensions": dimensions,
+            "elapsed_ms": int((time.perf_counter() - started_at) * 1000),
+            "error": "",
+        }
+    except Exception as exc:
+        return {
+            **embedding_runtime_info(),
+            "healthy": False,
+            "actual_dimensions": 0,
+            "elapsed_ms": int((time.perf_counter() - started_at) * 1000),
+            "error": str(exc),
+        }
 
 
 def get_collection(chroma_path=CHROMA_PATH, collection_name=COLLECTION_NAME):
@@ -309,7 +402,7 @@ def get_qwen_client():
         return None
     return OpenAI(
         api_key=api_key,
-        base_url="https://dashscope.aliyuncs.com/compatible-mode/v1",
+        base_url=DASHSCOPE_BASE_URL,
         timeout=LLM_TIMEOUT_SECONDS,
         max_retries=0,
     )
@@ -327,7 +420,39 @@ def split_section(section, chunk_size=500, chunk_overlap=80):
 
 
 def embed_texts(texts):
-    return get_embedding_model().encode(texts).tolist()
+    clean_texts = [str(text).strip() for text in texts if str(text).strip()]
+    if not clean_texts:
+        return []
+
+    if EMBEDDING_PROVIDER == "local":
+        return get_embedding_model().encode(clean_texts).tolist()
+    if EMBEDDING_PROVIDER != "dashscope":
+        raise EmbeddingServiceError(f"不支持的向量服务：{EMBEDDING_PROVIDER}")
+
+    client = get_embedding_client()
+    vectors = []
+    for start in range(0, len(clean_texts), EMBEDDING_BATCH_SIZE):
+        batch = clean_texts[start:start + EMBEDDING_BATCH_SIZE]
+        try:
+            response = client.embeddings.create(
+                model=EMBEDDING_MODEL_NAME,
+                input=batch,
+                dimensions=EMBEDDING_DIMENSIONS,
+                encoding_format="float",
+            )
+        except Exception as exc:
+            raise EmbeddingServiceError(f"云端向量服务调用失败：{exc}") from exc
+
+        ordered = sorted(response.data, key=lambda item: item.index)
+        batch_vectors = [item.embedding for item in ordered]
+        if len(batch_vectors) != len(batch):
+            raise EmbeddingServiceError("云端向量服务返回数量与输入数量不一致。")
+        if any(len(vector) != EMBEDDING_DIMENSIONS for vector in batch_vectors):
+            raise EmbeddingServiceError(
+                f"云端向量维度异常，期望 {EMBEDDING_DIMENSIONS} 维。"
+            )
+        vectors.extend(batch_vectors)
+    return vectors
 
 
 def summarize_section_for_retrieval(section, force=False):
@@ -811,6 +936,13 @@ def add_sections_to_chroma(
             "parent_text": chunk.parent_text[:PARENT_TEXT_CHAR_LIMIT],
             "batch_id": batch_id,
             "chunk_hash": chunk_hash,
+            "embedding_provider": EMBEDDING_PROVIDER,
+            "embedding_model": (
+                EMBEDDING_MODEL_NAME
+                if EMBEDDING_PROVIDER == "dashscope"
+                else LOCAL_EMBEDDING_MODEL_NAME
+            ),
+            "embedding_dimensions": EMBEDDING_DIMENSIONS if EMBEDDING_PROVIDER == "dashscope" else 0,
         }
         metadata.update(scope)
         metadatas.append(metadata)
@@ -893,8 +1025,27 @@ def build_metadata_filter(query_profile):
     }
 
 
-def vector_retrieve(question, limit=20, metadata_filter=None, chroma_path=CHROMA_PATH):
-    query_embedding = embed_texts([question])
+def vector_retrieve(
+    question,
+    limit=20,
+    metadata_filter=None,
+    chroma_path=CHROMA_PATH,
+    diagnostics=None,
+):
+    diagnostics = diagnostics if diagnostics is not None else {}
+    diagnostics.update({
+        "provider": EMBEDDING_PROVIDER,
+        "model": EMBEDDING_MODEL_NAME,
+        "status": "ok",
+        "error": "",
+    })
+    try:
+        query_embedding = embed_texts([question])
+    except Exception as exc:
+        diagnostics["status"] = "degraded"
+        diagnostics["error"] = str(exc)
+        print(f"向量召回不可用，混合检索将使用 BM25 显式降级：{exc}")
+        return []
     active_collection = get_collection(chroma_path=chroma_path)
     if metadata_filter:
         results = active_collection.query(
@@ -1225,11 +1376,13 @@ def search_chroma(
             {"source": {"$in": list(preferred_sources)}},
         )
     recall_limit = max(top_k * 8, 24)
+    vector_diagnostics = {}
     vector_rows = vector_retrieve(
         question,
         limit=recall_limit,
         metadata_filter=metadata_filter,
         chroma_path=chroma_path,
+        diagnostics=vector_diagnostics,
     )
     bm25_rows = []
     if retrieval_strategy != RETRIEVAL_VECTOR_ONLY:
@@ -1254,6 +1407,7 @@ def search_chroma(
             limit=recall_limit,
             metadata_filter=metadata_filter,
             chroma_path=chroma_path,
+            diagnostics=vector_diagnostics,
         )
         if retrieval_strategy != RETRIEVAL_VECTOR_ONLY:
             bm25_rows = bm25_retrieve(
@@ -1322,6 +1476,11 @@ def search_chroma(
         row["query_intent"] = query_profile["intent"]
         row["ranking_weights"] = str(query_profile["weights"])
         row["retrieval_strategy"] = retrieval_strategy
+        row["vector_retrieval_status"] = vector_diagnostics.get("status", "ok")
+        row["embedding_provider"] = vector_diagnostics.get("provider", EMBEDDING_PROVIDER)
+        row["embedding_model"] = vector_diagnostics.get("model", EMBEDDING_MODEL_NAME)
+        if vector_diagnostics.get("error"):
+            row["vector_retrieval_error"] = vector_diagnostics["error"]
         row["context_packing_strategy"] = context_packing_strategy
         row["final_score"] = final_score
         row["pre_rerank_score"] = final_score

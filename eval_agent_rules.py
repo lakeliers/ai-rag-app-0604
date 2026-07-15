@@ -236,11 +236,16 @@ EVAL_WEB_FIXTURES = [
     },
     {
         "source": "网页：理想汽车 2026 一季度财报稳定样本",
-        "url": "https://example.com/eval/li-auto-2026-q1",
+        "url": "https://ir.lixiang.com/news-releases/news-release-details/li-auto-inc-announces-unaudited-first-quarter-2026-financial/",
         "text": (
-            "理想汽车 2026 一季度财报稳定样本：该样本用于验证联网检索链路能够围绕用户问题返回可读正文。"
-            "回答应明确覆盖理想汽车、2026 年、一季度、财报情况这些关键词，并说明如果真实财报数字需要以公司公告或交易所披露为准。"
-            "在评估环境中，不能因为实时网页读取失败而直接回答未找到任何相关信息。"
+            "理想汽车于 2026 年 5 月 28 日发布截至 2026 年 3 月 31 日的一季度未经审计财报。"
+            "一季度交付量为 95,142 辆，同比增长 2.5%。总收入为 229.829 亿元，同比下降 11.4%，"
+            "环比下降 20.1%；其中车辆销售收入为 215.332 亿元。"
+            "毛利润为 18.080 亿元，毛利率为 7.9%，车辆毛利率为 6.1%。"
+            "经营亏损为 29.988 亿元，净亏损为 22.760 亿元，非美国通用会计准则净亏损为 21.080 亿元。"
+            "经营活动现金净流出为 60.910 亿元，自由现金流为负 73.883 亿元。"
+            "公司给出的 2026 年二季度指引为交付 95,000 至 100,000 辆、总收入 241 亿元至 254 亿元。"
+            "回答应明确区分公司已披露结果和后续展望，并引用理想汽车投资者关系官网。"
         ),
     },
     {
@@ -968,11 +973,21 @@ def run_case_safely(
         signal.signal(signal.SIGALRM, previous_handler)
 
 
-def run_case_child(case: dict[str, Any], queue: Any, router_mode: str, source_strategy: str) -> None:
+def run_case_child(
+    case: dict[str, Any],
+    queue: Any,
+    router_mode: str,
+    source_strategy: str,
+    stable_web: bool = False,
+) -> None:
+    original_tools = install_stable_web_tool() if stable_web else None
     try:
         queue.put({"ok": True, "result": run_case(case, router_mode=router_mode, source_strategy=source_strategy)})
     except Exception as error:
         queue.put({"ok": False, "result": error_result(case, error)})
+    finally:
+        if original_tools is not None:
+            restore_tools(original_tools)
 
 
 def run_case_isolated(
@@ -980,6 +995,7 @@ def run_case_isolated(
     case_timeout: int,
     router_mode: str = ROUTER_MODE_RULES,
     source_strategy: str = SOURCE_STRATEGY_AUTO,
+    stable_web: bool = False,
 ) -> dict[str, Any]:
     context = mp.get_context("spawn")
     queue = context.Queue()
@@ -987,7 +1003,10 @@ def run_case_isolated(
     case_eval_run_id = f"{EVAL_RUN_ID}_{case.get('case_id', 'case')}_{os.getpid()}"
     os.environ["EVAL_RUN_ID"] = case_eval_run_id
     try:
-        process = context.Process(target=run_case_child, args=(case, queue, router_mode, source_strategy))
+        process = context.Process(
+            target=run_case_child,
+            args=(case, queue, router_mode, source_strategy, stable_web),
+        )
         process.start()
         process.join(case_timeout if case_timeout > 0 else None)
     finally:
@@ -1746,7 +1765,7 @@ def run_eval(
     original_tools = None
     if mode == "mock":
         original_tools = install_fake_tools()
-    elif stable_web:
+    elif stable_web and not isolate_cases:
         original_tools = install_stable_web_tool()
     rows = []
     try:
@@ -1758,6 +1777,7 @@ def run_eval(
                     case_timeout,
                     router_mode=router_mode,
                     source_strategy=source_strategy,
+                    stable_web=stable_web,
                 )
             else:
                 result = run_case_safely(
