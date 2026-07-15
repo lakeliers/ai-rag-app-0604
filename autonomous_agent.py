@@ -99,6 +99,7 @@ def create_goal(user_request: str, max_steps: int, top_k: int, web_max_results: 
         ],
         constraints={
             "max_steps": max_steps,
+            "max_repair_steps": 1,
             "top_k": top_k,
             "web_max_results": web_max_results,
             "use_web": True,
@@ -346,7 +347,9 @@ def critic_task_result(task: Task, observation: dict[str, Any]) -> dict[str, Any
 
 
 def reflect_repair(task: Task, critic_result: dict[str, Any]) -> Task | None:
-    if critic_result["passed"] or task.retry_count >= 1:
+    # retry_count is incremented before reflection. The first failure therefore
+    # has retry_count == 1 and must still be allowed to create one repair task.
+    if critic_result["passed"] or task.replaces_task_id or task.retry_count > 1:
         return None
 
     issue_text = "；".join(critic_result["issues"])
@@ -364,6 +367,9 @@ def reflect_repair(task: Task, critic_result: dict[str, Any]) -> Task | None:
 
 def check_stop_conditions(state: AutonomousState) -> dict[str, Any]:
     max_steps = state.goal.constraints.get("max_steps", 5)
+    max_repair_steps = state.goal.constraints.get("max_repair_steps", 1)
+    repair_steps = sum(1 for task in state.tasks if task.replaces_task_id)
+    max_attempts = max_steps + min(repair_steps, max_repair_steps)
     if all(task.status in {"completed", "repaired"} for task in state.tasks):
         return {
             "should_stop": True,
@@ -372,7 +378,7 @@ def check_stop_conditions(state: AutonomousState) -> dict[str, Any]:
             "message": "所有任务已完成。",
         }
 
-    if state.step_count >= max_steps:
+    if state.step_count >= max_attempts:
         return {
             "should_stop": True,
             "stop_reason": "max_steps",

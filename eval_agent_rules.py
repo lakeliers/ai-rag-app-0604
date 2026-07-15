@@ -1,4 +1,5 @@
 import argparse
+import hashlib
 import html
 import json
 import multiprocessing as mp
@@ -650,6 +651,24 @@ def install_fake_tools() -> dict[str, Any]:
         "generate_answer": fake_generate_answer,
     })
     return original_tools
+
+
+def fake_eval_embed_texts(texts: list[str]) -> list[list[float]]:
+    """Return deterministic 1024-d vectors without calling a cloud service."""
+    dimensions = 1024
+    vectors: list[list[float]] = []
+    for text in texts:
+        value = str(text).strip()
+        if not value:
+            continue
+        vector = [0.0] * dimensions
+        for token in re.findall(r"[A-Za-z0-9_]+|[\u4e00-\u9fff]", value.lower()):
+            digest = hashlib.sha256(token.encode("utf-8")).digest()
+            index = int.from_bytes(digest[:4], "big") % dimensions
+            vector[index] += -1.0 if digest[4] & 1 else 1.0
+        norm = sum(item * item for item in vector) ** 0.5 or 1.0
+        vectors.append([item / norm for item in vector])
+    return vectors
 
 
 def install_stable_web_tool() -> dict[str, Any]:
@@ -1763,8 +1782,11 @@ def run_eval(
     stable_web: bool = False,
 ) -> dict[str, Any]:
     original_tools = None
+    original_embed_texts = None
     if mode == "mock":
         original_tools = install_fake_tools()
+        original_embed_texts = agent_runtime.agent.embed_texts
+        agent_runtime.agent.embed_texts = fake_eval_embed_texts
     elif stable_web and not isolate_cases:
         original_tools = install_stable_web_tool()
     rows = []
@@ -1796,6 +1818,8 @@ def run_eval(
     finally:
         if original_tools is not None:
             restore_tools(original_tools)
+        if original_embed_texts is not None:
+            agent_runtime.agent.embed_texts = original_embed_texts
 
     total = len(rows)
     passed = sum(1 for row in rows if row["evaluation"]["passed"])

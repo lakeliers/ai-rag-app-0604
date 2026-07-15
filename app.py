@@ -1184,7 +1184,8 @@ def render_badcase_form():
         elif run["config"].get("run_mode") == "自主任务":
             default_category = "autonomous"
 
-        with st.form("badcase_form"):
+        trace_id = str(run.get("trace_id") or "unknown")
+        with st.form(f"badcase_form_{trace_id}"):
             category = st.selectbox(
                 "问题类型",
                 badcase_manager.CATEGORIES,
@@ -2800,7 +2801,6 @@ def render_dual_agent_compare_mode():
     with right:
         render_compare_agent_workspace("right", "Agent B", right_config)
     render_compare_diff_summary()
-    render_badcase_form()
 
 
 if "messages" not in st.session_state:
