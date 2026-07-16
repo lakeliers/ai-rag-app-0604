@@ -626,12 +626,20 @@ def config_snapshot_pills(config):
     chunks = config.get("chunking_strategy_labels") or config.get("chunking_strategy") or []
     if isinstance(chunks, str):
         chunks = [chunks]
+    reference_count_mode = config.get("reference_count_mode_label", "")
+    if not reference_count_mode:
+        reference_count_mode = (
+            "Agent 自动判断"
+            if agent_runtime.is_auto_reference_count(config.get("top_k"))
+            else f"手动 {config.get('top_k', 0)} / {config.get('web_max_results', 0)}"
+        )
     return [
         str(config.get("run_mode", "")),
         f"多Agent：{config.get('multi_agent_architecture_label', config.get('multi_agent_architecture', ''))}",
         f"资料：{config.get('source_strategy_label', config.get('source_strategy', ''))}",
         f"检索：{config.get('retrieval_strategy_label', config.get('retrieval_strategy', ''))}",
         f"上下文：{config.get('context_packing_label', config.get('context_packing_strategy', ''))}",
+        f"引用：{reference_count_mode}",
         f"切分：{' + '.join(str(item) for item in chunks) if chunks else '默认'}",
         f"模型：{config.get('deepseek_model_label', config.get('deepseek_model', ''))}",
         f"Reranker：{'开' if config.get('reranker_enabled') else '关'}",
@@ -692,6 +700,7 @@ def build_current_config():
         "streaming_enabled": streaming_enabled,
         "plan_progress_enabled": plan_progress_enabled,
         "reranker_enabled": agent.ENABLE_RERANKER,
+        "reference_count_mode_label": reference_count_mode_label,
         "top_k": top_k,
         "web_max_results": web_max_results,
         "max_autonomous_steps": max_autonomous_steps,
@@ -1472,7 +1481,7 @@ def render_memory_confirmation():
 
 
 def render_settings_panel():
-    global uploaded_files, run_mode, multi_agent_architecture_label, multi_agent_architecture, debate_rounds_label, debate_rounds, router_mode_label, router_mode, max_autonomous_steps, planner_type_label, planner_type, evaluator_type_label, evaluator_type, memory_enabled, memory_route_strategy_label, memory_route_strategy, memory_write_mode_label, memory_write_mode, source_strategy_label, source_strategy, retrieval_strategy_label, retrieval_strategy, context_packing_label, context_packing_strategy, chunking_strategy_labels, chunking_strategy, top_k, web_max_results, plan_progress_enabled, streaming_enabled, trace_level, deepseek_model_label, deepseek_model, safety_mode_label, safety_mode, confirmation_policy_label, confirmation_policy, prompt_injection_guard, max_tool_calls_per_run, max_web_pages_per_run, show_permission_audit
+    global uploaded_files, run_mode, multi_agent_architecture_label, multi_agent_architecture, debate_rounds_label, debate_rounds, router_mode_label, router_mode, max_autonomous_steps, planner_type_label, planner_type, evaluator_type_label, evaluator_type, memory_enabled, memory_route_strategy_label, memory_route_strategy, memory_write_mode_label, memory_write_mode, source_strategy_label, source_strategy, retrieval_strategy_label, retrieval_strategy, context_packing_label, context_packing_strategy, chunking_strategy_labels, chunking_strategy, reference_count_mode_label, top_k, web_max_results, plan_progress_enabled, streaming_enabled, trace_level, deepseek_model_label, deepseek_model, safety_mode_label, safety_mode, confirmation_policy_label, confirmation_policy, prompt_injection_guard, max_tool_calls_per_run, max_web_pages_per_run, show_permission_audit
     st.markdown("### 资料")
     uploaded_files = st.file_uploader(
         "上传文件或图片",
@@ -1540,8 +1549,37 @@ def render_settings_panel():
             CHUNKING_STRATEGY_LABELS[label]
             for label in chunking_strategy_labels
         ]
-        top_k = st.slider("资料条数", 1, 5, 3)
-        web_max_results = st.slider("网页结果数", 1, 5, 2)
+        reference_count_mode_label = st.radio(
+            "引用数量策略",
+            ["Agent 自动判断", "手动设置"],
+            horizontal=True,
+            help=(
+                "自动模式会根据问题复杂度、比较对象数量和时效性决定检索深度；"
+                "最终引用数还会经过质量过滤，因此可能少于候选数。"
+            ),
+        )
+        if reference_count_mode_label == "Agent 自动判断":
+            top_k = agent_runtime.REFERENCE_COUNT_AUTO
+            web_max_results = agent_runtime.REFERENCE_COUNT_AUTO
+            st.caption(
+                f"Agent 按问题动态决定候选资料和网页数量；Runtime 安全上限为 "
+                f"{agent_runtime.AUTO_TOP_K_MAX} 条资料、{agent_runtime.AUTO_WEB_RESULTS_MAX} 个网页结果。"
+            )
+        else:
+            top_k = st.slider(
+                "候选资料条数",
+                1,
+                20,
+                5,
+                help="进入聚合与重排前最多保留的资料候选数，不等于最终一定引用的条数。",
+            )
+            web_max_results = st.slider(
+                "网页结果数",
+                1,
+                15,
+                5,
+                help="联网收集阶段最多保留的搜索结果数，正文不可用或质量不足的网页会被过滤。",
+            )
         reranker_enabled = st.toggle(
             "启用 Reranker（重排序器）",
             value=agent.ENABLE_RERANKER,
@@ -1620,8 +1658,12 @@ def render_settings_panel():
         max_web_pages_per_run = st.slider(
             "单轮最大网页读取数",
             1,
-            8,
-            min(web_max_results, 5),
+            20,
+            (
+                agent_runtime.AUTO_WEB_RESULTS_MAX
+                if agent_runtime.is_auto_reference_count(web_max_results)
+                else min(web_max_results, 12)
+            ),
             help="Runtime Guard：限制联网读取网页数量。该值会约束 Permission Gate 对 web_collect 的放行。",
         )
         show_permission_audit = st.toggle(
@@ -1875,8 +1917,35 @@ def render_compare_settings(panel_id, title):
         if not chunking_strategy_labels_value:
             chunking_strategy_labels_value = ["Parent-child（父子关系）"]
             st.warning("至少选择一种切分策略；已按 Parent-child 处理。")
-        top_k_value = st.slider("资料条数", 1, 5, 3, key=f"compare_top_k_{panel_id}")
-        web_max_results_value = st.slider("网页结果数", 1, 5, 2, key=f"compare_web_max_{panel_id}")
+        reference_count_mode_label_value = st.radio(
+            "引用数量策略",
+            ["Agent 自动判断", "手动设置"],
+            horizontal=True,
+            key=f"compare_reference_count_mode_{panel_id}",
+            help="两侧可分别选择自动或手动预算，用于直观看到检索深度的差异。",
+        )
+        if reference_count_mode_label_value == "Agent 自动判断":
+            top_k_value = agent_runtime.REFERENCE_COUNT_AUTO
+            web_max_results_value = agent_runtime.REFERENCE_COUNT_AUTO
+            st.caption(
+                f"自动上限：资料 {agent_runtime.AUTO_TOP_K_MAX} 条，"
+                f"网页 {agent_runtime.AUTO_WEB_RESULTS_MAX} 条。"
+            )
+        else:
+            top_k_value = st.slider(
+                "候选资料条数",
+                1,
+                20,
+                5,
+                key=f"compare_top_k_{panel_id}",
+            )
+            web_max_results_value = st.slider(
+                "网页结果数",
+                1,
+                15,
+                5,
+                key=f"compare_web_max_{panel_id}",
+            )
 
     with st.expander("Agent / 模型", expanded=False):
         multi_agent_architecture_label_value = st.selectbox(
@@ -1983,8 +2052,12 @@ def render_compare_settings(panel_id, title):
         max_web_pages_per_run_value = st.slider(
             "单轮最大网页读取数",
             1,
-            8,
-            min(web_max_results_value, 5),
+            20,
+            (
+                agent_runtime.AUTO_WEB_RESULTS_MAX
+                if agent_runtime.is_auto_reference_count(web_max_results_value)
+                else min(web_max_results_value, 12)
+            ),
             key=f"compare_max_web_pages_{panel_id}",
         )
 
@@ -2009,6 +2082,7 @@ def render_compare_settings(panel_id, title):
         "context_packing_strategy": CONTEXT_PACKING_LABELS[context_packing_label_value],
         "chunking_strategy_labels": chunking_strategy_labels_value,
         "chunking_strategy": [CHUNKING_STRATEGY_LABELS[label] for label in chunking_strategy_labels_value],
+        "reference_count_mode_label": reference_count_mode_label_value,
         "top_k": top_k_value,
         "web_max_results": web_max_results_value,
         "router_mode_label": router_mode_label_value,
@@ -2062,6 +2136,7 @@ def build_compare_config_snapshot(config):
         "streaming_enabled": config["streaming_enabled"],
         "plan_progress_enabled": config["plan_progress_enabled"],
         "reranker_enabled": agent.ENABLE_RERANKER,
+        "reference_count_mode_label": config["reference_count_mode_label"],
         "top_k": config["top_k"],
         "web_max_results": config["web_max_results"],
         "max_autonomous_steps": config["max_autonomous_steps"],

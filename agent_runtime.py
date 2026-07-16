@@ -54,6 +54,9 @@ DEBATE_MIN_ROUNDS = 1
 DEBATE_MAX_ROUNDS = 3
 DEBATE_LLM_TIMEOUT_SECONDS = float(os.getenv("DEBATE_LLM_TIMEOUT_SECONDS", "18"))
 SWARM_LLM_TIMEOUT_SECONDS = float(os.getenv("SWARM_LLM_TIMEOUT_SECONDS", "14"))
+REFERENCE_COUNT_AUTO = 0
+AUTO_TOP_K_MAX = int(os.getenv("AUTO_TOP_K_MAX", "12"))
+AUTO_WEB_RESULTS_MAX = int(os.getenv("AUTO_WEB_RESULTS_MAX", "10"))
 
 ProgressCallback = Callable[[dict[str, Any]], None]
 
@@ -100,6 +103,77 @@ CONCRETE_TASK_WORDS = [
     "写一份",
     "做一份",
 ]
+
+
+def is_auto_reference_count(value: int | None) -> bool:
+    try:
+        return int(value or 0) <= REFERENCE_COUNT_AUTO
+    except (TypeError, ValueError):
+        return True
+
+
+def recommend_reference_budget(question: str) -> dict[str, Any]:
+    """Choose a conservative retrieval depth for rule/fallback planners."""
+    normalized = normalize_user_text(question)
+    deep_signals = [
+        "深度", "全面", "完整", "详细", "系统", "报告", "调研", "研究",
+        "多个", "分别", "横向", "竞品", "方案", "规划", "路线图",
+    ]
+    comparison_signals = ["对比", "比较", "区别", "优缺点", "推荐", "选型", "权衡"]
+    freshness_signals = ["最近", "最新", "当前", "今天", "本周", "趋势", "新闻", "动态"]
+    simple_signals = ["是什么", "定义", "什么意思", "怎么理解", "是否", "吗"]
+
+    if any(signal in normalized for signal in deep_signals):
+        top_k, web_max_results, reason = 10, 8, "复杂调研或方案题，需要覆盖更多相互独立的证据。"
+    elif any(signal in normalized for signal in comparison_signals):
+        top_k, web_max_results, reason = 8, 6, "对比决策题需要覆盖多个对象和不同来源。"
+    elif any(signal in normalized for signal in freshness_signals):
+        top_k, web_max_results, reason = 6, 5, "时效性问题需要交叉验证多个近期来源。"
+    elif any(signal in normalized for signal in simple_signals) and len(normalized) <= 36:
+        top_k, web_max_results, reason = 3, 2, "简单定义或确认题使用少量高相关资料即可。"
+    else:
+        top_k, web_max_results, reason = 5, 3, "通用资料型问题使用中等检索深度。"
+
+    return {
+        "top_k": min(top_k, AUTO_TOP_K_MAX),
+        "web_max_results": min(web_max_results, AUTO_WEB_RESULTS_MAX),
+        "reason": reason,
+    }
+
+
+def resolve_reference_budget(
+    question: str,
+    top_k: int,
+    web_max_results: int,
+) -> dict[str, Any]:
+    recommendation = recommend_reference_budget(question)
+    top_k_auto = is_auto_reference_count(top_k)
+    web_auto = is_auto_reference_count(web_max_results)
+    return {
+        "top_k": recommendation["top_k"] if top_k_auto else max(1, int(top_k)),
+        "web_max_results": (
+            recommendation["web_max_results"]
+            if web_auto
+            else max(1, int(web_max_results))
+        ),
+        "top_k_auto": top_k_auto,
+        "web_max_results_auto": web_auto,
+        "reason": recommendation["reason"],
+    }
+
+
+def clamp_planner_reference_count(
+    requested: Any,
+    configured: int,
+    recommended: int,
+    auto_cap: int,
+) -> int:
+    cap = auto_cap if is_auto_reference_count(configured) else max(1, int(configured))
+    try:
+        selected = int(requested)
+    except (TypeError, ValueError):
+        selected = recommended
+    return max(1, min(selected, cap))
 
 
 @dataclass
@@ -1986,6 +2060,9 @@ def build_rule_based_steps(
     context_packing_strategy: str = agent.CONTEXT_STRICT_BUDGET,
 ) -> list[AgentStep]:
     preferred_sources = preferred_sources or []
+    budget = resolve_reference_budget(question, top_k, web_max_results)
+    top_k = budget["top_k"]
+    web_max_results = budget["web_max_results"]
     steps: list[AgentStep] = []
 
     if use_web:
@@ -2038,13 +2115,24 @@ def build_planner_prompt(
 ) -> str:
     upload_state = "有用户上传资料" if preferred_sources else "没有用户上传资料"
     web_state = "允许联网" if use_web else "不允许联网"
+    budget = resolve_reference_budget(question, top_k, web_max_results)
+    top_k_state = (
+        f"由你按问题复杂度决定，范围 1-{AUTO_TOP_K_MAX}，规则建议 {budget['top_k']}"
+        if budget["top_k_auto"]
+        else f"手动上限 {budget['top_k']}"
+    )
+    web_state_count = (
+        f"由你按问题复杂度决定，范围 1-{AUTO_WEB_RESULTS_MAX}，规则建议 {budget['web_max_results']}"
+        if budget["web_max_results_auto"]
+        else f"手动上限 {budget['web_max_results']}"
+    )
     return f"""你是一个 RAG Agent 的工具规划器，只负责决定接下来要调用哪些工具。
 
 当前状态：
 - {upload_state}
 - {web_state}
-- 资料条数 top_k={top_k}
-- 网页结果数 web_max_results={web_max_results}
+- 资料条数 top_k：{top_k_state}
+- 网页结果数 web_max_results：{web_state_count}
 
 规划规则：
 1. 你只能通过工具调用表达计划，不要输出自然语言答案。
@@ -2055,6 +2143,7 @@ def build_planner_prompt(
 6. 如果问题明显只要求总结用户上传资料，直接调用 rag_search，不要调用 web_collect。
 7. 如果已经调用 direct_answer 或 upload_status，不要再调用其他工具。
 8. 不要调用 generate_answer，资料型问题的最终回答由系统在检索后统一生成。
+9. 自动模式下，请根据问题复杂度、对象数量、时效要求和交叉验证需要，选择足够但不过量的结果数。
 
 用户问题：
 {question}
@@ -2084,6 +2173,7 @@ def build_llm_planned_steps(
     model_name: str = "",
 ) -> list[AgentStep]:
     preferred_sources = preferred_sources or []
+    budget = resolve_reference_budget(question, top_k, web_max_results)
     client = agent.get_deepseek_client()
     if client is None:
         return []
@@ -2126,7 +2216,12 @@ def build_llm_planned_steps(
                     reason=reason or "大模型判断需要联网补充资料。",
                     args={
                         "question": args.get("question", question),
-                        "max_results": min(int(args.get("max_results", web_max_results)), web_max_results),
+                        "max_results": clamp_planner_reference_count(
+                            args.get("max_results"),
+                            web_max_results,
+                            budget["web_max_results"],
+                            AUTO_WEB_RESULTS_MAX,
+                        ),
                     },
                 )
             )
@@ -2138,7 +2233,12 @@ def build_llm_planned_steps(
                     reason=reason or "大模型判断需要从知识库检索证据资料。",
                     args={
                         "question": args.get("question", question),
-                        "top_k": min(int(args.get("top_k", top_k)), top_k),
+                        "top_k": clamp_planner_reference_count(
+                            args.get("top_k"),
+                            top_k,
+                            budget["top_k"],
+                            AUTO_TOP_K_MAX,
+                        ),
                         "preferred_sources": preferred_sources,
                         "source_strategy": source_strategy,
                         "retrieval_strategy": retrieval_strategy,
@@ -2189,6 +2289,9 @@ def normalize_planned_steps(
     retrieval_strategy: str = agent.RETRIEVAL_VECTOR_BM25_RRF,
     context_packing_strategy: str = agent.CONTEXT_STRICT_BUDGET,
 ) -> list[AgentStep]:
+    budget = resolve_reference_budget(question, top_k, web_max_results)
+    resolved_top_k = budget["top_k"]
+    resolved_web_max_results = budget["web_max_results"]
     if is_upload_status_question(question):
         return [
             AgentStep(
@@ -2220,7 +2323,7 @@ def normalize_planned_steps(
             name="联网收集资料",
             tool="web_collect",
             reason="资料型问题没有用户上传资料，系统补充联网收集步骤。",
-            args={"question": question, "max_results": web_max_results},
+            args={"question": question, "max_results": resolved_web_max_results},
         )
 
     if "rag_search" not in deduped:
@@ -2230,7 +2333,7 @@ def normalize_planned_steps(
             reason="最终回答需要先检索证据资料，系统补充 RAG 检索步骤。",
             args={
                 "question": question,
-                "top_k": top_k,
+                "top_k": resolved_top_k,
                 "preferred_sources": preferred_sources,
                 "source_strategy": source_strategy,
                 "retrieval_strategy": retrieval_strategy,
@@ -2482,6 +2585,32 @@ def run_agent(
         context_packing_strategy=context_packing_strategy,
         model_name=model_name,
     )
+    selected_top_k = next(
+        (int(step.args.get("top_k", 0)) for step in steps if step.tool == "rag_search"),
+        0,
+    )
+    selected_web_max_results = next(
+        (int(step.args.get("max_results", 0)) for step in steps if step.tool == "web_collect"),
+        0,
+    )
+    reference_budget = {
+        "mode": "auto" if (
+            is_auto_reference_count(top_k) or is_auto_reference_count(web_max_results)
+        ) else "manual",
+        "top_k": selected_top_k,
+        "web_max_results": selected_web_max_results,
+    }
+    if selected_top_k or selected_web_max_results:
+        trace.append(make_stage_trace(
+            name="引用预算",
+            tool="reference_budget",
+            reason="Planner 根据问题复杂度选择检索深度，Runtime 只负责安全上限。",
+            summary=(
+                f"资料候选 {selected_top_k or '无需'} 条；"
+                f"网页结果 {selected_web_max_results or '无需'} 条；"
+                f"模式：{'Agent 自动判断' if reference_budget['mode'] == 'auto' else '手动设置'}。"
+            ),
+        ))
     fallback_trace = getattr(plan_agent_steps, "last_fallback_trace", None)
     if fallback_trace:
         trace.append(fallback_trace)
@@ -2540,6 +2669,7 @@ def run_agent(
         "steps": trace,
         "planner_mode": state["planner_mode"],
         "permission_trace": state.get("permission_trace", []),
+        "reference_budget": reference_budget,
     }
 
 
@@ -2761,6 +2891,16 @@ def _run_agent_pro_core(
             "context_packing_strategy": context_packing_strategy,
             "planner_type": planner_type,
             "evaluator_type": evaluator_type,
+            "reference_count_mode": (
+                "Agent 自动判断"
+                if result.get("reference_budget", {}).get("mode") == "auto"
+                else "手动设置"
+            ),
+            "top_k": result.get("reference_budget", {}).get("top_k", top_k),
+            "web_max_results": result.get("reference_budget", {}).get(
+                "web_max_results",
+                web_max_results,
+            ),
         }
         return result
 
@@ -2921,6 +3061,24 @@ def _run_agent_pro_core(
             "elapsed_ms": int((time.time() - started_at) * 1000),
         })
 
+    reference_budget = resolve_reference_budget(question, top_k, web_max_results)
+    effective_top_k = reference_budget["top_k"]
+    effective_web_max_results = reference_budget["web_max_results"]
+    budget_mode = (
+        "Agent 自动判断"
+        if reference_budget["top_k_auto"] or reference_budget["web_max_results_auto"]
+        else "手动设置"
+    )
+    trace.append(make_stage_trace(
+        name="引用预算",
+        tool="reference_budget",
+        reason="按问题复杂度决定需要多少候选资料和网页结果，再交给检索链路执行。",
+        summary=(
+            f"{budget_mode}：资料候选 {effective_top_k} 条，"
+            f"网页结果 {effective_web_max_results} 条。{reference_budget['reason']}"
+        ),
+    ))
+
     started_at = time.time()
     if progress_callback:
         progress_callback({
@@ -2935,8 +3093,8 @@ def _run_agent_pro_core(
         question=question,
         intent=intent,
         use_web=effective_use_web,
-        top_k=top_k,
-        web_max_results=web_max_results,
+        top_k=effective_top_k,
+        web_max_results=effective_web_max_results,
         preferred_sources=effective_preferred_sources,
         source_strategy=source_strategy,
         retrieval_strategy=retrieval_strategy,
@@ -3001,6 +3159,15 @@ def _run_agent_pro_core(
                 "context_packing_strategy": context_packing_strategy,
                 "planner_type": planner_type,
                 "evaluator_type": evaluator_type,
+                "reference_count_mode": budget_mode,
+                "top_k": effective_top_k,
+                "web_max_results": effective_web_max_results,
+            },
+            "reference_budget": {
+                "mode": "auto" if budget_mode == "Agent 自动判断" else "manual",
+                "top_k": effective_top_k,
+                "web_max_results": effective_web_max_results,
+                "reason": reference_budget["reason"],
             },
         }
 
@@ -3193,6 +3360,15 @@ def _run_agent_pro_core(
             "context_packing_strategy": context_packing_strategy,
             "planner_type": planner_type,
             "evaluator_type": evaluator_type,
+            "reference_count_mode": budget_mode,
+            "top_k": effective_top_k,
+            "web_max_results": effective_web_max_results,
+        },
+        "reference_budget": {
+            "mode": "auto" if budget_mode == "Agent 自动判断" else "manual",
+            "top_k": effective_top_k,
+            "web_max_results": effective_web_max_results,
+            "reason": reference_budget["reason"],
         },
         "evaluation": evaluation,
         "validation": validation,
@@ -4410,4 +4586,16 @@ def run_agent_pro(
     teaching_config["multi_agent_architecture"] = selected_architecture
     teaching_config["multi_agent_architecture_requested"] = multi_agent_architecture
     teaching_config["debate_rounds"] = clamp_debate_rounds(debate_rounds)
+    reference_budget = result.get("reference_budget", {})
+    if reference_budget:
+        teaching_config["reference_count_mode"] = (
+            "Agent 自动判断"
+            if reference_budget.get("mode") == "auto"
+            else "手动设置"
+        )
+        teaching_config["top_k"] = reference_budget.get("top_k", top_k)
+        teaching_config["web_max_results"] = reference_budget.get(
+            "web_max_results",
+            web_max_results,
+        )
     return result

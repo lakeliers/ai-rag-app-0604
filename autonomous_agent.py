@@ -225,8 +225,11 @@ def execute_task_with_tool_agent(
     result = tool_agent_runner(
         prompt,
         use_web=state.goal.constraints.get("use_web", True),
-        top_k=state.goal.constraints.get("top_k", 3),
-        web_max_results=state.goal.constraints.get("web_max_results", 2),
+        top_k=state.goal.constraints.get("top_k", agent_runtime.REFERENCE_COUNT_AUTO),
+        web_max_results=state.goal.constraints.get(
+            "web_max_results",
+            agent_runtime.REFERENCE_COUNT_AUTO,
+        ),
         preferred_sources=preferred_sources,
         router_mode=state.goal.constraints.get("router_mode", "rules"),
         source_strategy=state.goal.constraints.get("source_strategy", "auto"),
@@ -593,8 +596,8 @@ def build_structured_fallback_from_goal(state: AutonomousState, missing_terms: l
 
 def run_autonomous_agent(
     user_request: str,
-    top_k: int = 3,
-    web_max_results: int = 2,
+    top_k: int = agent_runtime.REFERENCE_COUNT_AUTO,
+    web_max_results: int = agent_runtime.REFERENCE_COUNT_AUTO,
     max_steps: int = 3,
     preferred_sources: list[str] | None = None,
     router_mode: str = "rules",

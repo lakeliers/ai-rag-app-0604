@@ -66,8 +66,8 @@ class ChatConfig(BaseModel):
     multi_agent_architecture: str = agent_runtime.MULTI_AGENT_AUTO
     memory_enabled: bool = True
     memory_route_strategy: str = agent_runtime.MEMORY_ROUTE_AUTO
-    top_k: int = 3
-    web_max_results: int = 2
+    top_k: int = agent_runtime.REFERENCE_COUNT_AUTO
+    web_max_results: int = agent_runtime.REFERENCE_COUNT_AUTO
     max_autonomous_steps: int = 3
     deepseek_model: str | None = None
 
